@@ -168,7 +168,6 @@
   // ---------- Medan: bukit dan lembah ----------
   const SEG = 15, CELL = CH / SEG;
   const pondCache = new Map();
-  const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
   function rawHeight(x, z) {
     const big = (vnoise(x / 75, z / 75, 71) - 0.5) * 10;       // bukit dan lembah besar
     const mid = (vnoise(x / 26, z / 26, 72) - 0.5) * 2.6;      // gelombang kecil

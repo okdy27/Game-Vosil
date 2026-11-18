@@ -165,9 +165,75 @@
     return BIOMES.plain;
   }
 
+  // ---------- Medan: bukit dan lembah ----------
+  const SEG = 15, CELL = CH / SEG;
+  const pondCache = new Map();
+  const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+  function rawHeight(x, z) {
+    const big = (vnoise(x / 75, z / 75, 71) - 0.5) * 10;       // bukit dan lembah besar
+    const mid = (vnoise(x / 26, z / 26, 72) - 0.5) * 2.6;      // gelombang kecil
+    return (big + mid) * smooth(12, 70, Math.hypot(x, z));     // sekitar titik awal tetap landai
+  }
+  function pondOf(cx, cz) {                                     // satu kolam per potongan (paling banyak), tetap sama setiap dipanggil
+    const key = cx + ',' + cz;
+    if (pondCache.has(key)) return pondCache.get(key);
+    const rng = mulberry(hash(cx, cz, worldSeed + 555));
+    const biome = biomeAt(cx * CH + CH / 2, cz * CH + CH / 2);
+    let p = null;
+    if ((cx === 0 && cz === -1) || rng() < biome.pond) {       // potongan (0,-1): selalu ada kolam dekat awal
+      const r = 3 + rng() * 2;
+      const x = cx * CH + 11 + rng() * (CH - 22), z = cz * CH + 11 + rng() * (CH - 22);
+      p = { x, z, r, base: rawHeight(x, z) - 0.3 };
+    }
+    pondCache.set(key, p);
+    return p;
+  }
+  function heightAt(x, z) {
+    let h = rawHeight(x, z);
+    const p = pondOf(Math.floor(x / CH), Math.floor(z / CH));
+    if (p) {                                                    // kolam berada di cekungan datar
+      const d = Math.hypot(x - p.x, z - p.z);
+      h = lerp(h, p.base, 1 - smooth(p.r + 1, p.r + 6, d));
+      h -= 0.5 * (1 - smooth(p.r - 0.5, p.r + 1.5, d));
+    }
+    return h;
+  }
+  const mGround = new THREE.MeshLambertMaterial({ vertexColors: true });
+  for (const b of Object.values(BIOMES)) b.col = new THREE.Color(b.color);
+  function buildGround(ox, oz) {
+    const n = SEG + 1, m = n + 2;
+    const H = new Float32Array(m * m);                          // tinggi dengan satu lapis tepi untuk normal yang mulus antar potongan
+    for (let j = 0; j < m; j++) for (let i = 0; i < m; i++) H[j * m + i] = heightAt(ox + (i - 1) * CELL, oz + (j - 1) * CELL);
+    const pos = new Float32Array(n * n * 3), nor = new Float32Array(n * n * 3), col = new Float32Array(n * n * 3);
+    for (let j = 0; j < n; j++) {
+      for (let i = 0; i < n; i++) {
+        const x = ox + i * CELL, z = oz + j * CELL, k = (j * n + i) * 3, q = (j + 1) * m + (i + 1);
+        const h = H[q];
+        pos[k] = x; pos[k + 1] = h; pos[k + 2] = z;
+        const nx = H[q - 1] - H[q + 1], nz = H[q - m] - H[q + m], ny = 2 * CELL;
+        const l = Math.hypot(nx, ny, nz);
+        nor[k] = nx / l; nor[k + 1] = ny / l; nor[k + 2] = nz / l;
+        const bc = biomeAt(x, z).col;
+        const v = (0.88 + 0.24 * vnoise(x / 5, z / 5, 9)) * Math.min(1.12, Math.max(0.78, 0.95 + h * 0.025));
+        col[k] = Math.min(1, bc.r * v); col[k + 1] = Math.min(1, bc.g * v); col[k + 2] = Math.min(1, bc.b * v);
+      }
+    }
+    const idx = [];
+    for (let j = 0; j < SEG; j++) {
+      for (let i = 0; i < SEG; i++) {
+        const a = j * n + i, b = (j + 1) * n + i, c = a + 1, d = b + 1;
+        idx.push(a, b, c, b, d, c);
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    geo.setIndex(new THREE.BufferAttribute(new Uint16Array(idx), 1));
+    return geo;
+  }
+
   // ---------- Bentuk bersama untuk isi dunia ----------
-  const groundGeo = new THREE.PlaneGeometry(CH, CH);
-  const patchGeo = new THREE.CircleGeometry(1, 12);
   const trunkGeo = new THREE.CylinderGeometry(0.18, 0.26, 1.3, 6);
   const coneA = new THREE.ConeGeometry(1.15, 2.1, 7);
   const coneB = new THREE.ConeGeometry(0.8, 1.6, 7);
@@ -338,17 +404,8 @@
     scene.add(group);
     const ch = { key, cx, cz, group, biome, colliders: [], bushes: [], coins: [], eggs: [], ponds: [] };
 
-    const ground = new THREE.Mesh(groundGeo, biome.mat);
-    ground.rotation.x = -Math.PI / 2;
-    ground.position.set(ox + CH / 2, 0, oz + CH / 2);
-    group.add(ground);
-    for (let i = 0; i < 2; i++) {                       // bercak warna supaya tanah tidak polos
-      const p = new THREE.Mesh(patchGeo, biome.patchMat);
-      p.rotation.x = -Math.PI / 2;
-      p.position.set(ox + R(3, CH - 3), 0.02, oz + R(3, CH - 3));
-      p.scale.set(R(2.5, 5.5), R(2.5, 5.5), 1);
-      group.add(p);
-    }
+    ch.geo = buildGround(ox, oz);
+    group.add(new THREE.Mesh(ch.geo, mGround));
 
     const placed = [];
     const tryPlace = (r) => {
@@ -363,23 +420,22 @@
     };
 
     // kolam air (selalu ada satu di dekat titik awal supaya pemain tidak langsung kehausan)
-    const pondN = (cx === 0 && cz === -1) ? 1 : cnt(biome.pond);
-    for (let i = 0; i < pondN; i++) {
-      const r = R(3, 5);
-      const pos = tryPlace(r + 1.2);
-      if (!pos) continue;
+    const pd = pondOf(cx, cz);
+    if (pd) {
+      const r = pd.r;
+      placed.push({ x: pd.x, z: pd.z, r: r + 2.5 });
       const m = new THREE.Mesh(pondGeo, mPond);
       m.rotation.x = -Math.PI / 2;
-      m.position.set(pos.x, 0.05, pos.z);
-      m.scale.set(r, r, 1);
+      m.position.set(pd.x, pd.base - 0.18, pd.z);
+      m.scale.set(r + 0.7, r + 0.7, 1);
       group.add(m);
-      ch.ponds.push({ x: pos.x, z: pos.z, r });
+      ch.ponds.push({ x: pd.x, z: pd.z, r });
       if (biome.id !== 'forest') {                      // oasis: palem tumbuh di tepi kolam
         for (let k = 0, pn = 1 + Math.floor(rng() * 3); k < pn; k++) {
           const a = rng() * Math.PI * 2, dd = r + R(0.8, 1.6);
-          const px = pos.x + Math.cos(a) * dd, pz = pos.z + Math.sin(a) * dd;
+          const px = pd.x + Math.cos(a) * dd, pz = pd.z + Math.sin(a) * dd;
           const s = R(0.9, 1.4), pm = makeTree(s, 'palm', 0);
-          pm.position.set(px, 0, pz);
+          pm.position.set(px, heightAt(px, pz), pz);
           group.add(pm);
           ch.colliders.push({ x: px, z: pz, r: 0.3 * s });
         }
@@ -393,28 +449,28 @@
         : biome.id === 'swamp' ? (rr < 0.6 ? 'dead' : 'broad')
         : (rr < 0.75 ? 'broad' : 'pine');
       const s = R(0.9, 1.5), t = makeTree(s, kind, Math.floor(rng() * 5));
-      t.position.set(pos.x, 0, pos.z);
+      t.position.set(pos.x, heightAt(pos.x, pos.z), pos.z);
       group.add(t);
       ch.colliders.push({ x: pos.x, z: pos.z, r: (kind === 'dead' ? 0.4 : 0.55) * s });
     }
     for (let i = 0, n = cnt(biome.cycad); i < n; i++) {
       const pos = tryPlace(1.2); if (!pos) continue;
       const s = R(0.9, 1.5), t = makeCycad(s);
-      t.position.set(pos.x, 0, pos.z);
+      t.position.set(pos.x, heightAt(pos.x, pos.z), pos.z);
       group.add(t);
       ch.colliders.push({ x: pos.x, z: pos.z, r: 0.45 * s });
     }
     for (let i = 0, n = cnt(biome.cactus); i < n; i++) {
       const pos = tryPlace(1.2); if (!pos) continue;
       const s = R(0.9, 1.5), t = makeCactus(s);
-      t.position.set(pos.x, 0, pos.z);
+      t.position.set(pos.x, heightAt(pos.x, pos.z), pos.z);
       group.add(t);
       ch.colliders.push({ x: pos.x, z: pos.z, r: 0.5 * s });
     }
     for (let i = 0, n = cnt(biome.rock); i < n; i++) {
       const pos = tryPlace(1.3); if (!pos) continue;
       const s = R(0.8, 1.7), t = makeRock(s, biome.id === 'desert');
-      t.position.set(pos.x, 0, pos.z);
+      t.position.set(pos.x, heightAt(pos.x, pos.z), pos.z);
       group.add(t);
       ch.colliders.push({ x: pos.x, z: pos.z, r: 0.85 * s });
     }
@@ -424,7 +480,7 @@
     for (let i = 0; i < bushN; i++) {
       const pos = tryPlace(1.4); if (!pos) continue;
       const b = makeBush();
-      b.group.position.set(pos.x, 0, pos.z);
+      b.group.position.set(pos.x, heightAt(pos.x, pos.z), pos.z);
       group.add(b.group);
       const id = key + ':b' + i;
       const bush = { id, x: pos.x, z: pos.z, berries: b.berries, has: true };
@@ -436,7 +492,7 @@
     for (let i = 0, n = cnt(biome.id === 'desert' ? 1 : 2.2); i < n; i++) {
       const pos = tryPlace(0.6); if (!pos) continue;
       const s = R(0.8, 1.6), tf = new THREE.Mesh(tuftGeo, mTuft[biome.id]);
-      tf.position.set(pos.x, 0.4 * s, pos.z);
+      tf.position.set(pos.x, heightAt(pos.x, pos.z) + 0.4 * s, pos.z);
       tf.scale.set(s * 1.4, s, s * 1.4);
       group.add(tf);
     }
@@ -454,7 +510,7 @@
         const x = pos.x + Math.cos(ang) * off;
         const z = pos.z + Math.sin(ang) * off;
         const m = makeCoin();
-        m.position.set(x, 0.9, z);
+        m.position.set(x, heightAt(x, z) + 0.9, z);
         group.add(m);
         ch.coins.push({ id, x, z, mesh: m });
       }
@@ -466,9 +522,10 @@
       const id = key + ':e0';
       if (pos && !taken.has(id)) {
         const e = makeEgg();
-        e.group.position.set(pos.x, 1.1, pos.z);
+        const by = heightAt(pos.x, pos.z) + 1.1;
+        e.group.position.set(pos.x, by, pos.z);
         group.add(e.group);
-        ch.eggs.push({ id, x: pos.x, z: pos.z, mesh: e.group, ring: e.ring });
+        ch.eggs.push({ id, x: pos.x, z: pos.z, by, mesh: e.group, ring: e.ring });
       }
     }
 
@@ -478,6 +535,7 @@
 
   function unloadChunk(ch) {
     scene.remove(ch.group);
+    if (ch.geo) ch.geo.dispose();
     chunks.delete(ch.key);
   }
 
@@ -512,6 +570,7 @@
     pcx = null; pcz = null;
     taken.clear();
     eatenAt.clear();
+    pondCache.clear();
   }
 
   function pushOut(e, rad) {                        // dorong keluar dari pohon, batu, dan kaktus
@@ -759,7 +818,7 @@
   function emitTo(pool, x, y, z, o) {
     const p = pool.find((q) => q.life >= q.max);
     if (!p) return;
-    p.life = 0; p.max = o.max; p.x = x; p.y = y; p.z = z;
+    p.life = 0; p.max = o.max; p.x = x; p.y = y; p.z = z; p.floor = heightAt(x, z) + 0.05;
     p.vx = o.vx; p.vy = o.vy; p.vz = o.vz; p.base = o.base;
     p.mesh.visible = true;
     p.mesh.position.set(x, y, z);
@@ -771,7 +830,7 @@
       p.life += dt;
       if (p.life >= p.max) { p.mesh.visible = false; continue; }
       p.vy -= gravity * dt;
-      p.x += p.vx * dt; p.y = Math.max(0.05, p.y + p.vy * dt); p.z += p.vz * dt;
+      p.x += p.vx * dt; p.y = Math.max(p.floor || 0.05, p.y + p.vy * dt); p.z += p.vz * dt;
       p.mesh.position.set(p.x, p.y, p.z);
       p.mesh.scale.setScalar(Math.max(0.01, p.base * (1 - p.life / p.max)));
     }
@@ -779,10 +838,12 @@
   const dust = makePool(40, new THREE.IcosahedronGeometry(0.15, 0), new THREE.MeshBasicMaterial({ color: 0xe6d5ae }));
   const sparks = makePool(40, new THREE.IcosahedronGeometry(0.12, 0), new THREE.MeshBasicMaterial({ color: 0xffa726 }));
   function puff(n, x, z, spread) {
-    for (let i = 0; i < n; i++) emitTo(dust, x + rand(-spread, spread), 0.12, z + rand(-spread, spread),
+    const gy = heightAt(x, z);
+    for (let i = 0; i < n; i++) emitTo(dust, x + rand(-spread, spread), gy + 0.12, z + rand(-spread, spread),
       { max: rand(0.35, 0.6), vx: rand(-0.6, 0.6), vy: rand(0.8, 1.8), vz: rand(-0.6, 0.6), base: rand(0.7, 1.4) });
   }
   function burst(n, x, y, z) {
+    y += heightAt(x, z);
     for (let i = 0; i < n; i++) emitTo(sparks, x, y, z,
       { max: rand(0.3, 0.6), vx: rand(-3, 3), vy: rand(1.5, 4), vz: rand(-3, 3), base: rand(0.6, 1.3) });
   }
@@ -808,6 +869,7 @@
   let powerLeft = 0, scaleNow = 1.1, phase = 0, deathReason = '';
   let preds = [], spawnCd = 4, animalCd = 2, chased = false, isNight = false, lastBiome = null;
   let biomeCd = 0, drinkCd = 0, toastT = 0, saveT = 0, hurtT = 0, shake = 0;
+  let camGy = 0;
   let camX = 0, camZ = 0, camLead = { x: 0, z: 0 }, lastWet = false, shown = {};
 
   GameAudio.setIntensity(() => (chased ? 0.95 : isNight ? 0.4 : 0.1));
@@ -873,6 +935,8 @@
     for (const p of preds) scene.remove(p.c.root);
     preds = [];
     worldSeed = 1 + Math.floor(Math.random() * 1e6);
+    pondCache.clear();
+    camGy = 0;
     Object.assign(player, {
       x: 0, z: 0, y: 0, vy: 0, vx: 0, vz: 0, yaw: Math.PI,
       hp: 100, hunger: 100, thirst: 100, stamina: 100, exhausted: false,
@@ -1216,7 +1280,13 @@
 
     const weak = player.hunger <= 0 || player.thirst <= 0;
     const speedMul = (powerLeft > 0 ? 1.25 : 1) * (weak ? 0.85 : 1);
-    const target = (sprinting ? SPRINT : WALK) * mag * speedMul;
+    let slopeMul = 1;                                   // tanjakan memperlambat, turunan sedikit mempercepat
+    if (mag > 0.1) {
+      const gx = ix / mag, gz = iz / mag;
+      const dh = heightAt(player.x + gx, player.z + gz) - heightAt(player.x, player.z);
+      slopeMul = Math.min(1.15, Math.max(0.65, 1 - dh * 0.6));
+    }
+    const target = (sprinting ? SPRINT : WALK) * mag * speedMul * slopeMul;
     const tx = mag > 0 ? (ix / mag) * target : 0, tz = mag > 0 ? (iz / mag) * target : 0;
     const k = Math.min(1, dt * 12);
     player.vx += (tx - player.vx) * k;
@@ -1321,7 +1391,7 @@
         for (let i = ch.eggs.length - 1; i >= 0; i--) {
           const e = ch.eggs[i];
           e.mesh.rotation.y += dt * 2.5;
-          e.mesh.position.y = 1.1 + Math.sin(clock * 4) * 0.12;
+          e.mesh.position.y = e.by + Math.sin(clock * 4) * 0.12;
           e.ring.rotation.z += dt * 2;
           const dx = e.x - player.x, dz = e.z - player.z;
           if (dx * dx + dz * dz < (1.8 * sc) * (1.8 * sc)) {
@@ -1393,7 +1463,7 @@
   function updateAmbient(dt) {
     for (const f of flyers) {
       f.a += f.w * dt;
-      f.g.position.set(player.x + Math.cos(f.a) * f.r, f.h + Math.sin(clock * 0.8 + f.ph) * 1.2, player.z + Math.sin(f.a) * f.r);
+      f.g.position.set(player.x + Math.cos(f.a) * f.r, (player.gy || 0) + f.h + Math.sin(clock * 0.8 + f.ph) * 1.2, player.z + Math.sin(f.a) * f.r);
       f.g.rotation.y = faceYaw(-Math.sin(f.a), Math.cos(f.a));        // menghadap arah terbang
       f.g.rotation.z = 0.18;
       const fl = Math.sin(clock * 5 + f.ph) * 0.6;
@@ -1406,7 +1476,7 @@
       if (!isNight) continue;
       const x = player.x + ((((f.bx - player.x) % 48) + 48) % 48) - 24;      // tersebar tetap di dunia, bukan ikut pemain
       const z = player.z + ((((f.bz - player.z) % 48) + 48) % 48) - 24;
-      f.mesh.position.set(x + Math.sin(clock * 0.9 + f.ph) * 0.8, f.by + Math.sin(clock * 1.7 + f.ph * 2) * 0.35, z + Math.cos(clock * 0.7 + f.ph) * 0.8);
+      f.mesh.position.set(x + Math.sin(clock * 0.9 + f.ph) * 0.8, heightAt(x, z) + f.by + Math.sin(clock * 1.7 + f.ph * 2) * 0.35, z + Math.cos(clock * 0.7 + f.ph) * 0.8);
       f.mesh.scale.setScalar(0.7 + 0.5 * Math.abs(Math.sin(clock * 3 + f.ph)));
     }
   }
@@ -1425,25 +1495,28 @@
     phase += (spd * 1.5 + 1.2) * dt * (spd > 0.4 ? 1 : 0.3);
     const run = clamp(spd / 6, 0, 1.3);
     const air = player.y > 0.001;
-    hero.root.position.set(player.x, player.y, player.z);
+    const gy = heightAt(player.x, player.z);
+    player.gy = gy;
+    hero.root.position.set(player.x, gy + player.y, player.z);
     if (state === 'over') {
       hero.root.rotation.z += (1.4 - hero.root.rotation.z) * Math.min(1, dt * 7);
-      hero.root.position.y = 0.15;
+      hero.root.position.y = gy + 0.15;
     } else {
       hero.root.rotation.z = 0;
       hero.root.rotation.y = player.yaw;
       poseCreature(hero, phase, run, air, player.vy, player.atkT >= 0 ? clamp(player.atkT / 0.35, 0, 1) : -1, clock);
     }
     const s = Math.max(0.5, 1 - player.y / 3.2);
-    heroShadow.position.set(player.x, 0.04, player.z);
+    heroShadow.position.set(player.x, gy + 0.1, player.z);
     heroShadow.scale.set(s * scaleNow, s * scaleNow, 1);
 
     for (const p of preds) {
       const c = p.c;
-      c.root.position.set(p.x, 0, p.z);
+      const pgy = heightAt(p.x, p.z);
+      c.root.position.set(p.x, pgy, p.z);
       if (p.dead) {
         c.root.rotation.z += (1.5 - c.root.rotation.z) * Math.min(1, dt * 6);
-        c.root.position.y = Math.max(-1.5, -0.6 * Math.max(0, p.deadT - 0.8));
+        c.root.position.y = pgy + Math.max(-1.5, -0.6 * Math.max(0, p.deadT - 0.8));
         continue;
       }
       c.root.rotation.y = p.yaw;
@@ -1476,8 +1549,11 @@
       sy = (Math.random() - 0.5) * shake * 0.5;
       shake = Math.max(0, shake - dt * 2.5);
     }
-    camera.position.set(camX + sx, 8.2 * grow + sy, camZ + 9.6 * grow);
-    camera.lookAt(camX, 0.9, camZ - 1.2);
+    camGy += ((player.gy || 0) - camGy) * Math.min(1, dt * 4);
+    const camBack = camZ + 9.6 * grow;
+    const camY = Math.max(camGy + 8.2 * grow, heightAt(camX, camBack) + 3);   // jangan sampai tertutup bukit
+    camera.position.set(camX + sx, camY + sy, camBack);
+    camera.lookAt(camX, camGy + 0.9, camZ - 1.2);
   }
 
   // ---------- Loop utama ----------
@@ -1502,6 +1578,7 @@
 
   // tampilan latar menu: dunia awal terlihat di belakang judul
   worldSeed = 1 + Math.floor(Math.random() * 1e6);
+  pondCache.clear();
   ensureChunks(true);
   applyDayNight();
   refreshPanels();

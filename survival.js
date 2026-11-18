@@ -186,6 +186,10 @@
   const eggGeo = new THREE.SphereGeometry(0.42, 12, 10);
   const spotGeo = new THREE.SphereGeometry(0.09, 6, 6);
   const ringGeo = new THREE.TorusGeometry(0.62, 0.045, 6, 24);
+  const sphereGeo = new THREE.SphereGeometry(1, 8, 6);            // kanopi pohon rindang (diskalakan)
+  const palmFrondGeo = new THREE.ConeGeometry(0.22, 2.4, 4);
+  const branchGeo = new THREE.CylinderGeometry(0.05, 0.09, 1.0, 5);
+  const tuftGeo = new THREE.ConeGeometry(0.3, 0.8, 5);
 
   const mTrunk = std(0x8d6e63), mLeafA = std(0x2e9e4f), mLeafB = std(0x3cb85e);
   const mRock = std(0x9e9e9e), mRockDry = std(0xb9a58a);
@@ -198,12 +202,42 @@
   const mEgg = std(0xfff3d6, { emissive: 0x3a2a10 });
   const mSpot = std(0x6aa84f);
   const mRing = new THREE.MeshBasicMaterial({ color: 0xffd54f, transparent: true, opacity: 0.85, depthWrite: false });
+  const LEAFS = [0x2e9e4f, 0x3cb85e, 0x1f7a3a, 0x7cb342, 0xa5c13a].map((c) => std(c));   // variasi warna daun
+  const mDeadWood = std(0x6d5a4a), mPalmTrunk = std(0x9c7a4d), mFrond = std(0x43a047), mFrond2 = std(0x66bb6a);
+  const mTuft = { plain: std(0x5fa83c), forest: std(0x2f7d32), desert: std(0xc2a85e), swamp: std(0x6b8e3a) };
 
-  function makeTree(s) {
+  // jenis pohon: 'pine' (runcing), 'broad' (rindang), 'palm' (palem), 'dead' (pohon mati); v = variasi warna
+  function makeTree(s, kind, v) {
     const g = new THREE.Group();
-    const t = new THREE.Mesh(trunkGeo, mTrunk); t.position.y = 0.65; g.add(t);
-    const a = new THREE.Mesh(coneA, mLeafA); a.position.y = 2.1; g.add(a);
-    const b = new THREE.Mesh(coneB, mLeafB); b.position.y = 3.2; g.add(b);
+    const leaf = LEAFS[(v || 0) % LEAFS.length], leaf2 = LEAFS[((v || 0) + 1) % LEAFS.length];
+    if (kind === 'broad') {
+      const t = new THREE.Mesh(trunkGeo, mTrunk); t.position.y = 0.65; t.scale.set(1.4, 1.2, 1.4); g.add(t);
+      const c1 = new THREE.Mesh(sphereGeo, leaf); c1.position.set(0, 2.6, 0); c1.scale.set(1.5, 1.2, 1.5); g.add(c1);
+      const c2 = new THREE.Mesh(sphereGeo, leaf2); c2.position.set(0.8, 2.1, 0.3); c2.scale.set(1.0, 0.85, 1.0); g.add(c2);
+      const c3 = new THREE.Mesh(sphereGeo, leaf2); c3.position.set(-0.7, 2.2, -0.3); c3.scale.set(0.9, 0.8, 0.9); g.add(c3);
+    } else if (kind === 'dead') {
+      const t = new THREE.Mesh(trunkGeo, mDeadWood); t.position.y = 0.9; t.scale.set(0.9, 1.8, 0.9); g.add(t);
+      for (const sx of [-1, 1]) {
+        const b = new THREE.Mesh(branchGeo, mDeadWood);
+        b.position.set(sx * 0.4, 2.0 + (sx > 0 ? 0.25 : -0.1), 0);
+        b.rotation.z = -sx * 0.9;
+        b.scale.set(1, 1.4, 1);
+        g.add(b);
+      }
+    } else if (kind === 'palm') {
+      const t = new THREE.Mesh(trunkGeo, mPalmTrunk); t.position.set(0.15, 1.5, 0); t.rotation.z = -0.12; t.scale.set(0.8, 2.2, 0.8); g.add(t);
+      const top = new THREE.Group(); top.position.set(0.3, 3.0, 0); g.add(top);
+      for (let i = 0; i < 6; i++) {
+        const pv = new THREE.Group(); pv.rotation.y = (i / 6) * Math.PI * 2;
+        const tilt = new THREE.Group(); tilt.rotation.z = -1.15;
+        const fr = new THREE.Mesh(palmFrondGeo, i % 2 ? mFrond : mFrond2); fr.position.y = 1.2; fr.scale.x = 2.0;
+        tilt.add(fr); pv.add(tilt); top.add(pv);
+      }
+    } else {
+      const t = new THREE.Mesh(trunkGeo, mTrunk); t.position.y = 0.65; g.add(t);
+      const a = new THREE.Mesh(coneA, LEAFS[(v || 0) % 3]); a.position.y = 2.1; g.add(a);
+      const b = new THREE.Mesh(coneB, LEAFS[((v || 0) + 1) % 3]); b.position.y = 3.2; g.add(b);
+    }
     g.scale.setScalar(s);
     return g;
   }
@@ -340,14 +374,28 @@
       m.scale.set(r, r, 1);
       group.add(m);
       ch.ponds.push({ x: pos.x, z: pos.z, r });
+      if (biome.id !== 'forest') {                      // oasis: palem tumbuh di tepi kolam
+        for (let k = 0, pn = 1 + Math.floor(rng() * 3); k < pn; k++) {
+          const a = rng() * Math.PI * 2, dd = r + R(0.8, 1.6);
+          const px = pos.x + Math.cos(a) * dd, pz = pos.z + Math.sin(a) * dd;
+          const s = R(0.9, 1.4), pm = makeTree(s, 'palm', 0);
+          pm.position.set(px, 0, pz);
+          group.add(pm);
+          ch.colliders.push({ x: px, z: pz, r: 0.3 * s });
+        }
+      }
     }
 
     for (let i = 0, n = cnt(biome.tree); i < n; i++) {
       const pos = tryPlace(1.4); if (!pos) continue;
-      const s = R(0.9, 1.5), t = makeTree(s);
+      const rr = rng();
+      const kind = biome.id === 'forest' ? (rr < 0.5 ? 'pine' : 'broad')
+        : biome.id === 'swamp' ? (rr < 0.6 ? 'dead' : 'broad')
+        : (rr < 0.75 ? 'broad' : 'pine');
+      const s = R(0.9, 1.5), t = makeTree(s, kind, Math.floor(rng() * 5));
       t.position.set(pos.x, 0, pos.z);
       group.add(t);
-      ch.colliders.push({ x: pos.x, z: pos.z, r: 0.55 * s });
+      ch.colliders.push({ x: pos.x, z: pos.z, r: (kind === 'dead' ? 0.4 : 0.55) * s });
     }
     for (let i = 0, n = cnt(biome.cycad); i < n; i++) {
       const pos = tryPlace(1.2); if (!pos) continue;
@@ -382,6 +430,15 @@
       const bush = { id, x: pos.x, z: pos.z, berries: b.berries, has: true };
       if (eatenAt.has(id)) { bush.has = false; b.berries.visible = false; }
       ch.bushes.push(bush);
+    }
+
+    // rumput liar
+    for (let i = 0, n = cnt(biome.id === 'desert' ? 1 : 2.2); i < n; i++) {
+      const pos = tryPlace(0.6); if (!pos) continue;
+      const s = R(0.8, 1.6), tf = new THREE.Mesh(tuftGeo, mTuft[biome.id]);
+      tf.position.set(pos.x, 0.4 * s, pos.z);
+      tf.scale.set(s * 1.4, s, s * 1.4);
+      group.add(tf);
     }
 
     // gugusan koin
@@ -598,6 +655,71 @@
     }
   }
 
+  // Triceratops: berkaki empat, berkepala berpelindung dengan tiga tanduk (menghadap -Z)
+  function makeTrike(p, scale) {
+    const root = new THREE.Group();
+    const body = new THREE.Group();
+    root.add(body);
+    const mBody = std(p.body), mDark = std(p.dark), mFrill = std(p.light), mHorn = std(0xf5f0e1);
+    const white = std(0xffffff, { flatShading: false }), black = std(0x111111, { flatShading: false });
+    const part = (geo, mat, x, y, z, parent) => {
+      const m = new THREE.Mesh(geo, mat);
+      m.position.set(x, y, z);
+      (parent || body).add(m);
+      return m;
+    };
+    const torso = part(new THREE.SphereGeometry(0.75, 10, 8), mBody, 0, 1.15, 0.1);
+    torso.scale.set(0.95, 0.85, 1.45);
+    const belly = part(new THREE.SphereGeometry(0.6, 8, 6), mFrill, 0, 0.95, 0.1);
+    belly.scale.set(0.9, 0.6, 1.3);
+
+    const legs4 = [];
+    for (const [x, z] of [[-0.5, -0.65], [0.5, -0.65], [-0.5, 0.8], [0.5, 0.8]]) {
+      const hip = new THREE.Group();
+      hip.position.set(x, 0.85, z);
+      body.add(hip);
+      part(new THREE.CylinderGeometry(0.2, 0.16, 0.85, 7), mDark, 0, -0.42, 0, hip);
+      part(new THREE.BoxGeometry(0.34, 0.1, 0.42), mDark, 0, -0.85, -0.05, hip);
+      legs4.push(hip);
+    }
+
+    const headPivot = new THREE.Group();
+    headPivot.position.set(0, 1.15, -1.25);
+    body.add(headPivot);
+    part(new THREE.SphereGeometry(0.46, 10, 8), mBody, 0, 0, 0, headPivot);
+    part(new THREE.BoxGeometry(0.32, 0.28, 0.45), mDark, 0, -0.12, -0.42, headPivot);     // paruh
+    const frill = part(new THREE.CylinderGeometry(0.95, 0.95, 0.1, 14), mFrill, 0, 0.3, 0.4, headPivot);
+    frill.rotation.x = -1.2;                                                              // perisai di belakang kepala
+    for (const sx of [-1, 1]) {
+      const horn = part(new THREE.ConeGeometry(0.09, 0.75, 6), mHorn, sx * 0.3, 0.3, -0.45, headPivot);
+      horn.rotation.x = -1.25;                                                            // tanduk menunjuk ke depan
+      part(new THREE.SphereGeometry(0.09, 8, 6), white, sx * 0.34, 0.1, -0.2, headPivot);
+      part(new THREE.SphereGeometry(0.05, 6, 6), black, sx * 0.4, 0.1, -0.24, headPivot);
+    }
+    const nose = part(new THREE.ConeGeometry(0.07, 0.35, 6), mHorn, 0, 0.08, -0.72, headPivot);
+    nose.rotation.x = -1.0;
+    const tail = part(new THREE.ConeGeometry(0.25, 1.2, 6), mDark, 0, 1.0, 1.55);
+    tail.rotation.x = 1.45;
+
+    root.scale.setScalar(scale);
+    return { root, body, headPivot, legs4, tail, mats: [mBody, mDark, mFrill], isTrike: true };
+  }
+
+  function poseTrike(c, phase, run, atk, t) {
+    const offs = [0, Math.PI, Math.PI, 0];
+    for (let i = 0; i < 4; i++) c.legs4[i].rotation.x = Math.sin(phase * 0.9 + offs[i]) * 0.55 * run;
+    c.body.position.y = run > 0.05 ? Math.abs(Math.sin(phase * 0.9)) * 0.05 * run : Math.sin(t * 1.5) * 0.015;
+    c.tail.rotation.y = Math.sin(t * 1.4) * 0.2;
+    if (atk >= 0) {                                       // menyeruduk dengan tanduk
+      const s = Math.sin(Math.PI * atk);
+      c.headPivot.position.z = -1.25 - 0.45 * s;
+      c.headPivot.rotation.x = 0.35 * s;
+    } else {
+      c.headPivot.position.z = -1.25;
+      c.headPivot.rotation.x = run > 0.05 ? Math.sin(phase * 0.9) * 0.05 : 0.3 + 0.2 * Math.sin(t * 1.3);   // diam: menunduk makan rumput
+    }
+  }
+
   const PAL_PLAYER = { body: 0x4caf50, dark: 0x2e7d32, light: 0xaed581, spike: 0xffb300, eye: 0xffffff, pupil: 0x111111 };
   const PTYPES = {
     raptor: {
@@ -609,6 +731,17 @@
       name: 'T-Rex', hp: 140, speed: 6.6, wander: 1.8, dmg: 24, detect: 30, reach: 3.3,
       scale: 2.0, reward: 30, food: 60, windup: 0.55, cd: 1.8,
       pal: { body: 0x9a3d30, dark: 0x4d1c15, light: 0xd9a48f, spike: 0x2b0f0b, eye: 0xffe14d, pupil: 0x111111 }
+    },
+    // hewan lain (tidak ikut dihitung sebagai predator):
+    gallim: {                       // penakut: kabur jika didekati, daging enak
+      name: 'Gallimimus', hp: 22, speed: 8.6, wander: 1.8, dmg: 0, detect: 0, reach: 0,
+      scale: 0.85, reward: 0, food: 30, windup: 0, cd: 0, timid: true, fleeDist: 11,
+      pal: { body: 0xd9c48f, dark: 0x8c7a4a, light: 0xf5ead0, spike: 0xc0603f, eye: 0xffffff, pupil: 0x111111 }
+    },
+    trike: {                        // netral: dibiarkan aman, tapi melawan kalau diserang
+      name: 'Triceratops', hp: 90, speed: 6.0, wander: 1.4, dmg: 14, detect: 16, reach: 2.8,
+      scale: 1.1, reward: 0, food: 55, windup: 0.5, cd: 1.7, neutral: true, model: 'trike',
+      pal: { body: 0x6f8fa8, dark: 0x3e5568, light: 0xc9a46b, spike: 0x000000, eye: 0xffffff, pupil: 0x111111 }
     }
   };
 
@@ -673,7 +806,7 @@
   let time = 0, runTime = 0, clock = 0;
   let runCoins = 0, kills = 0, overAt = 0, startPerf = 0;
   let powerLeft = 0, scaleNow = 1.1, phase = 0, deathReason = '';
-  let preds = [], spawnCd = 4, chased = false, isNight = false, lastBiome = null;
+  let preds = [], spawnCd = 4, animalCd = 2, chased = false, isNight = false, lastBiome = null;
   let biomeCd = 0, drinkCd = 0, toastT = 0, saveT = 0, hurtT = 0, shake = 0;
   let camX = 0, camZ = 0, camLead = { x: 0, z: 0 }, lastWet = false, shown = {};
 
@@ -746,7 +879,7 @@
       invuln: 0, atkT: -1, atkCd: 0, atkHit: false, lastDmg: 99
     });
     time = 0; runTime = 0; runCoins = 0; kills = 0; powerLeft = 0; scaleNow = 1.1; shake = 0;
-    spawnCd = 8; chased = false; lastBiome = null; biomeCd = 0; drinkCd = 0; deathReason = '';
+    spawnCd = 8; animalCd = 2; chased = false; lastBiome = null; biomeCd = 0; drinkCd = 0; deathReason = '';
     camX = 0; camZ = 0; camLead = { x: 0, z: 0 }; shown = {};
     state = 'playing';
     startPerf = performance.now();
@@ -910,7 +1043,7 @@
     p.x += (dx / d) * 0.7;
     p.z += (dz / d) * 0.7;
     p.cd = Math.max(p.cd, 0.35);
-    if (p.state === 'wander') p.state = 'chase';
+    if (p.state === 'wander') p.state = p.def.timid ? 'flee' : 'chase';     // yang netral jadi marah, yang penakut kabur
     burst(8, p.x, 1.0 * p.def.scale, p.z);
     if (p.hp <= 0) killPred(p);
   }
@@ -918,14 +1051,14 @@
   function killPred(p) {
     p.dead = true;
     p.deadT = 0;
-    kills++;
+    if (!p.def.timid && !p.def.neutral) kills++;                 // hanya predator yang dihitung
     runCoins += p.def.reward;
     save.coins += p.def.reward;
     player.hunger = Math.min(100, player.hunger + p.def.food);
     burst(14, p.x, 1, p.z);
     GameAudio.sfx.smash();
     GameAudio.sfx.eat();
-    toast('+' + p.def.reward + ' koin · daging +' + p.def.food + ' lapar', 2.2);
+    toast((p.def.reward ? '+' + p.def.reward + ' koin · ' : '') + 'daging +' + p.def.food + ' lapar', 2.2);
   }
 
   function startAttack() {
@@ -960,7 +1093,7 @@
   function spawnPredator(type) {
     const def = PTYPES[type];
     const a = Math.random() * Math.PI * 2, d = rand(36, 46);
-    const c = makeCreature(Object.assign({ scale: def.scale }, def.pal));
+    const c = def.model === 'trike' ? makeTrike(def.pal, def.scale) : makeCreature(Object.assign({ scale: def.scale }, def.pal));
     scene.add(c.root);
     const p = {
       type, def, c, x: player.x + Math.cos(a) * d, z: player.z + Math.sin(a) * d, yaw: Math.random() * 6,
@@ -976,11 +1109,18 @@
     const day = Math.floor(runTime / DAY_LEN);
     const maxCount = (isNight ? 4 : 2) + Math.min(2, Math.floor(day / 2));
     spawnCd -= dt;
-    const alive = preds.filter((p) => !p.dead).length;
+    const alive = preds.filter((p) => !p.dead && !p.def.neutral && !p.def.timid).length;
     if (spawnCd <= 0 && alive < maxCount) {
       spawnCd = rand(4, 8);
       const rexChance = day >= 1 ? (isNight ? 0.3 : 0.15) : 0;
       spawnPredator(Math.random() < rexChance ? 'rex' : 'raptor');
+    }
+    // hewan lain (herbivora) menjaga dunia terasa hidup
+    animalCd -= dt;
+    const animals = preds.filter((p) => !p.dead && (p.def.neutral || p.def.timid)).length;
+    if (animalCd <= 0 && animals < 5) {
+      animalCd = rand(3, 6);
+      spawnPredator(Math.random() < 0.6 ? 'gallim' : 'trike');
     }
 
     for (const p of preds) {
@@ -1002,10 +1142,18 @@
           p.yaw = lerpAngle(p.yaw, faceYaw(hx, hz), Math.min(1, dt * 5));
           sp = def.wander;
         }
-        if (d < detect) {
+        if (def.timid) {
+          if (d < def.fleeDist) p.state = 'flee';
+        } else if (!def.neutral && d < detect) {
           p.state = 'chase';
           if (!p.roared) { p.roared = true; GameAudio.sfx.roar(); toast('⚠ ' + def.name + ' mengejar!', 1.6); }
         }
+      } else if (p.state === 'flee') {
+        const hx = -dx / d, hz = -dz / d;
+        sp = def.speed;
+        p.x += hx * sp * dt; p.z += hz * sp * dt;
+        p.yaw = lerpAngle(p.yaw, faceYaw(hx, hz), Math.min(1, dt * 10));
+        if (d > def.fleeDist * 1.9) p.state = 'wander';
       } else if (p.state === 'chase') {
         chased = true;
         const hx = dx / d, hz = dz / d;
@@ -1210,6 +1358,59 @@
     updateHud();
   }
 
+  // ---------- Hiasan hidup: pterosaurus di langit, kunang-kunang di malam hari ----------
+  const wingGeo = new THREE.BoxGeometry(1.5, 0.05, 0.6);
+  const flyHeadGeo = new THREE.ConeGeometry(0.14, 0.7, 5);
+  const mFly = std(0x8d6e63);
+  const flyers = [];
+  for (let i = 0; i < 3; i++) {
+    const g = new THREE.Group();
+    const bd = new THREE.Mesh(sphereGeo, mFly);
+    bd.scale.set(0.35, 0.3, 0.9);
+    g.add(bd);
+    const hd = new THREE.Mesh(flyHeadGeo, mFly);
+    hd.position.set(0, 0.05, -1.0);
+    hd.rotation.x = -1.57;
+    g.add(hd);
+    const wl = new THREE.Group(); wl.position.set(-0.25, 0.05, 0); g.add(wl);
+    const wr = new THREE.Group(); wr.position.set(0.25, 0.05, 0); g.add(wr);
+    const wml = new THREE.Mesh(wingGeo, mFly); wml.position.set(-0.75, 0, 0); wl.add(wml);
+    const wmr = new THREE.Mesh(wingGeo, mFly); wmr.position.set(0.75, 0, 0); wr.add(wmr);
+    scene.add(g);
+    flyers.push({ g, wl, wr, a: i * 2.1, r: 24 + i * 6, h: 14 + i * 2, w: 0.22 + i * 0.05, ph: i });
+  }
+
+  const flyGeo = new THREE.SphereGeometry(0.09, 5, 4);
+  const flyMat = new THREE.MeshBasicMaterial({ color: 0xd9ff5a });
+  const flies = [];
+  for (let i = 0; i < 14; i++) {
+    const mesh = new THREE.Mesh(flyGeo, flyMat);
+    mesh.visible = false;
+    scene.add(mesh);
+    flies.push({ mesh, bx: Math.random() * 48, bz: Math.random() * 48, by: rand(0.6, 2.4), ph: Math.random() * 6 });
+  }
+
+  function updateAmbient(dt) {
+    for (const f of flyers) {
+      f.a += f.w * dt;
+      f.g.position.set(player.x + Math.cos(f.a) * f.r, f.h + Math.sin(clock * 0.8 + f.ph) * 1.2, player.z + Math.sin(f.a) * f.r);
+      f.g.rotation.y = faceYaw(-Math.sin(f.a), Math.cos(f.a));        // menghadap arah terbang
+      f.g.rotation.z = 0.18;
+      const fl = Math.sin(clock * 5 + f.ph) * 0.6;
+      f.wl.rotation.z = -fl;
+      f.wr.rotation.z = fl;
+      f.g.visible = !isNight;
+    }
+    for (const f of flies) {
+      f.mesh.visible = isNight;
+      if (!isNight) continue;
+      const x = player.x + ((((f.bx - player.x) % 48) + 48) % 48) - 24;      // tersebar tetap di dunia, bukan ikut pemain
+      const z = player.z + ((((f.bz - player.z) % 48) + 48) % 48) - 24;
+      f.mesh.position.set(x + Math.sin(clock * 0.9 + f.ph) * 0.8, f.by + Math.sin(clock * 1.7 + f.ph * 2) * 0.35, z + Math.cos(clock * 0.7 + f.ph) * 0.8);
+      f.mesh.scale.setScalar(0.7 + 0.5 * Math.abs(Math.sin(clock * 3 + f.ph)));
+    }
+  }
+
   // ---------- Animasi, kamera, render ----------
   function animate(dt) {
     scaleNow += ((powerLeft > 0 ? 1.65 : 1.1) - scaleNow) * Math.min(1, dt * 5);
@@ -1250,12 +1451,14 @@
       let atk = -1;
       if (p.state === 'windup') atk = clamp(1 - p.t / p.def.windup, 0, 1) * 0.5;      // menarik kepala sebelum menggigit
       else if (p.state === 'recover') atk = 0.5 + clamp(1 - p.t / 0.5, 0, 1) * 0.5;   // menyodok lalu kembali
-      poseCreature(c, p.phase, clamp(p.speedNow / 6, 0, 1.3), false, 0, atk, clock);
+      if (c.isTrike) poseTrike(c, p.phase, clamp(p.speedNow / 6, 0, 1.3), atk, clock);
+      else poseCreature(c, p.phase, clamp(p.speedNow / 6, 0, 1.3), false, 0, atk, clock);
       setGlow(c, p.flash * 0.8, 0xffffff);
     }
 
     stepPool(dust, dt, 0);
     stepPool(sparks, dt, 9);
+    updateAmbient(dt);
   }
 
   function updateCamera(dt) {

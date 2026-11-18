@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <title>Vosil Survival</title>
+  <style>
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body {
+      margin: 0;
+      height: 100%;
+      overflow: hidden;
+      background: #9fd8f5;
+      color: #fff;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      overscroll-behavior: none;
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+    }
+    canvas#game {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+      touch-action: none;
+    }
+    .hidden { display: none !important; }
+    :root {
+      --sl: env(safe-area-inset-left);
+      --sr: env(safe-area-inset-right);
+      --st: env(safe-area-inset-top);
+      --sb: env(safe-area-inset-bottom);
+    }
+
+    /* ---------- HUD ---------- */
+    #hud { position: fixed; inset: 0; pointer-events: none; text-shadow: 0 2px 5px rgba(0, 0, 0, .55); }
+    #bars {
+      position: absolute;
+      top: calc(var(--st) + 10px);
+      left: calc(var(--sl) + 12px);
+      width: min(34vw, 230px);
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    .bar { display: flex; align-items: center; gap: 6px; font-size: 14px; }
+    .bar i { width: 20px; text-align: center; font-style: normal; }
+    .track {
+      flex: 1;
+      height: 11px;
+      border-radius: 7px;
+      background: rgba(0, 0, 0, .42);
+      border: 1px solid rgba(255, 255, 255, .45);
+      overflow: hidden;
+    }
+    .fill { height: 100%; width: 100%; transition: width .15s linear; }
+    #fHp { background: linear-gradient(90deg, #d32f2f, #ff6f60); }
+    #fHunger { background: linear-gradient(90deg, #ef6c00, #ffb74d); }
+    #fThirst { background: linear-gradient(90deg, #0277bd, #4fc3f7); }
+    #fStam { background: linear-gradient(90deg, #f9a825, #fff176); }
+    .bar.low .track { animation: blink .5s steps(2) infinite; }
+    .bar.small .track { height: 7px; }
+
+    #stats {
+      position: absolute;
+      top: calc(var(--st) + 8px);
+      right: calc(var(--sr) + 12px);
+      text-align: right;
+      font-weight: 800;
+      font-size: 20px;
+      line-height: 1.35;
+    }
+    #stats .sub { font-size: 13px; font-weight: 600; color: #e3f2fd; }
+    .coinIcon {
+      display: inline-block;
+      width: 17px; height: 17px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 35% 35%, #ffe082, #ffb300 70%);
+      border: 2px solid #f57f17;
+      vertical-align: -2px;
+      margin-right: 6px;
+    }
+
+    #toast {
+      position: absolute;
+      top: calc(var(--st) + 14px);
+      left: 50%;
+      transform: translateX(-50%);
+      max-width: 40vw;
+      text-align: center;
+      font-weight: 700;
+      font-size: 16px;
+      padding: 6px 14px;
+      border-radius: 14px;
+      background: rgba(0, 0, 0, .45);
+      opacity: 0;
+      transition: opacity .25s;
+    }
+    #toast.show { opacity: 1; }
+
+    #power {
+      position: absolute;
+      top: calc(var(--st) + 58px);
+      left: 50%;
+      transform: translateX(-50%);
+      text-align: center;
+      font-weight: 800;
+      font-size: 12px;
+      letter-spacing: 1px;
+    }
+    #powerFill { height: 100%; width: 100%; background: linear-gradient(90deg, #ff6d00, #ffd54f); }
+    #power .track { width: 130px; margin-top: 3px; }
+    #power.warn { animation: blink .25s steps(2) infinite; }
+    @keyframes blink { 50% { opacity: .35; } }
+
+    #hurt {
+      position: fixed; inset: 0;
+      pointer-events: none;
+      background: radial-gradient(ellipse at center, rgba(255, 0, 0, 0) 45%, rgba(220, 0, 0, .65) 100%);
+      opacity: 0;
+      transition: opacity .35s;
+    }
+    #hurt.on { opacity: 1; transition: none; }
+
+    /* ---------- Tombol kecil (musik, efek, layar penuh) ---------- */
+    #topBtns {
+      position: fixed;
+      top: calc(var(--st) + 68px);
+      right: calc(var(--sr) + 10px);
+      display: flex;
+      gap: 8px;
+    }
+    .ibtn {
+      width: 38px; height: 38px;
+      border: 0;
+      border-radius: 50%;
+      background: rgba(0, 0, 0, .35);
+      color: #fff;
+      font-size: 17px;
+      display: flex; align-items: center; justify-content: center;
+      touch-action: manipulation;
+      cursor: pointer;
+    }
+    .ibtn.off { opacity: .4; }
+
+    /* ---------- Analog kiri & tombol aksi kanan ---------- */
+    #stickZone {
+      position: fixed;
+      left: 0; bottom: 0;
+      width: 48vw; height: 72vh;
+      pointer-events: none;
+      touch-action: none;
+    }
+    body.playing #stickZone { pointer-events: auto; }
+    #stickBase, #stickKnob {
+      position: fixed;
+      border-radius: 50%;
+      pointer-events: none;
+    }
+    #stickBase {
+      width: 124px; height: 124px;
+      border: 3px solid rgba(255, 255, 255, .55);
+      background: rgba(255, 255, 255, .13);
+    }
+    #stickKnob {
+      width: 58px; height: 58px;
+      background: rgba(255, 255, 255, .6);
+      border: 2px solid rgba(255, 255, 255, .85);
+    }
+    /* petunjuk posisi analog sebelum disentuh */
+    #stickHint {
+      position: fixed;
+      left: calc(var(--sl) + 46px);
+      bottom: calc(var(--sb) + 40px);
+      width: 124px; height: 124px;
+      border-radius: 50%;
+      border: 3px dashed rgba(255, 255, 255, .35);
+      pointer-events: none;
+    }
+    body:not(.playing) #stickHint { display: none; }
+
+    #btns { display: none; }
+    body.playing #btns { display: block; }
+    .abtn {
+      position: fixed;
+      border-radius: 50%;
+      border: 3px solid rgba(255, 255, 255, .7);
+      background: rgba(30, 40, 50, .4);
+      color: #fff;
+      font-size: 26px;
+      display: flex; align-items: center; justify-content: center;
+      touch-action: none;
+      cursor: pointer;
+      padding: 0;
+    }
+    .abtn span { font-size: 11px; font-weight: 700; display: block; margin-top: -2px; }
+    .abtn.on { background: rgba(255, 255, 255, .4); transform: scale(.95); }
+    #btnAttack {
+      width: 98px; height: 98px;
+      right: calc(var(--sr) + 30px);
+      bottom: calc(var(--sb) + 26px);
+      background: rgba(211, 47, 47, .5);
+      font-size: 36px;
+    }
+    #btnJump {
+      width: 74px; height: 74px;
+      right: calc(var(--sr) + 142px);
+      bottom: calc(var(--sb) + 22px);
+    }
+    #btnSprint {
+      width: 74px; height: 74px;
+      right: calc(var(--sr) + 52px);
+      bottom: calc(var(--sb) + 134px);
+    }
+
+    /* ---------- Panel menu & game over ---------- */
+    .panel {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 16px 24px;
+      background: rgba(10, 20, 30, .6);
+      pointer-events: none;
+      text-shadow: 0 2px 6px rgba(0, 0, 0, .5);
+    }
+    .panel h1 { margin: 0 0 4px; font-size: clamp(26px, 7vh, 40px); letter-spacing: 1px; color: #ffd54f; }
+    .panel h2 { margin: 0 0 8px; font-size: clamp(26px, 7vh, 38px); color: #ef5350; }
+    .panel p { margin: 4px 0; }
+    .lead { font-size: clamp(14px, 3.6vh, 17px); }
+    .help {
+      display: grid;
+      grid-template-columns: auto auto;
+      gap: 4px 22px;
+      list-style: none;
+      padding: 0;
+      margin: 10px 0;
+      color: #cfd8dc;
+      font-size: clamp(12px, 3.2vh, 15px);
+      text-align: left;
+    }
+    .stat { color: #cfd8dc; font-size: clamp(13px, 3.4vh, 16px); }
+    .big { font-size: clamp(16px, 4.4vh, 21px); }
+    .gold { color: #ffd54f; }
+    .cta { margin-top: 12px !important; font-size: clamp(18px, 5vh, 24px); font-weight: 800; animation: blink 1.2s ease-in-out infinite; }
+    .claim {
+      margin-top: 8px;
+      border: 0; border-radius: 8px;
+      padding: 6px 12px;
+      font-weight: 600;
+      background: #37474f; color: #90a4ae;
+    }
+
+    /* ---------- Minta putar layar ---------- */
+    #rotate {
+      position: fixed; inset: 0; z-index: 20;
+      display: none;
+      flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 10px;
+      background: #101820;
+      text-align: center;
+      font-size: 18px;
+      padding: 24px;
+    }
+    #rotate b { font-size: 54px; display: block; animation: tilt 1.6s ease-in-out infinite; }
+    @keyframes tilt { 0%, 100% { transform: rotate(0); } 50% { transform: rotate(-90deg); } }
+    @media (orientation: portrait) { #rotate { display: flex; } }
+
+    #fatal {
+      position: fixed; inset: 0; z-index: 30;
+      display: none;
+      align-items: center; justify-content: center;
+      text-align: center; padding: 24px;
+      background: #101820;
+      font-size: 16px; line-height: 1.6;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <div id="hud" class="hidden">
+    <div id="bars">
+      <div class="bar"><i>❤️</i><div class="track"><div id="fHp" class="fill"></div></div></div>
+      <div class="bar" id="rowHunger"><i>🍖</i><div class="track"><div id="fHunger" class="fill"></div></div></div>
+      <div class="bar" id="rowThirst"><i>💧</i><div class="track"><div id="fThirst" class="fill"></div></div></div>
+      <div class="bar small"><i>⚡</i><div class="track"><div id="fStam" class="fill"></div></div></div>
+    </div>
+    <div id="stats">
+      <div><span class="coinIcon"></span><span id="runCoins">0</span></div>
+      <div class="sub">Hari <b id="dayNo">1</b> · <span id="timeIcon">☀️</span></div>
+    </div>
+    <div id="toast"></div>
+    <div id="power" class="hidden">
+      <div>🥚 MODE KUAT</div>
+      <div class="track"><div id="powerFill"></div></div>
+    </div>
+  </div>
+  <div id="hurt"></div>
+
+  <div id="topBtns">
+    <button id="musicBtn" class="ibtn" type="button" data-on="🎵" data-off="🎵" aria-label="Musik">🎵</button>
+    <button id="sfxBtn" class="ibtn" type="button" data-on="🔊" data-off="🔊" aria-label="Efek suara">🔊</button>
+    <button id="fsBtn" class="ibtn" type="button" aria-label="Layar penuh">⛶</button>
+  </div>
+
+  <div id="stickHint"></div>
+  <div id="stickZone"></div>
+  <div id="stickBase" class="hidden"></div>
+  <div id="stickKnob" class="hidden"></div>
+
+  <div id="btns">
+    <button id="btnSprint" class="abtn" type="button">🏃<span>LARI</span></button>
+    <button id="btnJump" class="abtn" type="button">⤴<span>LOMPAT</span></button>
+    <button id="btnAttack" class="abtn" type="button">🦖<span>GIGIT</span></button>
+  </div>
+
+  <div id="menu" class="panel">
+    <h1>VOSIL SURVIVAL</h1>
+    <p class="lead">Jelajahi lembah prasejarah, bertahan hidup, kumpulkan koin</p>
+    <ul class="help">
+      <li>🕹️ Analog kiri: bergerak bebas</li>
+      <li>🦖 Gigit: serang predator</li>
+      <li>⤴ Lompat: hindari gigitan</li>
+      <li>🏃 Lari: kabur (menguras tenaga)</li>
+      <li>🍒 Semak buah: isi lapar</li>
+      <li>💧 Kolam: isi haus</li>
+    </ul>
+    <p class="stat">Total koin: <b id="menuTotal">0</b> &nbsp;|&nbsp; Rekor: <b id="menuBest">0</b> hari</p>
+    <p class="cta">Ketuk untuk mulai</p>
+    <!-- Tombol ini akan diaktifkan di tahap wallet + smart contract -->
+    <button id="claimBtn" class="claim" disabled>Klaim Vosil (segera)</button>
+  </div>
+
+  <div id="over" class="panel hidden">
+    <h2>KAMU TUMBANG</h2>
+    <p class="big" id="overReason"></p>
+    <p class="big">Bertahan: <b id="overDays">0</b> hari &nbsp;·&nbsp; Predator: <b id="overKills">0</b></p>
+    <p class="big gold">Koin didapat: +<b id="overCoins">0</b></p>
+    <p class="stat" id="overBest"></p>
+    <p class="stat">Total koin: <b id="overTotal">0</b></p>
+    <p class="cta">Ketuk untuk main lagi</p>
+  </div>
+
+  <div id="rotate"><b>📱</b>Putar HP ke posisi horizontal (landscape) untuk bermain</div>
+  <div id="fatal"><div id="fatalMsg"></div></div>
+
+  <!-- Three.js dari CDN. Kalau gagal, taruh three.min.js (versi r128) di folder yang sama. -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script>window.THREE || document.write('<script src="three.min.js"><\/script>');</script>
+  <script src="audio.js"></script>
+  <script src="survival.js"></script>
+</body>
+</html>

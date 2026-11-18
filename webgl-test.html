@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tes WebGL</title>
+  <style>
+    body { margin: 0; padding: 20px; background: #101820; color: #eceff1; font-family: system-ui, sans-serif; line-height: 1.55; }
+    h1 { font-size: 22px; margin: 0 0 12px; }
+    .row { margin: 10px 0; padding: 12px; border-radius: 10px; background: #17222d; word-break: break-word; }
+    .ok { color: #81c784; font-weight: 700; }
+    .no { color: #ef5350; font-weight: 700; }
+    .warn { color: #ffd54f; font-weight: 700; }
+    small { color: #90a4ae; }
+    ul { margin: 6px 0 0; padding-left: 20px; }
+  </style>
+</head>
+<body>
+  <h1>Tes WebGL</h1>
+  <div id="out"></div>
+
+  <script>
+    (function () {
+      var out = document.getElementById('out');
+      function row(html) { var d = document.createElement('div'); d.className = 'row'; d.innerHTML = html; out.appendChild(d); }
+      function esc(s) { return String(s).replace(/[&<>]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }); }
+
+      var ua = navigator.userAgent || '';
+      var inApp = /FBAN|FBAV|Instagram|Line\/|MicroMessenger|Snapchat|TikTok|musical_ly|Telegram|WhatsApp|; wv\)|GSA\//i.test(ua);
+
+      function tryCtx(names) {
+        for (var i = 0; i < names.length; i++) {
+          try {
+            var c = document.createElement('canvas');
+            var gl = c.getContext(names[i]);
+            if (gl) return { gl: gl, name: names[i] };
+          } catch (e) { /* lanjut */ }
+        }
+        return null;
+      }
+
+      var r2 = tryCtx(['webgl2']);
+      var r1 = tryCtx(['webgl', 'experimental-webgl']);
+      var best = r1 || r2;
+
+      row('WebGL 1: ' + (r1 ? '<span class="ok">TERSEDIA</span>' : '<span class="no">TIDAK TERSEDIA</span>') +
+          '<br>WebGL 2: ' + (r2 ? '<span class="ok">TERSEDIA</span>' : '<span class="no">tidak tersedia</span>') +
+          '<br><small>Game ini butuh WebGL 1 (cukup).</small>');
+
+      if (best) {
+        var gl = best.gl, info = '';
+        try {
+          var ext = gl.getExtension('WEBGL_debug_renderer_info');
+          if (ext) info = gl.getParameter(ext.UNMASKED_RENDERER_WEBGL);
+        } catch (e) { /* abaikan */ }
+        if (!info) info = gl.getParameter(gl.RENDERER);
+        row('Pemroses grafis: ' + esc(info) +
+            (/swiftshader|software|llvmpipe|basic render/i.test(info)
+              ? '<br><span class="warn">Ini grafis perangkat lunak (lambat). Biasanya karena akselerasi perangkat keras mati.</span>' : ''));
+      }
+
+      row('Browser: <small>' + esc(ua) + '</small>');
+
+      if (inApp) {
+        row('<span class="warn">Sepertinya Anda membuka lewat browser di dalam aplikasi (WhatsApp, Instagram, Telegram, dsb.).</span>' +
+            '<br>Browser seperti itu sering membatasi WebGL. Salin link lalu buka langsung di <b>Chrome</b> (Android) atau <b>Safari</b> (iPhone).');
+      }
+
+      if (!best) {
+        row('<span class="no">WebGL tidak bisa dibuat di browser ini.</span><ul>' +
+            '<li>Buka lewat <b>Chrome</b> atau <b>Safari</b> langsung, bukan dari dalam aplikasi lain.</li>' +
+            '<li>Matikan <b>mode hemat baterai</b> / hemat daya.</li>' +
+            '<li><b>Chrome Android:</b> Pengaturan → Lite mode / Penghemat data → matikan. Perbarui Chrome dan "Android System WebView" di Play Store.</li>' +
+            '<li><b>Komputer:</b> Chrome → Pengaturan → Sistem → nyalakan "Gunakan akselerasi perangkat keras jika tersedia", lalu mulai ulang Chrome. Buka <code>chrome://gpu</code> untuk melihat statusnya.</li>' +
+            '<li>Mulai ulang HP, lalu coba lagi. Kalau HP sangat lama, versi 2D (index.html) tetap bisa dimainkan.</li>' +
+            '</ul>');
+      } else {
+        row('<span class="ok">WebGL berfungsi.</span> Game 3D seharusnya bisa berjalan. Kalau masih gagal, kirim tangkapan layar halaman ini ke saya.');
+      }
+    })();
+  </script>
+</body>
+</html>

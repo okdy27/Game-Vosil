@@ -145,6 +145,67 @@
   const std = (color, extra) =>
     new THREE.MeshStandardMaterial(Object.assign({ color, flatShading: true, roughness: 0.85, metalness: 0 }, extra || {}));
 
+  const rbox = (a, b, c) => new THREE.SphereGeometry(0.5, 10, 8).scale(a, b, c);      // "kotak" yang dibulatkan
+  const smoothStd = (color, extra) => std(color, Object.assign({ flatShading: false }, extra || {}));
+
+  // Gabungkan mesh-mesh statis di dalam satu grup (yang bahannya sama) menjadi satu mesh,
+  // supaya jumlah "draw call" kecil dan HP tetap lancar. Gerak sendi tidak terpengaruh karena
+  // setiap grup yang bergerak (kaki, rahang, ekor, dst.) digabung terpisah.
+  function mergeTree(g) {
+    const kids = g.children;
+    if (!Array.isArray(kids)) return;
+    for (const k of kids.slice()) if (!k.geometry && Array.isArray(k.children)) mergeTree(k);
+    const byMat = new Map();
+    for (const k of kids.slice()) {
+      const geo = k.geometry;
+      if (!geo || !geo.attributes || !geo.attributes.position || !geo.attributes.normal) continue;
+      if (Array.isArray(k.children) && k.children.length) continue;
+      if (!byMat.has(k.material)) byMat.set(k.material, []);
+      byMat.get(k.material).push(k);
+    }
+    byMat.forEach((list, mat) => {
+      if (list.length < 2) return;
+      let nv = 0, ni = 0;
+      for (const m of list) {
+        const gm = m.geometry;
+        nv += gm.attributes.position.array.length / 3;
+        ni += gm.index ? gm.index.array.length : gm.attributes.position.array.length / 3;
+      }
+      const pos = new Float32Array(nv * 3), nor = new Float32Array(nv * 3);
+      const idx = nv < 65535 ? new Uint16Array(ni) : new Uint32Array(ni);
+      let vo = 0, io = 0;
+      for (const m of list) {
+        const gm = m.geometry, pa = gm.attributes.position.array, na = gm.attributes.normal.array;
+        const sx = m.scale.x, sy = m.scale.y, sz = m.scale.z;
+        const A = Math.cos(m.rotation.x), B = Math.sin(m.rotation.x), C = Math.cos(m.rotation.y), D = Math.sin(m.rotation.y);
+        const E = Math.cos(m.rotation.z), F = Math.sin(m.rotation.z);
+        const AE = A * E, AF = A * F, BE = B * E, BF = B * F;
+        const r00 = C * E, r01 = -C * F, r02 = D, r10 = AF + BE * D, r11 = AE - BF * D, r12 = -B * C, r20 = BF - AE * D, r21 = BE + AF * D, r22 = A * C;
+        const n = pa.length / 3;
+        for (let i = 0; i < n; i++) {
+          const x = pa[i * 3] * sx, y = pa[i * 3 + 1] * sy, z = pa[i * 3 + 2] * sz;
+          const o = (vo + i) * 3;
+          pos[o] = r00 * x + r01 * y + r02 * z + m.position.x;
+          pos[o + 1] = r10 * x + r11 * y + r12 * z + m.position.y;
+          pos[o + 2] = r20 * x + r21 * y + r22 * z + m.position.z;
+          const nx = na[i * 3] / sx, ny = na[i * 3 + 1] / sy, nz = na[i * 3 + 2] / sz;
+          let qx = r00 * nx + r01 * ny + r02 * nz, qy = r10 * nx + r11 * ny + r12 * nz, qz = r20 * nx + r21 * ny + r22 * nz;
+          const l = Math.hypot(qx, qy, qz) || 1;
+          nor[o] = qx / l; nor[o + 1] = qy / l; nor[o + 2] = qz / l;
+        }
+        if (gm.index) { const ia = gm.index.array; for (let i = 0; i < ia.length; i++) idx[io++] = ia[i] + vo; }
+        else for (let i = 0; i < n; i++) idx[io++] = vo + i;
+        vo += n;
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+      geo.setIndex(new THREE.BufferAttribute(idx, 1));
+      for (const m of list) g.remove(m);
+      g.add(new THREE.Mesh(geo, mat));
+    });
+  }
+
   // ---------- Bioma ----------
   const BIOMES = {
     plain: { id: 'plain', name: 'Padang Rumput', color: 0x7bbf52, patch: 0x6dae47, tree: 1, cycad: 0.5, rock: 1, bush: 1.1, pond: 0.2, cactus: 0, coin: 1.1 },
@@ -670,72 +731,118 @@
     const root = new THREE.Group();
     const body = new THREE.Group();
     root.add(body);
-    const green = std(p.body), dark = std(p.dark), light = std(p.light), spikeM = std(p.spike);
+    const green = smoothStd(p.body), dark = smoothStd(p.dark), light = smoothStd(p.light), spikeM = smoothStd(p.spike);
     const white = std(p.eye, { flatShading: false }), black = std(p.pupil, { flatShading: false });
+    const bone = smoothStd(0xf3efe2);
     const part = (geo, mat, x, y, z, parent) => {
       const m = new THREE.Mesh(geo, mat);
       m.position.set(x, y, z);
       (parent || body).add(m);
       return m;
     };
+    const ball = (r, mat, sx, sy, sz, x, y, z, parent) => {
+      const m = part(new THREE.SphereGeometry(r, 14, 10), mat, x, y, z, parent);
+      m.scale.set(sx, sy, sz);
+      return m;
+    };
 
-    const torso = part(new THREE.SphereGeometry(0.62, 10, 8), green, 0, 1.15, 0);
-    torso.scale.set(0.85, 0.8, 1.25);
-    const belly = part(new THREE.SphereGeometry(0.55, 8, 6), light, 0, 0.98, -0.05);
-    belly.scale.set(0.8, 0.6, 1.15);
+    // badan: dada, perut, dan pinggul yang menyatu
+    ball(0.62, green, 0.85, 0.8, 1.25, 0, 1.15, 0);
+    ball(0.46, green, 0.9, 0.9, 1.0, 0, 1.28, -0.48);
+    ball(0.52, green, 0.95, 0.85, 1.0, 0, 1.1, 0.42);
+    ball(0.55, light, 0.8, 0.6, 1.15, 0, 0.98, -0.05);
 
     for (let i = 0; i < 6; i++) {
       const z = -0.6 + i * 0.26, h = 0.42 - i * 0.04;
       const topY = 1.15 + 0.496 * Math.sqrt(Math.max(0, 1 - (z / 0.775) * (z / 0.775)));
-      part(new THREE.ConeGeometry(0.14, h, 5), spikeM, 0, topY + h / 2 - 0.04, z);
+      part(new THREE.ConeGeometry(0.14, h, 6), spikeM, 0, topY + h / 2 - 0.04, z);
     }
 
-    part(new THREE.SphereGeometry(0.34, 8, 6), green, 0, 1.45, -0.7);
+    // leher
+    ball(0.3, green, 1, 1, 1, 0, 1.42, -0.68);
+    ball(0.26, green, 1, 1, 1, 0, 1.55, -0.8);
+
+    // kepala: tengkorak, moncong, rahang bawah yang bisa membuka
     const headPivot = new THREE.Group();
     headPivot.position.set(0, 1.62, -0.85);
     body.add(headPivot);
-    part(new THREE.SphereGeometry(0.42, 10, 8), green, 0, 0, 0, headPivot);
-    part(new THREE.BoxGeometry(0.46, 0.32, 0.6), green, 0, -0.1, -0.42, headPivot);
-    part(new THREE.BoxGeometry(0.4, 0.12, 0.5), dark, 0, -0.3, -0.38, headPivot);
-    for (const s of [-1, 1]) {
-      part(new THREE.SphereGeometry(0.1, 8, 6), white, s * 0.27, 0.12, -0.2, headPivot);
-      part(new THREE.SphereGeometry(0.055, 6, 6), black, s * 0.33, 0.12, -0.25, headPivot);
+    ball(0.4, green, 0.85, 0.82, 1.0, 0, 0, 0, headPivot);
+    ball(0.3, green, 0.78, 0.6, 1.55, 0, -0.07, -0.42, headPivot);
+    ball(0.12, dark, 1, 0.7, 1, 0, 0.0, -0.78, headPivot);                               // ujung hidung
+    for (const sx of [-1, 1]) {
+      for (let i = 0; i < 3; i++) {                                                       // gigi atas
+        const tooth = part(new THREE.ConeGeometry(0.03, 0.11, 4), bone, sx * (0.13 - i * 0.01), -0.21, -0.3 - i * 0.14, headPivot);
+        tooth.rotation.x = Math.PI;
+      }
+    }
+    const jaw = new THREE.Group();
+    jaw.position.set(0, -0.14, -0.12);
+    headPivot.add(jaw);
+    ball(0.2, light, 0.75, 0.38, 1.6, 0, -0.1, -0.32, jaw);
+    for (const sx of [-1, 1]) for (let i = 0; i < 2; i++) part(new THREE.ConeGeometry(0.025, 0.09, 4), bone, sx * 0.11, -0.03, -0.35 - i * 0.16, jaw);
+    for (const s2 of [-1, 1]) {
+      part(new THREE.SphereGeometry(0.1, 10, 8), white, s2 * 0.26, 0.12, -0.17, headPivot);
+      part(new THREE.SphereGeometry(0.055, 8, 6), black, s2 * 0.325, 0.12, -0.23, headPivot);
+      ball(0.1, dark, 1.2, 0.45, 1.5, s2 * 0.25, 0.23, -0.17, headPivot);                  // alis
     }
 
+    // lengan kecil bercakar
     const arms = [];
-    for (const s of [-1, 1]) {
+    for (const s2 of [-1, 1]) {
       const pv = new THREE.Group();
-      pv.position.set(s * 0.45, 1.25, -0.6);
+      pv.position.set(s2 * 0.45, 1.2, -0.6);
       body.add(pv);
-      part(new THREE.BoxGeometry(0.13, 0.13, 0.34), dark, 0, -0.04, -0.14, pv);
+      const up = part(new THREE.CylinderGeometry(0.05, 0.08, 0.36, 7), dark, 0, -0.05, -0.15, pv);
+      up.rotation.x = 1.3;
+      ball(0.075, dark, 1, 1, 1.2, 0, -0.1, -0.33, pv);
+      for (const c of [-1, 0, 1]) {
+        const cl = part(new THREE.ConeGeometry(0.025, 0.12, 4), bone, c * 0.035, -0.11, -0.43, pv);
+        cl.rotation.x = -1.4;
+      }
       arms.push(pv);
     }
 
+    // kaki: paha berotot, betis ramping, telapak bercakar
     const legs = [];
-    for (const s of [-1, 1]) {
+    for (const s2 of [-1, 1]) {
       const hip = new THREE.Group();
-      hip.position.set(s * 0.44, 0.99, 0.12);
+      hip.position.set(s2 * 0.44, 0.99, 0.12);
       body.add(hip);
-      part(new THREE.CylinderGeometry(0.2, 0.15, 0.5, 7), dark, 0, -0.25, 0, hip);
+      ball(0.27, dark, 1, 1.15, 1.25, 0, -0.07, 0.03, hip);
+      part(new THREE.CylinderGeometry(0.19, 0.14, 0.5, 9), dark, 0, -0.27, 0, hip);
       const knee = new THREE.Group();
       knee.position.set(0, -0.5, 0);
       hip.add(knee);
-      part(new THREE.CylinderGeometry(0.14, 0.1, 0.42, 7), green, 0, -0.21, 0, knee);
-      part(new THREE.BoxGeometry(0.3, 0.14, 0.52), dark, 0, -0.45, -0.12, knee);
-      for (const c of [-1, 0, 1]) part(new THREE.BoxGeometry(0.06, 0.06, 0.1), white, c * 0.09, -0.47, -0.4, knee);
-      legs.push({ hip, knee });
+      ball(0.14, dark, 1, 1, 1, 0, 0, 0, knee);
+      part(new THREE.CylinderGeometry(0.13, 0.08, 0.44, 8), green, 0, -0.22, 0, knee);
+      const foot = new THREE.Group();
+      foot.position.set(0, -0.43, 0);
+      knee.add(foot);
+      ball(0.1, green, 1, 1, 1, 0, 0, 0, foot);
+      ball(0.16, dark, 1, 0.5, 2.1, 0, -0.04, -0.13, foot);
+      for (const c of [-1, 0, 1]) {
+        const toe = part(new THREE.ConeGeometry(0.045, 0.16, 5), white, c * 0.09, -0.05, -0.38, foot);
+        toe.rotation.x = -1.45;
+      }
+      legs.push({ hip, knee, foot });
     }
 
+    // ekor tiga ruas supaya meliuk halus
     const tail1 = new THREE.Group();
     tail1.position.set(0, 1.08, 0.7);
     body.add(tail1);
-    const t1 = part(new THREE.CylinderGeometry(0.2, 0.34, 1.1, 7), green, 0, 0, 0.55, tail1);
+    const t1 = part(new THREE.CylinderGeometry(0.2, 0.34, 1.1, 10), green, 0, 0, 0.55, tail1);
     t1.rotation.x = Math.PI / 2;
     const tail2 = new THREE.Group();
     tail2.position.set(0, 0, 1.1);
     tail1.add(tail2);
-    const t2 = part(new THREE.CylinderGeometry(0.04, 0.2, 1.0, 7), dark, 0, 0, 0.5, tail2);
+    const t2 = part(new THREE.CylinderGeometry(0.1, 0.2, 0.9, 9), dark, 0, 0, 0.45, tail2);
     t2.rotation.x = Math.PI / 2;
+    const tail3 = new THREE.Group();
+    tail3.position.set(0, 0, 0.9);
+    tail2.add(tail3);
+    const t3 = part(new THREE.CylinderGeometry(0.015, 0.1, 0.8, 8), dark, 0, 0, 0.4, tail3);
+    t3.rotation.x = Math.PI / 2;
 
     const v = p.variant;
     if (v === 'velo') {                                   // cakar sabit di kaki + jambul bulu
@@ -761,15 +868,16 @@
         const z = -0.72 + i * 0.24, h = 0.55 - Math.abs(i - 3) * 0.1;
         part(new THREE.ConeGeometry(0.09, h, 4), spikeM, 0, 2.22 + (h - 0.4) * 0.3, z);
       }
-      part(new THREE.BoxGeometry(0.3, 0.2, 0.75), green, 0, -0.12, -0.95, headPivot);
+      part(rbox(0.3, 0.2, 0.85), green, 0, -0.1, -0.95, headPivot);
     } else if (v === 'parasaur') {                        // tabung tulang di belakang kepala + paruh bebek
       const tube = part(new THREE.CylinderGeometry(0.06, 0.1, 1.15, 6), spikeM, 0, 0.5, 0.5, headPivot);
       tube.rotation.x = 1.2;
-      part(new THREE.BoxGeometry(0.5, 0.1, 0.45), light, 0, -0.2, -0.72, headPivot);
+      part(rbox(0.5, 0.14, 0.5), light, 0, -0.17, -0.74, headPivot);
     }
 
     root.scale.setScalar(p.scale);
-    return { root, body, headPivot, arms, legs, tail1, tail2, mats: [green, dark, light] };
+    mergeTree(root);
+    return { root, body, headPivot, jaw, arms, legs, tail1, tail2, tail3, mats: [green, dark, light] };
   }
 
   function setGlow(c, v, hex) {
@@ -777,33 +885,48 @@
   }
 
   // atk: kemajuan gigitan 0..1, atau -1 jika tidak menggigit
+  let animDt = 0.016;
+  const approach = (cur, target, rate) => cur + (target - cur) * Math.min(1, animDt * rate);
   function poseCreature(c, phase, run, air, vy, atk, t) {
+    // nilai dihaluskan supaya perpindahan diam <-> lari <-> lompat tidak patah-patah
+    const r = c.runS = approach(c.runS === undefined ? run : c.runS, run, 9);
+    const a = c.airS = approach(c.airS === undefined ? 0 : c.airS, air ? 1 : 0, 14);
     for (let i = 0; i < 2; i++) {
       const L = c.legs[i];
       const ph = phase + i * Math.PI;
-      if (air) {
-        L.hip.rotation.x = i === 0 ? 0.75 : -0.45;
-        L.knee.rotation.x = -0.95;
-      } else {
-        L.hip.rotation.x = Math.sin(ph) * 0.8 * run;
-        L.knee.rotation.x = -0.1 - (0.5 + 0.5 * Math.sin(ph + 1.1)) * 0.8 * run;
-      }
+      const swing = Math.sin(ph);
+      const lift = Math.max(0, Math.sin(ph + 1.2));                                 // lutut menekuk hanya saat kaki diayun ke depan
+      const hipG = swing * 0.8 * r, kneeG = -0.12 - lift * 0.95 * r;
+      const hipA = i === 0 ? 0.75 : -0.45, kneeA = -0.95;
+      L.hip.rotation.x = hipG * (1 - a) + hipA * a;
+      L.knee.rotation.x = kneeG * (1 - a) + kneeA * a;
+      if (L.foot) L.foot.rotation.x = -(L.hip.rotation.x + L.knee.rotation.x) * 0.75 + (1 - a) * lift * 0.35 * r;   // telapak tetap mendatar
     }
-    c.body.position.y = air ? 0 : (run > 0.05 ? Math.abs(Math.sin(phase)) * 0.09 * run : Math.sin(t * 2) * 0.02);
-    c.body.rotation.x = air ? (vy > 0 ? 0.15 : -0.15) : 0;
-    const sway = run > 0.05 ? run : 0.25;
-    c.tail1.rotation.y = Math.sin(run > 0.05 ? phase * 0.5 : t * 1.2) * 0.3 * sway;
-    c.tail2.rotation.y = Math.sin((run > 0.05 ? phase * 0.5 : t * 1.2) - 0.9) * 0.4 * sway;
-    c.tail1.rotation.x = air ? -0.25 : 0;
-    for (let i = 0; i < 2; i++) c.arms[i].rotation.x = Math.sin(phase * 2 + i) * 0.45 * run;
-    if (atk >= 0) {                                   // gigitan: kepala menyodok ke depan
+    const bob = Math.abs(Math.sin(phase)) * 0.09 * r * (1 - a);
+    const breathe = Math.sin(t * 2.1) * 0.022 * (1 - r);
+    c.body.position.y = bob + breathe;
+    const lean = (-0.07 * r) + (a > 0.5 ? (vy > 0 ? 0.15 : -0.15) * a : 0);
+    c.body.rotation.x = approach(c.body.rotation.x, lean, 10);
+    c.body.rotation.z = Math.sin(phase) * 0.035 * r * (1 - a);                        // badan miring mengikuti langkah
+    c.body.rotation.y = Math.sin(phase) * 0.06 * r * (1 - a);
+    const sway = r > 0.05 ? r : 0.25, sp = r > 0.05 ? phase * 0.5 : t * 1.2;
+    c.tail1.rotation.y = Math.sin(sp) * 0.26 * sway;
+    c.tail2.rotation.y = Math.sin(sp - 0.8) * 0.34 * sway;
+    if (c.tail3) c.tail3.rotation.y = Math.sin(sp - 1.6) * 0.4 * sway;
+    c.tail1.rotation.x = -0.25 * a + Math.sin(phase) * 0.03 * r;
+    if (c.tail3) c.tail3.rotation.x = Math.sin(phase + 1) * 0.08 * r;
+    for (let i = 0; i < 2; i++) c.arms[i].rotation.x = Math.sin(phase * 2 + i * Math.PI) * 0.4 * r - 0.2 * a;
+    if (atk >= 0) {                                   // gigitan: kepala menyodok, rahang membuka lalu menutup
       const s = Math.sin(Math.PI * atk);
       c.headPivot.position.z = -0.85 - 0.5 * s;
-      c.headPivot.rotation.x = 0.55 * s;
+      c.headPivot.rotation.x = 0.4 * s;
+      if (c.jaw) c.jaw.rotation.x = -0.7 * Math.sin(Math.PI * Math.min(1, atk * 1.15));
     } else {
       c.headPivot.position.z = -0.85;
-      c.headPivot.rotation.x = Math.sin(phase * 2) * 0.06 * run;
+      c.headPivot.rotation.x = -c.body.rotation.x * 0.8 + Math.sin(phase * 2) * 0.04 * r;       // kepala menyeimbangkan badan
+      if (c.jaw) c.jaw.rotation.x = approach(c.jaw.rotation.x, -0.06 - 0.04 * Math.sin(t * 2.1), 12);
     }
+    c.headPivot.rotation.y = -c.body.rotation.y * 0.7;
   }
 
   // Triceratops: berkaki empat, berkepala berpelindung dengan tiga tanduk (menghadap -Z)
@@ -811,7 +934,7 @@
     const root = new THREE.Group();
     const body = new THREE.Group();
     root.add(body);
-    const mBody = std(p.body), mDark = std(p.dark), mFrill = std(p.light), mHorn = std(0xf5f0e1);
+    const mBody = smoothStd(p.body), mDark = smoothStd(p.dark), mFrill = smoothStd(p.light), mHorn = smoothStd(0xf5f0e1);
     const white = std(0xffffff, { flatShading: false }), black = std(0x111111, { flatShading: false });
     const part = (geo, mat, x, y, z, parent) => {
       const m = new THREE.Mesh(geo, mat);
@@ -830,7 +953,7 @@
       hip.position.set(x, 0.85, z);
       body.add(hip);
       part(new THREE.CylinderGeometry(0.2, 0.16, 0.85, 7), mDark, 0, -0.42, 0, hip);
-      part(new THREE.BoxGeometry(0.34, 0.1, 0.42), mDark, 0, -0.85, -0.05, hip);
+      part(rbox(0.36, 0.14, 0.5), mDark, 0, -0.85, -0.05, hip);
       legs4.push(hip);
     }
 
@@ -838,7 +961,7 @@
     headPivot.position.set(0, 1.15, -1.25);
     body.add(headPivot);
     part(new THREE.SphereGeometry(0.46, 10, 8), mBody, 0, 0, 0, headPivot);
-    part(new THREE.BoxGeometry(0.32, 0.28, 0.45), mDark, 0, -0.12, -0.42, headPivot);     // paruh
+    part(rbox(0.34, 0.3, 0.5), mDark, 0, -0.12, -0.42, headPivot);     // paruh
     const frill = part(new THREE.CylinderGeometry(0.95, 0.95, 0.1, 14), mFrill, 0, 0.3, 0.4, headPivot);
     frill.rotation.x = -1.2;                                                              // perisai di belakang kepala
     for (const sx of [-1, 1]) {
@@ -853,22 +976,28 @@
     tail.rotation.x = 1.45;
 
     root.scale.setScalar(scale);
+    mergeTree(root);
     return { root, body, headPivot, legs4, tail, mats: [mBody, mDark, mFrill], isTrike: true, hz: -1.25, graze: 0.3, stride: 0.55 };
   }
 
   function poseTrike(c, phase, run, atk, t) {
+    const r = c.runS = approach(c.runS === undefined ? run : c.runS, run, 8);
     const offs = [0, Math.PI, Math.PI, 0];
     const hz = c.hz === undefined ? -1.25 : c.hz, graze = c.graze === undefined ? 0.3 : c.graze;
-    for (let i = 0; i < 4; i++) c.legs4[i].rotation.x = Math.sin(phase * 0.9 + offs[i]) * (c.stride || 0.55) * run;
-    c.body.position.y = run > 0.05 ? Math.abs(Math.sin(phase * 0.9)) * 0.05 * run : Math.sin(t * 1.5) * 0.015;
-    c.tail.rotation.y = Math.sin(t * 1.4) * 0.2;
+    for (let i = 0; i < 4; i++) c.legs4[i].rotation.x = Math.sin(phase * 0.9 + offs[i]) * (c.stride || 0.55) * r;
+    c.body.position.y = Math.abs(Math.sin(phase * 0.9)) * 0.05 * r + Math.sin(t * 1.5) * 0.015 * (1 - r);
+    c.body.rotation.z = Math.sin(phase * 0.9) * 0.03 * r;                       // berat badan berpindah saat melangkah
+    c.body.rotation.y = Math.sin(phase * 0.9 + 1.5) * 0.035 * r;
+    c.tail.rotation.y = Math.sin(t * 1.4) * 0.2 + Math.sin(phase * 0.9) * 0.15 * r;
     if (atk >= 0) {                                       // menyeruduk dengan tanduk
       const s = Math.sin(Math.PI * atk);
       c.headPivot.position.z = hz - 0.45 * s;
       c.headPivot.rotation.x = 0.35 * s;
     } else {
       c.headPivot.position.z = hz;
-      c.headPivot.rotation.x = run > 0.05 ? Math.sin(phase * 0.9) * 0.05 : graze + 0.2 * Math.sin(t * 1.3) * (graze > 0.1 ? 1 : 0.3);   // diam: menunduk makan
+      const rest = graze + 0.2 * Math.sin(t * 1.3) * (graze > 0.1 ? 1 : 0.3);     // diam: menunduk makan
+      const walk = Math.sin(phase * 0.9) * 0.05;
+      c.headPivot.rotation.x = rest * (1 - Math.min(1, r * 3)) + walk * Math.min(1, r * 3);
     }
   }
 
@@ -877,7 +1006,7 @@
     const root = new THREE.Group();
     const body = new THREE.Group();
     root.add(body);
-    const mBody = std(p.body), mDark = std(p.dark), mLight = std(p.light), mPlate = std(p.plate || p.light);
+    const mBody = smoothStd(p.body), mDark = smoothStd(p.dark), mLight = smoothStd(p.light), mPlate = smoothStd(p.plate || p.light);
     const white = std(0xffffff, { flatShading: false }), black = std(0x111111, { flatShading: false });
     const part = (geo, mat, x, y, z, parent) => {
       const m = new THREE.Mesh(geo, mat);
@@ -902,7 +1031,7 @@
       hip.position.set(x, L, z);
       body.add(hip);
       part(new THREE.CylinderGeometry(rT, rT * 0.8, L, 7), mDark, 0, -L / 2, 0, hip);
-      part(new THREE.BoxGeometry(rT * 1.7, 0.1, rT * 2.1), mDark, 0, -L, -0.05, hip);
+      part(rbox(rT * 1.8, 0.16, rT * 2.3), mDark, 0, -L, -0.05, hip);
       legs4.push(hip);
     }
 
@@ -919,7 +1048,7 @@
       hz = -1.45; hy = 0.95; graze = 0.4;
       headPivot.position.set(0, hy, hz); body.add(headPivot);
       part(new THREE.SphereGeometry(0.32, 8, 6), mBody, 0, 0, 0, headPivot);
-      part(new THREE.BoxGeometry(0.24, 0.22, 0.42), mDark, 0, -0.08, -0.34, headPivot);
+      part(rbox(0.26, 0.24, 0.46), mDark, 0, -0.08, -0.34, headPivot);
       eye(0.2, 0.1, -0.15, 0.07);
       eye(-0.2, 0.1, -0.15, 0.07);
       for (let i = 0; i < 7; i++) {                                   // lempengan di sepanjang punggung
@@ -939,8 +1068,8 @@
     } else if (kind === 'anky') {
       hz = -1.4; hy = 0.85; graze = 0.35; stride = 0.45;
       headPivot.position.set(0, hy, hz); body.add(headPivot);
-      part(new THREE.BoxGeometry(0.66, 0.3, 0.6), mBody, 0, 0, 0, headPivot);
-      part(new THREE.BoxGeometry(0.5, 0.16, 0.3), mDark, 0, -0.12, -0.38, headPivot);
+      part(rbox(0.7, 0.32, 0.64), mBody, 0, 0, 0, headPivot);
+      part(rbox(0.54, 0.18, 0.34), mDark, 0, -0.12, -0.38, headPivot);
       for (const sx of [-1, 1]) {
         const hn = part(new THREE.ConeGeometry(0.1, 0.4, 5), mPlate, sx * 0.34, 0.12, 0.2, headPivot);
         hn.rotation.z = -sx * 0.9;
@@ -963,7 +1092,7 @@
       hz = -2.1; hy = top + 0.1; stride = 0.35;
       headPivot.position.set(0, hy, hz); body.add(headPivot);
       part(new THREE.SphereGeometry(0.3, 8, 6), mBody, 0, 0, 0, headPivot);
-      part(new THREE.BoxGeometry(0.26, 0.22, 0.4), mDark, 0, -0.08, -0.3, headPivot);
+      part(rbox(0.28, 0.24, 0.44), mDark, 0, -0.08, -0.3, headPivot);
       eye(0.2, 0.1, -0.12, 0.07);
       eye(-0.2, 0.1, -0.12, 0.07);
       tailLen = 2.4;
@@ -975,7 +1104,7 @@
       hz = z1 - 0.1; hy = top + 0.05; stride = 0.4;
       headPivot.position.set(0, hy, hz); body.add(headPivot);
       part(new THREE.SphereGeometry(0.26, 8, 6), mBody, 0, 0, 0, headPivot);
-      part(new THREE.BoxGeometry(0.22, 0.2, 0.36), mDark, 0, -0.07, -0.28, headPivot);
+      part(rbox(0.24, 0.22, 0.4), mDark, 0, -0.07, -0.28, headPivot);
       eye(0.17, 0.09, -0.1, 0.06);
       eye(-0.17, 0.09, -0.1, 0.06);
       tailLen = 3.6;
@@ -986,6 +1115,7 @@
     tm.rotation.x = Math.PI / 2;
 
     root.scale.setScalar(scale);
+    mergeTree(root);
     return { root, body, headPivot, legs4, tail, mats: [mBody, mDark, mLight], isTrike: true, hz, graze, stride };
   }
 
@@ -1836,7 +1966,18 @@
   }
 
   // ---------- Hiasan hidup: pterosaurus di langit, kunang-kunang di malam hari ----------
-  const wingGeo = new THREE.BoxGeometry(1.5, 0.05, 0.6);
+  // sayap selaput: bentuk menyapu ke belakang, dengan tulang di tepi depan
+  const wingShape = new THREE.Shape();
+  wingShape.moveTo(0, 0.3);
+  wingShape.lineTo(1.6, 0.16);
+  wingShape.lineTo(1.5, -0.1);
+  wingShape.lineTo(1.0, -0.3);
+  wingShape.lineTo(0.55, -0.52);
+  wingShape.lineTo(0, -0.4);
+  wingShape.lineTo(0, 0.3);
+  const wingGeo = new THREE.ShapeGeometry(wingShape);
+  wingGeo.rotateX(-Math.PI / 2);
+  const wingBoneGeo = new THREE.CylinderGeometry(0.03, 0.05, 1.6, 5);
   const flyHeadGeo = new THREE.ConeGeometry(0.14, 0.7, 5);
   const flyTailGeo = new THREE.ConeGeometry(0.06, 1, 4);
   const flyShadowGeo = new THREE.CircleGeometry(1, 14);
@@ -1876,8 +2017,15 @@
     }
     const wl = new THREE.Group(); wl.position.set(-0.25, 0.05, 0); inner.add(wl);
     const wr = new THREE.Group(); wr.position.set(0.25, 0.05, 0); inner.add(wr);
-    const wml = new THREE.Mesh(wingGeo, mW); wml.position.set(-0.75 * sp.span, 0, 0); wml.scale.set(sp.span, 1, 1); wl.add(wml);
-    const wmr = new THREE.Mesh(wingGeo, mW); wmr.position.set(0.75 * sp.span, 0, 0); wmr.scale.set(sp.span, 1, 1); wr.add(wmr);
+    const wml = new THREE.Mesh(wingGeo, mW); wml.scale.set(-sp.span, 1, 1); wl.add(wml);
+    const wmr = new THREE.Mesh(wingGeo, mW); wmr.scale.set(sp.span, 1, 1); wr.add(wmr);
+    for (const [grp, sg] of [[wl, -1], [wr, 1]]) {
+      const bn = new THREE.Mesh(wingBoneGeo, mB);
+      bn.rotation.z = Math.PI / 2;
+      bn.scale.y = sp.span;
+      bn.position.set(sg * 0.8 * sp.span, 0, -0.2);
+      grp.add(bn);
+    }
     scene.add(g);
     const sh = new THREE.Mesh(flyShadowGeo, flyShadowMat);
     sh.rotation.x = -Math.PI / 2;
@@ -1923,6 +2071,7 @@
 
   // ---------- Animasi, kamera, render ----------
   function animate(dt) {
+    animDt = dt;
     scaleNow += (curChar.scale * (powerLeft > 0 ? 1.5 : 1) - scaleNow) * Math.min(1, dt * 5);
     hero.root.scale.setScalar(scaleNow);
 

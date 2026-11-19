@@ -53,6 +53,7 @@
   const elCoins = $('runCoins'), elDay = $('dayNo'), elTime = $('timeIcon');
   const toastEl = $('toast'), hurtEl = $('hurt');
   const powerEl = $('power'), powerFill = $('powerFill');
+  const camZone = $('camZone'), charRow = $('charRow'), charInfo = $('charInfo');
   const stickZone = $('stickZone'), stickBase = $('stickBase'), stickKnob = $('stickKnob');
   const btnAttack = $('btnAttack'), btnJump = $('btnJump'), btnSprint = $('btnSprint'), fsBtn = $('fsBtn');
 
@@ -60,9 +61,9 @@
   function loadSave() {
     try {
       const s = JSON.parse(localStorage.getItem(SAVE_KEY));
-      if (s && typeof s.coins === 'number') return Object.assign({ bestDays: 0, kills: 0, runs: 0, seen: {} }, s);
+      if (s && typeof s.coins === 'number') return Object.assign({ bestDays: 0, kills: 0, runs: 0, seen: {}, char: 'vosil' }, s);
     } catch (e) { /* abaikan */ }
-    return { coins: 0, bestDays: 0, kills: 0, runs: 0, seen: {} };
+    return { coins: 0, bestDays: 0, kills: 0, runs: 0, seen: {}, char: 'vosil' };
   }
   const save = loadSave();
   if (!save.seen || typeof save.seen !== 'object') save.seen = {};
@@ -1043,7 +1044,17 @@
     hp: 100, hunger: 100, thirst: 100, stamina: 100, exhausted: false,
     invuln: 0, atkT: -1, atkCd: 0, atkHit: false, lastDmg: 99
   };
-  const hero = makeCreature(Object.assign({ scale: 1.1 }, PAL_PLAYER));
+  // dino yang bisa dimainkan: kelebihan dan kekurangan masing-masing
+  const PLAYABLES = {
+    vosil: { name: 'Vosil', info: 'Seimbang untuk segala keadaan', scale: 1.1, pal: PAL_PLAYER, speed: 1, bite: 1, armor: 1, stam: 1, thirst: 1 },
+    velo: { name: 'Velociraptor', info: 'Sangat cepat, tapi gigitan lemah dan mudah terluka', scale: 0.95, variant: 'velo', pal: PTYPES.velo.pal, speed: 1.2, bite: 0.75, armor: 1.2, stam: 1, thirst: 1 },
+    carno: { name: 'Carnotaurus', info: 'Gigitan kuat dan tangguh, tapi agak lambat', scale: 1.25, variant: 'carno', pal: PTYPES.carno.pal, speed: 0.95, bite: 1.4, armor: 0.9, stam: 1.1, thirst: 1 },
+    spino: { name: 'Spinosaurus', info: 'Sangat tangguh dan tahan haus, tapi lambat', scale: 1.4, variant: 'spino', pal: PTYPES.spino.pal, speed: 0.88, bite: 1.3, armor: 0.75, stam: 1.15, thirst: 0.5 },
+    parasaur: { name: 'Parasaurolophus', info: 'Tenaga besar untuk lari jauh, tapi gigitan lemah', scale: 1.25, variant: 'parasaur', pal: PTYPES.parasaur.pal, speed: 1.05, bite: 0.6, armor: 1.1, stam: 0.5, thirst: 1 }
+  };
+  let curChar = PLAYABLES[save.char] || PLAYABLES.vosil;
+  const buildHero = () => makeCreature(Object.assign({ scale: curChar.scale, variant: curChar.variant }, curChar.pal));
+  let hero = buildHero();
   scene.add(hero.root);
   const heroShadow = new THREE.Mesh(
     new THREE.CircleGeometry(0.8, 18),
@@ -1055,10 +1066,11 @@
   let state = 'menu';               // 'menu' | 'playing' | 'over'
   let time = 0, runTime = 0, clock = 0;
   let runCoins = 0, kills = 0, overAt = 0, startPerf = 0;
-  let powerLeft = 0, scaleNow = 1.1, phase = 0, deathReason = '';
+  let powerLeft = 0, scaleNow = curChar.scale, phase = 0, deathReason = '';
   let preds = [], spawnCd = 4, animalCd = 2, chased = false, isNight = false, lastBiome = null;
   let biomeCd = 0, drinkCd = 0, toastT = 0, saveT = 0, hurtT = 0, shake = 0;
   let camGy = 0;
+  let camYaw = 0, camPitch = 0.71, camLift = 0;
   let camX = 0, camZ = 0, camLead = { x: 0, z: 0 }, lastWet = false, shown = {};
 
   GameAudio.setIntensity(() => (chased ? 0.95 : isNight ? 0.4 : 0.1));
@@ -1125,13 +1137,13 @@
     preds = [];
     worldSeed = 1 + Math.floor(Math.random() * 1e6);
     pondCache.clear();
-    camGy = 0;
+    camGy = 0; camYaw = 0; camPitch = 0.71; camLift = 0;
     Object.assign(player, {
       x: 0, z: 0, y: 0, vy: 0, vx: 0, vz: 0, yaw: Math.PI,
       hp: 100, hunger: 100, thirst: 100, stamina: 100, exhausted: false,
       invuln: 0, atkT: -1, atkCd: 0, atkHit: false, lastDmg: 99
     });
-    time = 0; runTime = 0; runCoins = 0; kills = 0; powerLeft = 0; scaleNow = 1.1; shake = 0;
+    time = 0; runTime = 0; runCoins = 0; kills = 0; powerLeft = 0; scaleNow = curChar.scale; shake = 0;
     spawnCd = 8; animalCd = 2; chased = false; lastBiome = null; biomeCd = 0; drinkCd = 0; deathReason = '';
     camX = 0; camZ = 0; camLead = { x: 0, z: 0 }; shown = {};
     state = 'playing';
@@ -1216,6 +1228,59 @@
   stickZone.addEventListener('pointerup', stickEnd);
   stickZone.addEventListener('pointercancel', stickEnd);
 
+  // geser jari di sisi kanan layar: putar kamera 360° (geser atas/bawah: ubah sudut pandang)
+  let camDrag = null;
+  if (camZone) {
+    camZone.addEventListener('contextmenu', (e) => e.preventDefault());
+    camZone.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      GameAudio.init();
+      if (camDrag || state !== 'playing') return;
+      try { camZone.setPointerCapture(e.pointerId); } catch (err) { /* abaikan */ }
+      camDrag = { id: e.pointerId, x: e.clientX, y: e.clientY };
+    });
+    camZone.addEventListener('pointermove', (e) => {
+      if (!camDrag || e.pointerId !== camDrag.id) return;
+      camYaw -= (e.clientX - camDrag.x) * 0.008;
+      camPitch = clamp(camPitch + (e.clientY - camDrag.y) * 0.004, 0.38, 1.2);
+      camDrag.x = e.clientX; camDrag.y = e.clientY;
+    });
+    const camEnd = (e) => { if (camDrag && (!e || e.pointerId === camDrag.id)) camDrag = null; };
+    camZone.addEventListener('pointerup', camEnd);
+    camZone.addEventListener('pointercancel', camEnd);
+  }
+
+  // pilih dino yang dimainkan
+  function renderChars() {
+    if (!charRow) return;
+    charRow.innerHTML = Object.keys(PLAYABLES).map((id) => {
+      const c = PLAYABLES[id], col = '#' + c.pal.body.toString(16).padStart(6, '0');
+      return '<button type="button" class="chr' + (curChar === c ? ' sel' : '') + '" data-id="' + id + '"><i style="background:' + col + '"></i>' + c.name + '</button>';
+    }).join('');
+    if (charInfo) charInfo.textContent = curChar.info;
+  }
+  function selectChar(id) {
+    const c = PLAYABLES[id];
+    if (!c || c === curChar) return;
+    curChar = c;
+    save.char = id;
+    writeSave();
+    scene.remove(hero.root);
+    hero = buildHero();
+    scene.add(hero.root);
+    scaleNow = c.scale;
+    renderChars();
+    GameAudio.sfx.coin();
+  }
+  if (charRow) charRow.addEventListener('click', (e) => {
+    e.stopPropagation();
+    GameAudio.init();
+    let el = e.target;
+    while (el && !(el.dataset && el.dataset.id)) el = el.parentNode;
+    if (el && state === 'menu') selectChar(el.dataset.id);
+  });
+  renderChars();
+
   function bindBtn(el, down, up) {
     if (!el) return;
     el.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -1244,7 +1309,7 @@
 
   window.addEventListener('keydown', (e) => {
     const k = e.key.toLowerCase();
-    const map = { arrowleft: 'left', a: 'left', arrowright: 'right', d: 'right', arrowup: 'up', w: 'up', arrowdown: 'down', s: 'down', shift: 'shift' };
+    const map = { arrowleft: 'left', a: 'left', arrowright: 'right', d: 'right', arrowup: 'up', w: 'up', arrowdown: 'down', s: 'down', shift: 'shift', q: 'camL', e: 'camR' };
     if (map[k]) keys[map[k]] = true;
     if (['arrowleft', 'arrowright', 'arrowup', 'arrowdown', ' ', 'enter'].includes(k)) e.preventDefault();
     GameAudio.init();
@@ -1257,7 +1322,7 @@
   });
   window.addEventListener('keyup', (e) => {
     const k = e.key.toLowerCase();
-    const map = { arrowleft: 'left', a: 'left', arrowright: 'right', d: 'right', arrowup: 'up', w: 'up', arrowdown: 'down', s: 'down', shift: 'shift' };
+    const map = { arrowleft: 'left', a: 'left', arrowright: 'right', d: 'right', arrowup: 'up', w: 'up', arrowdown: 'down', s: 'down', shift: 'shift', q: 'camL', e: 'camR' };
     if (map[k]) keys[map[k]] = false;
   });
   window.addEventListener('blur', () => { for (const k in keys) keys[k] = false; stickEnd(null); input.sprint = false; });
@@ -1276,7 +1341,7 @@
   // ---------- Aksi ----------
   function damagePlayer(amount, reason, fromX, fromZ) {
     if (player.invuln > 0 || powerLeft > 0 || state !== 'playing') return false;
-    player.hp -= amount;
+    player.hp -= amount * curChar.armor;
     player.invuln = 0.7;
     player.lastDmg = 0;
     const dx = player.x - fromX, dz = player.z - fromZ, d = Math.hypot(dx, dz) || 1;
@@ -1331,7 +1396,7 @@
   }
 
   function biteHit() {
-    const dmg = 18 * (powerLeft > 0 ? 3 : 1);
+    const dmg = 18 * curChar.bite * (powerLeft > 0 ? 3 : 1);
     const sc = scaleNow / 1.1;
     for (const p of preds) {
       if (p.dead) continue;
@@ -1485,6 +1550,8 @@
   function update(dt) {
     runTime += dt;
     applyDayNight();
+    if (keys.camL) camYaw += 1.9 * dt;
+    if (keys.camR) camYaw -= 1.9 * dt;
 
     // arah gerak dari analog / keyboard
     let ix = input.mx, iz = input.mz;
@@ -1495,17 +1562,22 @@
       if (l > 1) { ix /= l; iz /= l; }
     }
     const mag = Math.min(1, Math.hypot(ix, iz));
+    if (mag > 0) {                                      // arah gerak mengikuti sudut kamera
+      const cs = Math.cos(camYaw), sn = Math.sin(camYaw);
+      const rx = ix * cs + iz * sn, rz = -ix * sn + iz * cs;
+      ix = rx; iz = rz;
+    }
 
     // tenaga & lari
     const wantSprint = (input.sprint || keys.shift) && mag > 0.2;
     if (player.stamina <= 0) player.exhausted = true;
     else if (player.stamina >= 25) player.exhausted = false;
     const sprinting = wantSprint && !player.exhausted && player.stamina > 0;
-    if (sprinting) player.stamina = Math.max(0, player.stamina - 28 * dt);
+    if (sprinting) player.stamina = Math.max(0, player.stamina - 28 * curChar.stam * dt);
     else player.stamina = Math.min(100, player.stamina + (mag > 0.2 ? 12 : 22) * dt);
 
     const weak = player.hunger <= 0 || player.thirst <= 0;
-    const speedMul = (powerLeft > 0 ? 1.25 : 1) * (weak ? 0.85 : 1);
+    const speedMul = (powerLeft > 0 ? 1.25 : 1) * (weak ? 0.85 : 1) * curChar.speed;
     let slopeMul = 1;                                   // tanjakan memperlambat, turunan sedikit mempercepat
     if (mag > 0.1) {
       const gx = ix / mag, gz = iz / mag;
@@ -1554,7 +1626,7 @@
 
     // lapar, haus, nyawa
     player.hunger = Math.max(0, player.hunger - HUNGER_RATE * dt);
-    player.thirst = Math.max(0, player.thirst - THIRST_RATE * dt);
+    player.thirst = Math.max(0, player.thirst - THIRST_RATE * curChar.thirst * dt);
     if (player.hunger <= 0 || player.thirst <= 0) {
       player.hp -= STARVE_DMG * dt;
       hurtT = Math.max(hurtT, 0.05);
@@ -1742,7 +1814,7 @@
 
   // ---------- Animasi, kamera, render ----------
   function animate(dt) {
-    scaleNow += ((powerLeft > 0 ? 1.65 : 1.1) - scaleNow) * Math.min(1, dt * 5);
+    scaleNow += (curChar.scale * (powerLeft > 0 ? 1.5 : 1) - scaleNow) * Math.min(1, dt * 5);
     hero.root.scale.setScalar(scaleNow);
 
     let glow = 0;
@@ -1809,10 +1881,20 @@
       shake = Math.max(0, shake - dt * 2.5);
     }
     camGy += ((player.gy || 0) - camGy) * Math.min(1, dt * 4);
-    const camBack = camZ + 9.6 * grow;
-    const camY = Math.max(camGy + 8.2 * grow, heightAt(camX, camBack) + 3);   // jangan sampai tertutup bukit
-    camera.position.set(camX + sx, camY + sy, camBack);
-    camera.lookAt(camX, camGy + 0.9, camZ - 1.2);
+    if (state === 'menu') { camYaw = clock * 0.45; camPitch = 0.5; }     // menu: kamera memutari dino pilihan
+    const R = 12.6 * grow, ce = Math.cos(camPitch), se = Math.sin(camPitch);
+    const sy0 = Math.sin(camYaw), cy0 = Math.cos(camYaw);
+    const tgx = camX - 1.2 * sy0, tgz = camZ - 1.2 * cy0, tgy = camGy + 0.9;     // titik yang dilihat
+    let cxp = camX + R * ce * sy0, czp = camZ + R * ce * cy0, cyp = camGy + R * se;
+    // jangan sampai bukit menutupi pandangan atau kamera masuk ke tanah
+    let need = Math.max(0, heightAt(cxp, czp) + 2.5 - cyp);
+    for (const f of [0.3, 0.55, 0.8]) {
+      const px = tgx + (cxp - tgx) * f, pz = tgz + (czp - tgz) * f, py = tgy + (cyp - tgy) * f;
+      need = Math.max(need, (heightAt(px, pz) + 1.0 - py) / f);
+    }
+    camLift += (need - camLift) * Math.min(1, dt * (need > camLift ? 10 : 3));
+    camera.position.set(cxp + sx, cyp + camLift + sy, czp);
+    camera.lookAt(tgx, tgy, tgz);
   }
 
   // ---------- Loop utama ----------

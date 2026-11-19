@@ -155,6 +155,15 @@
       touch-action: none;
     }
     body.playing #stickZone { pointer-events: auto; }
+    /* sisi kanan layar (di bawah tombol aksi): geser untuk memutar kamera */
+    #camZone {
+      position: fixed;
+      right: 0; bottom: 0; top: 64px;
+      width: 52vw;
+      pointer-events: none;
+      touch-action: none;
+    }
+    body.playing #camZone { pointer-events: auto; }
     #stickBase, #stickKnob {
       position: fixed;
       border-radius: 50%;
@@ -245,6 +254,18 @@
       font-size: clamp(12px, 3.2vh, 15px);
       text-align: left;
     }
+    #charRow { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin: 6px 0 2px; pointer-events: auto; }
+    .chr {
+      display: flex; align-items: center; gap: 6px;
+      border: 2px solid rgba(255, 255, 255, .35); border-radius: 18px;
+      padding: 5px 11px; font-size: clamp(11px, 3vh, 14px); font-weight: 700;
+      background: rgba(30, 40, 50, .65); color: #eceff1; cursor: pointer;
+      touch-action: manipulation;
+    }
+    .chr i { width: 14px; height: 14px; border-radius: 50%; border: 1px solid rgba(255, 255, 255, .7); display: inline-block; }
+    .chr.sel { border-color: #ffd54f; background: rgba(255, 213, 79, .25); color: #fff; }
+    #charInfo { color: #ffe082; font-size: clamp(11px, 3vh, 14px); min-height: 1.3em; margin: 2px 0 4px; }
+    @media (max-height: 430px) { .help { display: none; } }
     .stat { color: #cfd8dc; font-size: clamp(13px, 3.4vh, 16px); }
     .big { font-size: clamp(16px, 4.4vh, 21px); }
     .gold { color: #ffd54f; }
@@ -311,6 +332,7 @@
     <button id="fsBtn" class="ibtn" type="button" aria-label="Layar penuh">⛶</button>
   </div>
 
+  <div id="camZone"></div>
   <div id="stickHint"></div>
   <div id="stickZone"></div>
   <div id="stickBase" class="hidden"></div>
@@ -325,8 +347,11 @@
   <div id="menu" class="panel">
     <h1>VOSIL SURVIVAL</h1>
     <p class="lead">Jelajahi lembah prasejarah, bertahan hidup, kumpulkan koin</p>
+    <div id="charRow"></div>
+    <p id="charInfo"></p>
     <ul class="help">
       <li>🕹️ Analog kiri: bergerak bebas</li>
+      <li>👆 Geser kanan: putar kamera 360°</li>
       <li>🦖 Gigit: serang predator</li>
       <li>⤴ Lompat: hindari gigitan</li>
       <li>🏃 Lari: kabur (menguras tenaga)</li>

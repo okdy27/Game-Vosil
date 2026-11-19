@@ -53,6 +53,7 @@
   const elCoins = $('runCoins'), elDay = $('dayNo'), elTime = $('timeIcon');
   const toastEl = $('toast'), hurtEl = $('hurt');
   const powerEl = $('power'), powerFill = $('powerFill');
+  const coinBox = $('coinBox'), lvNo = $('lvNo'), xpFill = $('xpFill'), lvFlash = $('lvFlash'), rotBtn = $('rotBtn');
   const camZone = $('camZone'), charRow = $('charRow'), charInfo = $('charInfo');
   const stickZone = $('stickZone'), stickBase = $('stickBase'), stickKnob = $('stickKnob');
   const btnAttack = $('btnAttack'), btnJump = $('btnJump'), btnSprint = $('btnSprint'), fsBtn = $('fsBtn');
@@ -363,6 +364,30 @@
     return geo;
   }
   const mLush = std(0x3f9d3a);
+  // bentuk "berbenjol": titik yang sama selalu bergeser sama (hash posisi) sehingga tidak retak
+  function lumpy(geo, amt) {
+    try {
+      const p = geo.attributes.position.array;
+      for (let i = 0; i < p.length; i += 3) {
+        const k = Math.sin(Math.round(p[i] * 40) * 12.9898 + Math.round(p[i + 1] * 40) * 78.233 + Math.round(p[i + 2] * 40) * 37.719) * 43758.5453;
+        const f = 1 + ((k - Math.floor(k)) - 0.5) * amt;
+        p[i] *= f; p[i + 1] *= f; p[i + 2] *= f;
+      }
+      geo.attributes.position.needsUpdate = true;
+      geo.computeVertexNormals();
+    } catch (e) { /* tanpa efek bila tidak didukung */ }
+    return geo;
+  }
+  const rockVars = [0.5, 0.42, 0.55].map((a, i) => lumpy(new THREE.IcosahedronGeometry(0.7, 1), a + i * 0.02));
+  const blobVars = [0.35, 0.3].map((a) => lumpy(new THREE.IcosahedronGeometry(1, 1), a));
+  const padGeo = new THREE.CircleGeometry(0.34, 10);
+  const pebbleGeo = lumpy(new THREE.IcosahedronGeometry(0.16, 0), 0.4);
+  const cattailGeo = new THREE.CylinderGeometry(0.035, 0.05, 1.3, 4);
+  const cattailTop = new THREE.CylinderGeometry(0.07, 0.07, 0.32, 5);
+  const mMoss = std(0x5f8f3f), mMud = new THREE.MeshBasicMaterial({ color: 0x6b5a3c }), mPebble = std(0x8a8d90), mPad = std(0x3d8f3a, { emissive: 0x0a2a0a }), mCat = std(0x7a4b2a);
+  const mDeep = new THREE.MeshBasicMaterial({ color: 0x1f6fae, transparent: true, opacity: 0.55, depthWrite: false });
+  const mRipple = new THREE.MeshBasicMaterial({ color: 0xdff4ff, transparent: true, opacity: 0.35, depthWrite: false });
+  const ringThin = new THREE.RingGeometry(0.94, 1, 28);
   const mEgg = std(0xfff3d6, { emissive: 0x3a2a10 });
   const mSpot = std(0x6aa84f);
   const mRing = new THREE.MeshBasicMaterial({ color: 0xffd54f, transparent: true, opacity: 0.85, depthWrite: false });
@@ -376,9 +401,13 @@
     const leaf = LEAFS[(v || 0) % LEAFS.length], leaf2 = LEAFS[((v || 0) + 1) % LEAFS.length];
     if (kind === 'broad') {
       const t = new THREE.Mesh(trunkGeo, mTrunk); t.position.y = 0.65; t.scale.set(1.4, 1.2, 1.4); g.add(t);
-      const c1 = new THREE.Mesh(sphereGeo, leaf); c1.position.set(0, 2.6, 0); c1.scale.set(1.5, 1.2, 1.5); g.add(c1);
-      const c2 = new THREE.Mesh(sphereGeo, leaf2); c2.position.set(0.8, 2.1, 0.3); c2.scale.set(1.0, 0.85, 1.0); g.add(c2);
-      const c3 = new THREE.Mesh(sphereGeo, leaf2); c3.position.set(-0.7, 2.2, -0.3); c3.scale.set(0.9, 0.8, 0.9); g.add(c3);
+      const bl = blobVars[(v || 0) % 2];
+      const fl = new THREE.Mesh(trunkGeo, mTrunk); fl.position.y = 0.12; fl.scale.set(2.2, 0.25, 2.2); g.add(fl);   // pangkal akar melebar
+      const br = new THREE.Mesh(branchGeo, mTrunk); br.position.set(0.35, 1.7, 0.1); br.rotation.z = -0.7; br.scale.set(1.4, 1.2, 1.4); g.add(br);
+      const c1 = new THREE.Mesh(bl, leaf); c1.position.set(0, 2.7, 0); c1.scale.set(1.5, 1.2, 1.5); g.add(c1);
+      const c2 = new THREE.Mesh(bl, leaf2); c2.position.set(0.9, 2.15, 0.3); c2.scale.set(1.0, 0.85, 1.0); g.add(c2);
+      const c3 = new THREE.Mesh(bl, leaf2); c3.position.set(-0.8, 2.25, -0.3); c3.scale.set(0.95, 0.8, 0.95); g.add(c3);
+      const c4 = new THREE.Mesh(bl, leaf); c4.position.set(0.1, 3.3, -0.25); c4.scale.set(0.9, 0.75, 0.9); g.add(c4);
     } else if (kind === 'dead') {
       const t = new THREE.Mesh(trunkGeo, mDeadWood); t.position.y = 0.9; t.scale.set(0.9, 1.8, 0.9); g.add(t);
       for (const sx of [-1, 1]) {
@@ -401,6 +430,8 @@
       const t = new THREE.Mesh(trunkGeo, mTrunk); t.position.y = 0.65; g.add(t);
       const a = new THREE.Mesh(coneA, LEAFS[(v || 0) % 3]); a.position.y = 2.1; g.add(a);
       const b = new THREE.Mesh(coneB, LEAFS[((v || 0) + 1) % 3]); b.position.y = 3.2; g.add(b);
+      const c = new THREE.Mesh(coneB, LEAFS[(v || 0) % 3]); c.position.y = 4.0; c.scale.set(0.6, 0.8, 0.6); g.add(c);
+      a.scale.set(1.15, 1, 1.15);
     }
     g.scale.setScalar(s);
     return g;
@@ -427,11 +458,25 @@
   }
   function makeRock(s, dry) {
     const g = new THREE.Group();
-    const r = new THREE.Mesh(rockGeo, dry ? mRockDry : mRock);
-    r.position.y = 0.35 * s;
+    const mat = dry ? mRockDry : mRock;
+    const r = new THREE.Mesh(rockVars[Math.floor(rand(0, 3))], mat);
+    r.position.y = 0.3 * s;
     r.scale.set(s * rand(0.9, 1.5), s * rand(0.6, 1.0), s * rand(0.9, 1.4));
     r.rotation.y = rand(0, 6);
     g.add(r);
+    for (let i = 0, n = 1 + Math.floor(rand(0, 2.5)); i < n; i++) {     // batu kecil di sekelilingnya
+      const a = rand(0, 6.28), d = s * rand(0.8, 1.2), q = s * rand(0.3, 0.5);
+      const m = new THREE.Mesh(rockVars[(i + 1) % 3], mat);
+      m.position.set(Math.cos(a) * d, q * 0.3, Math.sin(a) * d);
+      m.scale.set(q, q * 0.7, q); m.rotation.y = rand(0, 6);
+      g.add(m);
+    }
+    if (!dry) {                                                         // lumut di bagian atas
+      const mo = new THREE.Mesh(rockVars[0], mMoss);
+      mo.position.set(r.position.x, r.position.y + 0.28 * s * r.scale.y / s, r.position.z);
+      mo.scale.set(r.scale.x * 0.62, r.scale.y * 0.3, r.scale.z * 0.62);
+      g.add(mo);
+    }
     return g;
   }
   function makeCactus(s) {
@@ -500,7 +545,7 @@
 
     const group = new THREE.Group();
     scene.add(group);
-    const ch = { key, cx, cz, group, biome, colliders: [], bushes: [], coins: [], eggs: [], ponds: [] };
+    const ch = { key, cx, cz, group, biome, colliders: [], bushes: [], coins: [], eggs: [], ponds: [], ripples: [] };
 
     ch.geo = buildGround(ox, oz);
     group.add(new THREE.Mesh(ch.geo, mGround));
@@ -524,11 +569,47 @@
     if (pd) {
       const r = pd.r;
       placed.push({ x: pd.x, z: pd.z, r: r + 2.5 });
+      const wy = pd.base - 0.18;
+      const mud = new THREE.Mesh(pondGeo, mMud);                       // tepi lumpur basah
+      mud.rotation.x = -Math.PI / 2; mud.position.set(pd.x, wy - 0.02, pd.z); mud.scale.set(r + 1.25, r + 1.25, 1);
+      group.add(mud);
       const m = new THREE.Mesh(pondGeo, mPond);
       m.rotation.x = -Math.PI / 2;
-      m.position.set(pd.x, pd.base - 0.18, pd.z);
+      m.position.set(pd.x, wy + 0.01, pd.z);
       m.scale.set(r + 0.7, r + 0.7, 1);
       group.add(m);
+      const dp = new THREE.Mesh(pondGeo, mDeep);                       // bagian tengah lebih dalam (lebih gelap)
+      dp.rotation.x = -Math.PI / 2; dp.position.set(pd.x, wy + 0.03, pd.z); dp.scale.set(r * 0.62, r * 0.62, 1);
+      group.add(dp);
+      for (let k = 0; k < 2; k++) {                                    // riak yang melebar perlahan
+        const rp = new THREE.Mesh(ringThin, mRipple);
+        rp.rotation.x = -Math.PI / 2; rp.position.set(pd.x, wy + 0.05, pd.z);
+        ch.ripples.push({ mesh: rp, ph: k * 0.5 + rng() * 0.2, r: r * 0.9 });
+        rp.scale.set(0.1, 0.1, 1);
+        group.add(rp);
+      }
+      for (let k = 0, ln = 2 + Math.floor(rng() * 4); k < ln; k++) {   // daun teratai
+        const a = rng() * Math.PI * 2, dd = rng() * (r * 0.7);
+        const pad = new THREE.Mesh(padGeo, mPad);
+        pad.rotation.x = -Math.PI / 2; pad.rotation.z = rng() * 6;
+        pad.position.set(pd.x + Math.cos(a) * dd, wy + 0.06, pd.z + Math.sin(a) * dd);
+        const ps = R(0.7, 1.4); pad.scale.set(ps, ps, 1);
+        group.add(pad);
+      }
+      for (let k = 0, kn = 7 + Math.floor(rng() * 6); k < kn; k++) {   // kerikil di tepi
+        const a = rng() * Math.PI * 2, dd = r + R(0.4, 1.1);
+        const px = pd.x + Math.cos(a) * dd, pz = pd.z + Math.sin(a) * dd;
+        const pb = new THREE.Mesh(pebbleGeo, mPebble), ps = R(0.6, 1.6);
+        pb.position.set(px, heightAt(px, pz) + 0.05, pz); pb.scale.set(ps, ps * 0.6, ps); pb.rotation.y = rng() * 6;
+        group.add(pb);
+      }
+      for (let k = 0, cn = 3 + Math.floor(rng() * 3); k < cn; k++) {   // rumput kucai (cattail)
+        const a = rng() * Math.PI * 2, dd = r + R(0.2, 0.9);
+        const px = pd.x + Math.cos(a) * dd, pz = pd.z + Math.sin(a) * dd, cs = R(0.8, 1.2), gy = heightAt(px, pz);
+        const st = new THREE.Mesh(cattailGeo, mLush); st.position.set(px, gy + 0.65 * cs, pz); st.scale.setScalar(cs); group.add(st);
+        const tp = new THREE.Mesh(cattailTop, mCat); tp.position.set(px, gy + 1.35 * cs, pz); tp.scale.setScalar(cs); group.add(tp);
+        sh(px, pz, 0.2 * cs, 1.4 * cs);
+      }
       ch.ponds.push({ x: pd.x, z: pd.z, r });
       if (biome.id !== 'forest') {                      // oasis: palem tumbuh di tepi kolam
         for (let k = 0, pn = 1 + Math.floor(rng() * 3); k < pn; k++) {
@@ -693,6 +774,8 @@
     taken.clear();
     eatenAt.clear();
     pondCache.clear();
+    for (const f of flyCoins) scene.remove(f.mesh);
+    flyCoins.length = 0;
   }
 
   function pushOut(e, rad) {                        // dorong keluar dari pohon, batu, dan kaktus
@@ -1229,10 +1312,24 @@
   }
 
   // ---------- State game ----------
+  // gaya serangan tiap spesies:
+  //  lunge  = menerkam cepat ke depan,  bite = gigitan berat dengan sedikit maju,
+  //  charge = menyeruduk lurus jauh (hindari ke samping / lompat),  sweep = sapuan ke segala arah (lompat atau menjauh)
+  Object.assign(PTYPES.raptor, { atk: 'lunge', lunge: 3.0, windup: 0.4, dmg: 11, recover: 0.5 });
+  Object.assign(PTYPES.velo, { atk: 'lunge', lunge: 3.4, windup: 0.34, dmg: 9, recover: 0.45 });
+  Object.assign(PTYPES.rex, { atk: 'bite', lunge: 2.4, windup: 0.62, dmg: 28, recover: 0.7 });
+  Object.assign(PTYPES.carno, { atk: 'charge', lunge: 9, windup: 0.8, dmg: 24, recover: 1.1, cd: 2.4 });
+  Object.assign(PTYPES.spino, { atk: 'sweep', sweepR: 4.8, windup: 0.65, dmg: 28, recover: 0.8 });
+  Object.assign(PTYPES.stego, { atk: 'sweep', sweepR: 3.8, recover: 0.8 });
+  Object.assign(PTYPES.anky, { atk: 'sweep', sweepR: 3.6, recover: 0.8 });
+  Object.assign(PTYPES.brachio, { atk: 'sweep', sweepR: 5.0, recover: 0.9 });
+  Object.assign(PTYPES.diplo, { atk: 'sweep', sweepR: 5.4, recover: 0.9 });
+  Object.assign(PTYPES.trike, { atk: 'lunge', lunge: 2.6, recover: 0.7 });
+
   const player = {
     x: 0, z: 0, y: 0, vy: 0, vx: 0, vz: 0, yaw: Math.PI,
     hp: 100, hunger: 100, thirst: 100, stamina: 100, exhausted: false,
-    invuln: 0, atkT: -1, atkCd: 0, atkHit: false, lastDmg: 99
+    invuln: 0, atkT: -1, atkCd: 0, atkHit: false, lastDmg: 99, level: 1, xp: 0, counterT: 0
   };
   // dino yang bisa dimainkan: kelebihan dan kekurangan masing-masing
   const PLAYABLES = {
@@ -1246,20 +1343,64 @@
   const buildHero = () => makeCreature(Object.assign({ scale: curChar.scale, variant: curChar.variant }, curChar.pal));
   let hero = buildHero();
   scene.add(hero.root);
+
+  // ---------- Level dino: dari kecil sampai besar ----------
+  const MAX_LEVEL = 10;
+  const xpNeed = (l) => 45 + 30 * (l - 1);
+  const lvScale = (l) => 0.72 + 0.062 * (l - 1);
+  const baseScale = () => curChar.scale * lvScale(player.level);
+  const biteMul = () => curChar.bite * (1 + 0.07 * (player.level - 1));
+  const armorMul = () => curChar.armor * (1 - 0.025 * (player.level - 1));
+  const speedLv = () => 1 + 0.01 * (player.level - 1);
+  function gainXp(n) {
+    if (state !== 'playing' || n <= 0) return;
+    if (player.level >= MAX_LEVEL) { player.xp = 0; return; }
+    player.xp += n;
+    let up = 0;
+    while (player.level < MAX_LEVEL && player.xp >= xpNeed(player.level)) { player.xp -= xpNeed(player.level); player.level++; up++; }
+    if (up) levelUp();
+  }
+  function levelUp() {
+    player.hp = Math.min(100, player.hp + 35);
+    toast('⬆ LEVEL ' + player.level + '! Dino makin besar dan kuat', 2.8);
+    GameAudio.sfx.record();
+    burst(26, player.x, 1.4 * scaleNow / 1.1, player.z);
+    shake = Math.max(shake, 0.25);
+    showDmg(player.x, (player.gy || 0) + 3.2 * scaleNow / 1.1, player.z, 'LEVEL ' + player.level + '!', 'gain', 1.5);
+    try { if (lvFlash && lvFlash.classList) { lvFlash.classList.remove('on'); void lvFlash.offsetWidth; lvFlash.classList.add('on'); } } catch (e) { /* abaikan */ }
+  }
   const heroShadow = new THREE.Mesh(shadowDisc, mShadow);
   scene.add(heroShadow);
 
   let state = 'menu';               // 'menu' | 'playing' | 'over'
   let time = 0, runTime = 0, clock = 0;
   let runCoins = 0, kills = 0, overAt = 0, startPerf = 0;
-  let powerLeft = 0, scaleNow = curChar.scale, phase = 0, deathReason = '';
+  let powerLeft = 0, scaleNow = curChar.scale * lvScale(1), phase = 0, deathReason = '';
   let preds = [], spawnCd = 4, animalCd = 2, chased = false, isNight = false, lastBiome = null;
   let biomeCd = 0, drinkCd = 0, toastT = 0, saveT = 0, hurtT = 0, shake = 0;
-  let camGy = 0;
+  let camGy = 0, lvDay = 0;
   let camYaw = 0, camPitch = 0.71, camLift = 0;
   let camX = 0, camZ = 0, camLead = { x: 0, z: 0 }, lastWet = false, shown = {};
 
   GameAudio.setIntensity(() => (chased ? 0.95 : isNight ? 0.4 : 0.1));
+
+  // ---------- Koin yang diambil terbang ke dino ----------
+  const flyCoins = [];
+  let coinStreak = 0, coinStreakT = 0;
+  function updateFlyCoins(dt) {
+    coinStreakT -= dt;
+    if (coinStreakT <= 0) coinStreak = 0;
+    for (let i = flyCoins.length - 1; i >= 0; i--) {
+      const f = flyCoins[i];
+      f.t += dt;
+      const u = Math.min(1, f.t / 0.38), e = u * u * (3 - 2 * u);
+      const ty = (player.gy || 0) + player.y + 1.5 * scaleNow / 1.1;
+      f.mesh.position.set(lerp(f.x0, player.x, e), lerp(f.y0, ty, e) + Math.sin(u * Math.PI) * 1.0, lerp(f.z0, player.z, e));
+      f.mesh.rotation.y += dt * 18;
+      f.mesh.scale.setScalar(u < 0.4 ? 1 + u * 1.2 : 1.5 * (1 - (u - 0.4) / 0.6) + 0.05);
+      if (u >= 1) { scene.remove(f.mesh); flyCoins.splice(i, 1); }
+    }
+  }
 
   // ---------- Angka kerusakan melayang ----------
   const fxLayer = $('fx');
@@ -1319,7 +1460,13 @@
     setW(fStam, 'st', player.stamina);
     rowHunger.classList.toggle('low', player.hunger < 20);
     rowThirst.classList.toggle('low', player.thirst < 20);
-    if (shown.c !== runCoins) { shown.c = runCoins; elCoins.textContent = runCoins; }
+    if (shown.c !== runCoins) {
+      shown.c = runCoins; elCoins.textContent = runCoins;
+      try { if (coinBox && coinBox.classList) { coinBox.classList.remove('pop'); void coinBox.offsetWidth; coinBox.classList.add('pop'); } } catch (e) { /* abaikan */ }
+    }
+    if (shown.l !== player.level) { shown.l = player.level; if (lvNo) lvNo.textContent = player.level; }
+    const xpPct = player.level >= MAX_LEVEL ? 100 : Math.round(player.xp / xpNeed(player.level) * 100);
+    if (shown.x !== xpPct) { shown.x = xpPct; if (xpFill) xpFill.style.width = xpPct + '%'; }
     const day = Math.floor(runTime / DAY_LEN) + 1;
     if (shown.d !== day) { shown.d = day; elDay.textContent = day; }
     const ic = isNight ? '🌙' : '☀️';
@@ -1352,6 +1499,8 @@
     scene.fog.color.setRGB(rgb[0], rgb[1], rgb[2]);
     scene.fog.near = lerp(14, 26, k);              // malam: pandangan lebih pendek = lebih tegang
     scene.fog.far = lerp(50, 68, k);               // lebih pendek dari area yang dimuat (60 m) supaya tepi dunia tersamar
+    mPond.color.setRGB(lerp(0.06, 0.25, k), lerp(0.16, 0.66, k), lerp(0.3, 0.88, k));   // air gelap saat malam
+    mDeep.opacity = lerp(0.7, 0.55, k);
     mShadow.opacity = 0.1 + 0.22 * k;               // siang: bayangan tegas, malam: nyaris tak terlihat
     hemi.intensity = 0.3 + 0.65 * k;
     sunLight.intensity = 0.12 + 0.7 * k;
@@ -1369,9 +1518,9 @@
     Object.assign(player, {
       x: 0, z: 0, y: 0, vy: 0, vx: 0, vz: 0, yaw: Math.PI,
       hp: 100, hunger: 100, thirst: 100, stamina: 100, exhausted: false,
-      invuln: 0, atkT: -1, atkCd: 0, atkHit: false, lastDmg: 99
+      invuln: 0, atkT: -1, atkCd: 0, atkHit: false, lastDmg: 99, level: 1, xp: 0, counterT: 0
     });
-    time = 0; runTime = 0; runCoins = 0; kills = 0; powerLeft = 0; scaleNow = curChar.scale; shake = 0;
+    time = 0; runTime = 0; runCoins = 0; kills = 0; powerLeft = 0; scaleNow = baseScale(); shake = 0; lvDay = 0;
     spawnCd = 8; animalCd = 2; chased = false; lastBiome = null; biomeCd = 0; drinkCd = 0; deathReason = '';
     camX = 0; camZ = 0; camLead = { x: 0, z: 0 }; shown = {};
     state = 'playing';
@@ -1402,6 +1551,7 @@
     $('overReason').textContent = reason;
     $('overDays').textContent = days;
     $('overKills').textContent = kills;
+    if ($('overLevel')) $('overLevel').textContent = player.level;
     $('overCoins').textContent = runCoins;
     $('overBest').textContent = newBest && days > 0 ? 'Rekor baru!' : 'Rekor: ' + save.bestDays + ' hari';
     $('overTotal').textContent = save.coins;
@@ -1409,7 +1559,7 @@
 
     // Titik sambung ke backend / smart contract
     window.dispatchEvent(new CustomEvent('run:end', {
-      detail: { coins: runCoins, days, kills, duration: Math.round(performance.now() - startPerf) }
+      detail: { coins: runCoins, days, kills, level: player.level, duration: Math.round(performance.now() - startPerf) }
     }));
   }
 
@@ -1494,9 +1644,10 @@
     save.char = id;
     writeSave();
     scene.remove(hero.root);
+    disposeTree(hero.root);
     hero = buildHero();
     scene.add(hero.root);
-    scaleNow = c.scale;
+    scaleNow = baseScale();
     renderChars();
     GameAudio.sfx.coin();
   }
@@ -1527,6 +1678,8 @@
   bindBtn(btnJump, () => { input.jump = true; });
   bindBtn(btnSprint, () => { input.sprint = true; }, () => { input.sprint = false; });
 
+  canvas.addEventListener('pointerup', autoFs);             // gesture sentuh yang sah untuk layar penuh
+  canvas.addEventListener('click', autoFs);
   // ketuk di mana saja untuk mulai / main lagi
   canvas.addEventListener('pointerdown', (e) => {
     e.preventDefault();
@@ -1555,21 +1708,59 @@
   });
   window.addEventListener('blur', () => { for (const k in keys) keys[k] = false; stickEnd(null); input.sprint = false; });
 
-  if (fsBtn) fsBtn.addEventListener('click', () => {
+  // layar penuh + kunci horizontal otomatis (Android Chrome); iPhone tidak mengizinkan, jadi pakai petunjuk
+  const isFs = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
+  const nav = typeof navigator !== 'undefined' ? navigator : {};
+  const isIOS = /iPad|iPhone|iPod/.test(nav.userAgent || '') || (nav.platform === 'MacIntel' && nav.maxTouchPoints > 1);
+  function lockLandscape() {
+    try {
+      const o = screen.orientation;
+      if (o && o.lock) { const r = o.lock('landscape'); if (r && r.catch) r.catch(() => {}); }
+    } catch (e) { /* abaikan */ }
+  }
+  function enterImmersive() {
     try {
       const el = document.documentElement;
-      if (!document.fullscreenElement) {
-        const p = el.requestFullscreen && el.requestFullscreen();
-        const lock = () => { try { screen.orientation.lock('landscape').catch(() => {}); } catch (e) { /* abaikan */ } };
-        if (p && p.then) p.then(lock).catch(() => {}); else lock();
-      } else if (document.exitFullscreen) document.exitFullscreen();
+      const req = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen;
+      if (req && !isFs()) {
+        const r = req.call(el);
+        if (r && r.then) r.then(lockLandscape).catch(() => lockLandscape()); else lockLandscape();
+        return true;
+      }
+      lockLandscape();
+      return !!req;
+    } catch (e) { return false; }
+  }
+  function exitImmersive() {
+    try {
+      const ex = document.exitFullscreen || document.webkitExitFullscreen;
+      if (ex) ex.call(document);
+      if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock();
     } catch (e) { /* abaikan */ }
-  });
+  }
+  function toggleFs() {
+    if (isFs()) { exitImmersive(); return; }
+    const ok = enterImmersive();
+    if (!ok) toast(isIOS ? 'iPhone: ketuk Bagikan → Tambahkan ke Layar Utama untuk layar penuh' : 'Browser ini tidak mendukung layar penuh', 3.5);
+  }
+  if (fsBtn) {
+    fsBtn.addEventListener('click', (e) => { e.stopPropagation(); toggleFs(); });
+    fsBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
+  }
+  if (rotBtn) rotBtn.addEventListener('click', () => { enterImmersive(); });
+  let autoFsTried = false;
+  function autoFs() { if (autoFsTried || isFs()) return; autoFsTried = true; enterImmersive(); }
+  document.addEventListener('fullscreenchange', () => { try { resize(); } catch (e) { /* abaikan */ } });
+  document.addEventListener('webkitfullscreenchange', () => { try { resize(); } catch (e) { /* abaikan */ } });
+  try {
+    const rn = $('rotNote');
+    if (rn && isIOS) rn.textContent = 'iPhone belum mengizinkan putar otomatis. Putar HP secara manual, atau pakai Safari → Bagikan → Tambahkan ke Layar Utama untuk layar penuh.';
+  } catch (e) { /* abaikan */ }
 
   // ---------- Aksi ----------
   function damagePlayer(amount, reason, fromX, fromZ) {
     if (player.invuln > 0 || powerLeft > 0 || state !== 'playing') return false;
-    const real = amount * curChar.armor;
+    const real = amount * armorMul();
     player.hp -= real;
     showDmg(player.x, (player.gy || 0) + player.y + 2.3 * scaleNow / 1.1, player.z, '-' + Math.round(real), 'hurt', 1 + Math.min(0.5, real / 40));
     player.invuln = 0.7;
@@ -1584,16 +1775,27 @@
     return true;
   }
 
-  function damagePred(p, dmg) {
+  function damagePred(p, dmg, tag) {
     p.hp -= dmg;
     p.flash = 1;
-    showDmg(p.x, heightAt(p.x, p.z) + (p.def.giant ? 5 : 1.7 * p.def.scale), p.z, '-' + Math.round(dmg) + (powerLeft > 0 ? '!' : ''), powerLeft > 0 ? 'crit' : 'hit', powerLeft > 0 ? 1.4 : 1);
-    const dx = p.x - player.x, dz = p.z - player.z, d = Math.hypot(dx, dz) || 1;
-    p.x += (dx / d) * 0.7;
-    p.z += (dz / d) * 0.7;
+    const big = tag === 'counter' || powerLeft > 0;
+    const label = (tag === 'counter' ? '💥' : tag === 'weak' ? '⚡' : '') + '-' + Math.round(dmg) + (powerLeft > 0 ? '!' : '');
+    showDmg(p.x, heightAt(p.x, p.z) + (p.def.giant ? 5 : 1.7 * p.def.scale), p.z, label, big ? 'crit' : 'hit', big ? 1.4 : tag === 'weak' ? 1.15 : 1);
+    const dx = p.x - player.x, dz = p.z - player.z, d = Math.hypot(dx, dz) || 1, kb = 0.7 / Math.max(1, p.def.scale * 0.8);
+    p.x += (dx / d) * kb;
+    p.z += (dz / d) * kb;
     p.cd = Math.max(p.cd, 0.35);
     if (p.state === 'wander') p.state = p.def.timid ? 'flee' : 'chase';     // yang netral jadi marah, yang penakut kabur
+    else if (p.state === 'windup' && p.def.scale < 1.4 && !p.def.giant) {    // musuh kecil terganggu: serangannya batal
+      p.state = 'stun'; p.t = 0.5; p.cd = Math.max(p.cd, 0.6);
+      showDmg(p.x, heightAt(p.x, p.z) + 2.4 * p.def.scale, p.z, 'TERGANGGU', 'xp', 1);
+    }
     burst(8, p.x, 1.0 * p.def.scale, p.z);
+    if (p.hp > 0 && !p.enraged && !p.def.timid && !p.def.neutral && p.hp <= p.maxHp * 0.3) {   // hampir kalah: mengamuk
+      p.enraged = true;
+      toast('💢 ' + p.def.name + ' mengamuk!', 1.8);
+      GameAudio.sfx.roar();
+    }
     if (p.hp <= 0) killPred(p);
   }
 
@@ -1606,6 +1808,9 @@
     player.hunger = Math.min(100, player.hunger + p.def.food);
     burst(14, p.x, 1, p.z);
     if (p.def.reward) showDmg(p.x, heightAt(p.x, p.z) + 2.2 * p.def.scale, p.z, '+' + p.def.reward + ' 🪙', 'gain', 1.1);
+    const xp = (p.def.timid || p.def.neutral) ? Math.round(p.def.hp * 0.18) : Math.round(p.def.hp * 0.45 + p.def.reward * 2);
+    gainXp(xp);
+    showDmg(p.x + 0.6, heightAt(p.x, p.z) + 1.6 * p.def.scale, p.z, '+' + xp + ' XP', 'xp', 1);
     GameAudio.sfx.smash();
     GameAudio.sfx.eat();
     toast((p.def.reward ? '+' + p.def.reward + ' koin · ' : '') + 'daging +' + p.def.food + ' lapar', 2.2);
@@ -1628,18 +1833,28 @@
   }
 
   function biteHit() {
-    const dmg = 18 * curChar.bite * (powerLeft > 0 ? 3 : 1);
+    const dmg = 18 * biteMul() * (powerLeft > 0 ? 3 : 1);
     const sc = scaleNow / 1.1;
     for (const p of preds) {
       if (p.dead) continue;
       const dx = p.x - player.x, dz = p.z - player.z, d = Math.hypot(dx, dz);
       if (d > 2.4 * sc + p.def.scale * 0.9 + (p.def.hitExtra || 0)) continue;
       if (d > 1.3 && Math.abs(angDiff(player.yaw, faceYaw(dx, dz))) > 1.1) continue;
-      damagePred(p, dmg);
+      let m = 1, tag = '';
+      if (p.state === 'recover' || p.state === 'stun') { m *= p.state === 'stun' ? 1.5 : 1.35; tag = 'weak'; }   // musuh lengah: titik lemah
+      if (player.counterT > 0) { m *= 1.6; player.counterT = 0; tag = 'counter'; }                                 // balasan setelah hindar tepat waktu
+      damagePred(p, dmg * m, tag);
     }
   }
 
   // ---------- Predator ----------
+  // penanda bahaya di tanah saat musuh bersiap menyerang
+  const warnPlane = new THREE.PlaneGeometry(1, 1); warnPlane.rotateX(-Math.PI / 2);
+  const warnRing = new THREE.RingGeometry(0.82, 1, 32); warnRing.rotateX(-Math.PI / 2);
+  const warnDisc = new THREE.CircleGeometry(1, 32); warnDisc.rotateX(-Math.PI / 2);
+  const mWarn = new THREE.MeshBasicMaterial({ color: 0xff3b30, transparent: true, opacity: 0.4, depthWrite: false });
+  mWarn.polygonOffset = true; mWarn.polygonOffsetFactor = -3; mWarn.polygonOffsetUnits = -3;
+
   function spawnPredator(type) {
     const def = PTYPES[type];
     const a = Math.random() * Math.PI * 2, d = rand(36, 46);
@@ -1649,9 +1864,16 @@
     scene.add(c.root);
     const shd = new THREE.Mesh(shadowDisc, mShadow);
     scene.add(shd);
+    const warn = new THREE.Mesh(warnDisc, mWarn);
+    warn.visible = false;
+    scene.add(warn);
+    const dayNow = Math.floor(runTime / DAY_LEN), hostile = !def.timid && !def.neutral;
+    const hpMul = hostile ? 1 + 0.1 * dayNow + 0.05 * (player.level - 1) : 1;      // makin lama dan makin besar dinomu, musuh makin tangguh
     const p = {
-      sh: shd, type, def, c, x: player.x + Math.cos(a) * d, z: player.z + Math.sin(a) * d, yaw: Math.random() * 6,
-      hp: def.hp, state: 'wander', t: 0, cd: 1, wdir: null, wanderT: 0, phase: Math.random() * 6,
+      sh: shd, warn, type, def, c, x: player.x + Math.cos(a) * d, z: player.z + Math.sin(a) * d, yaw: Math.random() * 6,
+      hp: def.hp * hpMul, maxHp: def.hp * hpMul, dmgMul: hostile ? 1 + 0.07 * dayNow : 1, flank: Math.random() < 0.5 ? 1 : -1,
+      state: 'wander', t: 0, t0: 1, cd: 1, wdir: null, wanderT: 0, phase: Math.random() * 6,
+      lx: 0, lz: 1, st: 0, dur: 0.2, hitDone: false, locked: false, enraged: false,
       flash: 0, dead: false, deadT: 0, roared: false, speedNow: 0
     };
     pushOut(p, 0.8 * def.scale);
@@ -1680,9 +1902,83 @@
     return Object.keys(w)[0];
   }
 
+  function disposeTree(root) {                       // bebaskan memori GPU bentuk milik satu makhluk
+    try {
+      if (root && typeof root.traverse === 'function') root.traverse((o) => { if (o.geometry && o.geometry.dispose) o.geometry.dispose(); });
+    } catch (e) { /* abaikan */ }
+  }
   function removePred(p) {
     scene.remove(p.c.root);
+    disposeTree(p.c.root);
     if (p.sh) scene.remove(p.sh);
+    if (p.warn) scene.remove(p.warn);
+  }
+
+  function chaseSpeed(p) {
+    const day = Math.floor(runTime / DAY_LEN);
+    return p.def.speed * (isNight ? 1.08 : 1) * (p.def.aqua && inPond(p.x, p.z) ? 1.3 : 1) * (1 + 0.03 * Math.min(6, day)) * (p.enraged ? 1.2 : 1);
+  }
+  function triggerDist(def) {
+    if (def.atk === 'charge') return 11;
+    if (def.atk === 'sweep') return (def.sweepR || 4) * 0.92;
+    return def.reach + (def.lunge || 0) * 0.55;
+  }
+  function hitRadius(p) {
+    return p.def.atk === 'sweep' ? p.def.sweepR : 0.9 * p.def.scale + 0.6 + 0.35 * (scaleNow / 1.1);
+  }
+  function beginStrike(p, d) {
+    const def = p.def;
+    p.state = 'strike';
+    p.st = 0;
+    p.hitDone = false;
+    p.dur = def.atk === 'charge' ? 0.5 : def.atk === 'sweep' ? 0.3 : def.atk === 'bite' ? 0.22 : 0.26;
+    if (def.atk === 'sweep') resolveHitSweep(p);
+    else GameAudio.sfx.bite();
+  }
+  function resolveHitSweep(p) {
+    GameAudio.sfx.roar();
+    if (Math.hypot(player.x - p.x, player.z - p.z) < p.def.sweepR) resolveHit(p);
+  }
+  function resolveHit(p) {
+    if (p.hitDone) return;
+    p.hitDone = true;
+    if (player.y > 0.7) {                                  // melompat tepat waktu = hindar sempurna
+      perfectDodge(p);
+      return;
+    }
+    damagePlayer(p.def.dmg * p.dmgMul, 'Dimangsa ' + p.def.name, p.x, p.z);
+  }
+  function perfectDodge(p) {
+    showDmg(player.x, (player.gy || 0) + player.y + 3.0 * scaleNow / 1.1, player.z, 'HINDAR!', 'crit', 1.3);
+    GameAudio.sfx.land();
+    player.stamina = Math.min(100, player.stamina + 35);
+    player.counterT = 2.2;                                 // gigitan berikutnya jadi balasan keras
+    p.state = 'stun';
+    p.t = 1.3;
+    p.cd = (p.def.cd || 1.2) * 0.6;
+    gainXp(4);
+  }
+
+  function updateWarn(p, pgy) {
+    const w = p.warn, def = p.def;
+    if (p.state !== 'windup' || p.dead) { w.visible = false; return; }
+    const prog = clamp(1 - p.t / p.t0, 0, 1);
+    w.visible = true;
+    mWarn.opacity = 0.18 + 0.45 * prog;
+    w.rotation.set(0, 0, 0);
+    if (def.atk === 'sweep') {                          // lingkaran: seluruh area ini berbahaya
+      w.geometry = warnDisc;
+      w.position.set(p.x, pgy + 0.16, p.z);
+      w.scale.set(def.sweepR, 1, def.sweepR);
+    } else {                                            // jalur terkaman
+      const len = def.atk === 'charge' ? def.lunge + 1 : (def.lunge || 1.6) + hitRadius(p);
+      const wid = hitRadius(p) * 1.6;
+      const lx = p.locked ? p.lx : -Math.sin(p.yaw), lz = p.locked ? p.lz : -Math.cos(p.yaw);
+      w.geometry = warnPlane;
+      w.position.set(p.x + lx * len / 2, pgy + 0.16, p.z + lz * len / 2);
+      w.rotation.y = Math.atan2(lx, lz);
+      w.scale.set(wid, 1, len);
+    }
   }
 
   function updatePredators(dt) {
@@ -1750,25 +2046,60 @@
         if (d > def.fleeDist * 1.9) p.state = 'wander';
       } else if (p.state === 'chase') {
         chased = true;
-        const hx = dx / d, hz = dz / d;
+        let hx = dx / d, hz = dz / d;
+        if (def.pack && d > 5) {                           // berburu berpasangan: mengepung dari dua sisi
+          const f = p.flank * 0.55, cf = Math.cos(f), sf = Math.sin(f);
+          const rx = hx * cf - hz * sf, rz = hx * sf + hz * cf;
+          hx = rx; hz = rz;
+        }
         if (d > def.reach * 0.75) {
-          sp = def.speed * (isNight ? 1.08 : 1) * (def.aqua && inPond(p.x, p.z) ? 1.3 : 1);
+          sp = chaseSpeed(p);
           p.x += hx * sp * dt; p.z += hz * sp * dt;
         }
-        p.yaw = lerpAngle(p.yaw, faceYaw(hx, hz), Math.min(1, dt * 10));
+        p.yaw = lerpAngle(p.yaw, faceYaw(dx / d, dz / d), Math.min(1, dt * 10));
         if (d > detect * 1.9) p.state = 'wander';
-        else if (d < def.reach && p.cd <= 0) { p.state = 'windup'; p.t = def.windup; }
+        else if (p.cd <= 0 && d < triggerDist(def) && (def.atk !== 'charge' || d > 3.5)) {
+          p.state = 'windup';
+          p.t0 = p.t = (def.windup || 0.4) * (p.enraged ? 0.8 : 1) * (day >= 3 ? 0.92 : 1);
+          p.locked = false;
+        }
       } else if (p.state === 'windup') {
         chased = true;
         p.t -= dt;
-        p.yaw = lerpAngle(p.yaw, faceYaw(dx / d, dz / d), Math.min(1, dt * 8));
-        if (p.t <= 0) {
-          if (d < def.reach * 1.35 && player.y < 0.9) damagePlayer(def.dmg, 'Dimangsa ' + def.name, p.x, p.z);
-          p.state = 'recover';
-          p.t = 0.5;
-          p.cd = def.cd;
+        const prog = 1 - p.t / p.t0;
+        if (!p.locked) {
+          p.yaw = lerpAngle(p.yaw, faceYaw(dx / d, dz / d), Math.min(1, dt * 8));
+          if (def.atk !== 'sweep' && d > def.reach * 0.6 && prog < 0.5) {   // masih membuntuti sambil membidik
+            sp = def.speed * 0.45;
+            p.x += (dx / d) * sp * dt; p.z += (dz / d) * sp * dt;
+          }
+          if (prog >= 0.55) {                              // arah terkunci: setelah ini hanya bisa dihindari
+            p.locked = true;
+            const px = player.x + (def.atk === 'charge' ? player.vx * 0.25 : 0), pz = player.z + (def.atk === 'charge' ? player.vz * 0.25 : 0);
+            const ddx = px - p.x, ddz = pz - p.z, dd = Math.hypot(ddx, ddz) || 1;
+            p.lx = ddx / dd; p.lz = ddz / dd;
+            p.yaw = faceYaw(p.lx, p.lz);
+          }
         }
-      } else {                                           // recover
+        if (p.t <= 0) beginStrike(p, d);
+      } else if (p.state === 'strike') {
+        chased = true;
+        p.st += dt;
+        if (def.atk !== 'sweep') {
+          const spd = (def.lunge || 1.6) / p.dur;
+          p.x += p.lx * spd * dt; p.z += p.lz * spd * dt;
+          if (!p.hitDone && Math.hypot(player.x - p.x, player.z - p.z) < hitRadius(p)) resolveHit(p);
+        }
+        if (p.st >= p.dur) {
+          p.state = 'recover';
+          p.t = (def.recover || 0.55) * (p.hitDone ? 1 : (def.atk === 'charge' ? 1.5 : 1.25));   // meleset = lengah lebih lama
+          p.cd = (def.cd || 1.2) * (p.enraged ? 0.8 : 1);
+        }
+      } else if (p.state === 'stun') {                     // terkejut / terhuyung
+        chased = true;
+        p.t -= dt;
+        if (p.t <= 0) { p.state = 'chase'; p.cd = Math.min(p.cd, (def.cd || 1.2) * 0.6); }
+      } else {                                             // recover
         chased = true;
         p.t -= dt;
         if (p.t <= 0) p.state = 'chase';
@@ -1789,6 +2120,7 @@
   function update(dt) {
     runTime += dt;
     applyDayNight();
+    { const dNow = Math.floor(runTime / DAY_LEN); if (dNow > lvDay) { lvDay = dNow; if (dNow > 0) { gainXp(30); toast('☀ Hari ke-' + (dNow + 1) + '! +30 XP', 2); } } }
     if (keys.camL) camYaw += 1.9 * dt;
     if (keys.camR) camYaw -= 1.9 * dt;
 
@@ -1816,7 +2148,7 @@
     else player.stamina = Math.min(100, player.stamina + (mag > 0.2 ? 12 : 22) * dt);
 
     const weak = player.hunger <= 0 || player.thirst <= 0;
-    const speedMul = (powerLeft > 0 ? 1.25 : 1) * (weak ? 0.85 : 1) * curChar.speed;
+    const speedMul = (powerLeft > 0 ? 1.25 : 1) * (weak ? 0.85 : 1) * curChar.speed * speedLv();
     let slopeMul = 1;                                   // tanjakan memperlambat, turunan sedikit mempercepat
     if (mag > 0.1) {
       const gx = ix / mag, gz = iz / mag;
@@ -1861,6 +2193,7 @@
       if (powerLeft <= 0) { powerLeft = 0; GameAudio.sfx.powerEnd(); }
     }
     player.invuln = Math.max(0, player.invuln - dt);
+    player.counterT = Math.max(0, player.counterT - dt);
     player.lastDmg += dt;
 
     // lapar, haus, nyawa
@@ -1908,6 +2241,7 @@
             player.hunger = Math.min(100, player.hunger + FRUIT_HUNGER);
             GameAudio.sfx.eat();
             toast('Buah 🍒 +' + FRUIT_HUNGER + ' lapar', 1.2);
+            gainXp(2);
           }
         }
 
@@ -1918,9 +2252,14 @@
           if (dx * dx + dz * dz < (1.5 * sc) * (1.5 * sc) && player.y < 1.8) {
             taken.add(c.id);
             ch.group.remove(c.mesh);
+            scene.add(c.mesh);                                   // koin terbang ke arah dino
+            flyCoins.push({ mesh: c.mesh, t: 0, x0: c.x, y0: c.mesh.position.y, z0: c.z });
             ch.coins.splice(i, 1);
             runCoins++;
             save.coins++;
+            burst(5, c.x, c.mesh.position.y - heightAt(c.x, c.z), c.z);
+            showDmg(c.x, c.mesh.position.y + 0.5, c.z, '+1', 'gain', 0.9);
+            coinStreak = Math.min(8, coinStreak + 1); coinStreakT = 1.2;
             GameAudio.sfx.coin();
           }
         }
@@ -1939,6 +2278,7 @@
             shake = Math.max(shake, 0.3);
             GameAudio.sfx.power();
             toast('🥚 MODE KUAT! Gigitan 3x lebih sakit, kebal serangan', 2.4);
+            gainXp(12);
           }
         }
       }
@@ -2044,6 +2384,19 @@
     flies.push({ mesh, bx: Math.random() * 48, bz: Math.random() * 48, by: rand(0.6, 2.4), ph: Math.random() * 6 });
   }
 
+  let waterT = 0;
+  function updateWater(dt) {
+    waterT += dt;
+    mPond.opacity = 0.9 + Math.sin(waterT * 1.6) * 0.04;
+    for (const ch of chunks.values()) {
+      for (const rp of ch.ripples) {
+        const f = (waterT * 0.28 + rp.ph) % 1;
+        const sc = 0.15 + f * rp.r;
+        rp.mesh.scale.set(sc, sc, 1);
+        rp.mesh.material === mRipple && (mRipple.opacity = 0.35);
+      }
+    }
+  }
   function updateAmbient(dt) {
     for (const f of flyers) {
       f.a += f.w * dt;
@@ -2072,7 +2425,7 @@
   // ---------- Animasi, kamera, render ----------
   function animate(dt) {
     animDt = dt;
-    scaleNow += (curChar.scale * (powerLeft > 0 ? 1.5 : 1) - scaleNow) * Math.min(1, dt * 5);
+    scaleNow += (baseScale() * (powerLeft > 0 ? 1.5 : 1) - scaleNow) * Math.min(1, dt * 5);
     hero.root.scale.setScalar(scaleNow);
 
     let glow = 0;
@@ -2107,6 +2460,7 @@
         p.sh.visible = !p.dead || p.deadT < 0.8;
         placeShadow(p.sh, p.x, p.z, pgy, big * p.def.scale, (p.def.giant ? 3.2 : 1.6) * p.def.scale);
       }
+      if (p.warn) updateWarn(p, pgy);
       if (p.dead) {
         c.root.rotation.z += (1.5 - c.root.rotation.z) * Math.min(1, dt * 6);
         c.root.position.y = pgy + Math.max(-1.5, -0.6 * Math.max(0, p.deadT - 0.8));
@@ -2115,16 +2469,27 @@
       c.root.rotation.y = p.yaw;
       p.phase += (p.speedNow * 1.5 + 0.8) * dt;
       let atk = -1;
-      if (p.state === 'windup') atk = clamp(1 - p.t / p.def.windup, 0, 1) * 0.5;      // menarik kepala sebelum menggigit
-      else if (p.state === 'recover') atk = 0.5 + clamp(1 - p.t / 0.5, 0, 1) * 0.5;   // menyodok lalu kembali
-      if (c.isTrike) poseTrike(c, p.phase, clamp(p.speedNow / 6, 0, 1.3), atk, clock);
-      else poseCreature(c, p.phase, clamp(p.speedNow / 6, 0, 1.3), false, 0, atk, clock);
-      setGlow(c, p.flash * 0.8, 0xffffff);
+      const wp = p.state === 'windup' ? clamp(1 - p.t / p.t0, 0, 1) : 0;
+      if (p.state === 'strike') atk = clamp(p.st / p.dur, 0, 1);                      // menerkam: kepala menyodok, rahang membuka
+      else if (p.state === 'recover') atk = Math.max(0, 1 - (p.t0b || 0));
+      const run = p.state === 'strike' ? 1.3 : clamp(p.speedNow / 6, 0, 1.3);
+      if (c.isTrike) poseTrike(c, p.phase, run, p.state === 'strike' ? atk : -1, clock);
+      else poseCreature(c, p.phase, run, false, 0, p.state === 'strike' ? atk : -1, clock);
+      if (wp > 0) {                                                                    // bersiap: menunduk dan menarik badan ke belakang
+        if (c.isTrike) { c.headPivot.rotation.x = 0.5 * wp; c.body.rotation.x = 0.1 * wp; }
+        else { c.body.rotation.x = 0.28 * wp; c.body.position.y -= 0.18 * wp; c.headPivot.rotation.x = -0.35 * wp; }
+        c.root.scale.setScalar(p.def.scale * (1 + 0.07 * Math.sin(wp * Math.PI * 4)));
+      } else if (p.state === 'stun') {
+        c.body.rotation.z = Math.sin(clock * 22) * 0.07;                              // terhuyung
+        c.root.scale.setScalar(p.def.scale);
+      } else c.root.scale.setScalar(p.def.scale);
+      setGlow(c, p.flash * 0.8 + (p.enraged ? 0.18 + 0.1 * Math.sin(clock * 10) : 0), p.enraged ? 0xff3b30 : 0xffffff);
     }
 
     stepPool(dust, dt, 0);
     stepPool(sparks, dt, 9);
     updateAmbient(dt);
+    updateWater(dt);
   }
 
   function updateCamera(dt) {
@@ -2135,7 +2500,7 @@
     const tx = player.x + camLead.x * 0.6, tz = player.z + camLead.z * 0.6;
     camX += (tx - camX) * Math.min(1, dt * 8);
     camZ += (tz - camZ) * Math.min(1, dt * 8);
-    const grow = scaleNow / 1.1;
+    const grow = Math.max(0.9, scaleNow / 1.1);
     let sx = 0, sy = 0;
     if (shake > 0) {
       sx = (Math.random() - 0.5) * shake * 0.5;
@@ -2172,6 +2537,7 @@
     animate(dt);
     updateCamera(dt);
     updateDmg(dt);
+    updateFlyCoins(dt);
 
     if (toastT > 0) { toastT -= dt; if (toastT <= 0) toastEl.classList.remove('show'); }
     if (hurtT > 0) { hurtT -= dt; hurtEl.classList.add('on'); } else hurtEl.classList.remove('on');

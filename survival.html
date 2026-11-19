@@ -4,6 +4,12 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <title>Vosil Survival</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#1b3a2a">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="apple-touch-icon" href="icon-192.png">
   <style>
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
     html, body {
@@ -74,6 +80,18 @@
       line-height: 1.35;
     }
     #stats .sub { font-size: 13px; font-weight: 600; color: #e3f2fd; }
+    #stats .lvl { font-size: 14px; font-weight: 800; color: #ffe082; display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
+    .xpTrack { display: inline-block; width: 64px; height: 7px; border-radius: 4px; background: rgba(0, 0, 0, .45); overflow: hidden; }
+    .xpTrack i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #4fc3f7, #81d4fa); transition: width .25s; }
+    #coinBox.pop { animation: coinPop .35s ease-out; }
+    @keyframes coinPop { 0% { transform: scale(1); } 35% { transform: scale(1.35); color: #fff59d; } 100% { transform: scale(1); } }
+    #lvFlash {
+      position: fixed; inset: 0; pointer-events: none; opacity: 0; z-index: 5;
+      background: radial-gradient(ellipse at center, rgba(255, 224, 130, .0) 30%, rgba(255, 213, 79, .55) 100%);
+    }
+    #lvFlash.on { animation: lvFlash .9s ease-out; }
+    @keyframes lvFlash { 0% { opacity: 1; } 100% { opacity: 0; } }
+    .dmg.xp { color: #81d4fa; font-size: clamp(13px, 3.8vh, 20px); }
     .coinIcon {
       display: inline-block;
       width: 17px; height: 17px;
@@ -127,6 +145,7 @@
 
     /* ---------- Tombol kecil (musik, efek, layar penuh) ---------- */
     #topBtns {
+      z-index: 6;
       position: fixed;
       top: calc(var(--st) + 68px);
       right: calc(var(--sr) + 10px);
@@ -158,7 +177,7 @@
     /* sisi kanan layar (di bawah tombol aksi): geser untuk memutar kamera */
     #camZone {
       position: fixed;
-      right: 0; bottom: 0; top: 64px;
+      right: 0; bottom: 0; top: 120px;
       width: 52vw;
       pointer-events: none;
       touch-action: none;
@@ -306,6 +325,11 @@
     #rotate b { font-size: 54px; display: block; animation: tilt 1.6s ease-in-out infinite; }
     @keyframes tilt { 0%, 100% { transform: rotate(0); } 50% { transform: rotate(-90deg); } }
     @media (orientation: portrait) { #rotate { display: flex; } }
+    #rotBtn {
+      margin-top: 6px; padding: 14px 20px; border: 0; border-radius: 14px;
+      font-size: 17px; font-weight: 800; color: #1b1b1b; background: #ffd54f;
+    }
+    #rotNote { color: #90a4ae; max-width: 300px; line-height: 1.4; }
 
     #fatal {
       position: fixed; inset: 0; z-index: 30;
@@ -328,7 +352,8 @@
       <div class="bar small"><i>⚡</i><div class="track"><div id="fStam" class="fill"></div></div></div>
     </div>
     <div id="stats">
-      <div><span class="coinIcon"></span><span id="runCoins">0</span></div>
+      <div id="coinBox"><span class="coinIcon"></span><span id="runCoins">0</span></div>
+      <div class="lvl">Lv <b id="lvNo">1</b><span class="xpTrack"><i id="xpFill"></i></span></div>
       <div class="sub">Hari <b id="dayNo">1</b> · <span id="timeIcon">☀️</span></div>
     </div>
     <div id="toast"></div>
@@ -381,14 +406,20 @@
   <div id="over" class="panel hidden">
     <h2>KAMU TUMBANG</h2>
     <p class="big" id="overReason"></p>
-    <p class="big">Bertahan: <b id="overDays">0</b> hari &nbsp;·&nbsp; Predator: <b id="overKills">0</b></p>
+    <p class="big">Bertahan: <b id="overDays">0</b> hari &nbsp;·&nbsp; Predator: <b id="overKills">0</b> &nbsp;·&nbsp; Level: <b id="overLevel">1</b></p>
     <p class="big gold">Koin didapat: +<b id="overCoins">0</b></p>
     <p class="stat" id="overBest"></p>
     <p class="stat">Total koin: <b id="overTotal">0</b></p>
     <p class="cta">Ketuk untuk main lagi</p>
   </div>
 
-  <div id="rotate"><b>📱</b>Putar HP ke posisi horizontal (landscape) untuk bermain</div>
+  <div id="rotate">
+    <b>📱</b>
+    <div>Game ini dimainkan secara horizontal</div>
+    <button id="rotBtn" type="button">⛶ Ketuk untuk layar penuh otomatis horizontal</button>
+    <small id="rotNote">Jika layar tidak berputar sendiri, putar HP secara manual.</small>
+  </div>
+  <div id="lvFlash"></div>
   <div id="fatal"><div id="fatalMsg"></div></div>
 
   <!-- Three.js dari CDN. Kalau gagal, taruh three.min.js (versi r128) di folder yang sama. -->

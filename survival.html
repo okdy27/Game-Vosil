@@ -283,6 +283,19 @@
       will-change: transform, opacity;
       opacity: 0;
     }
+    .star {
+      position: absolute; left: 0; top: 0; font-weight: 900; line-height: 1;
+      text-shadow: 0 0 4px rgba(0, 0, 0, .7), 0 1px 0 #000; will-change: transform, opacity; opacity: 0;
+    }
+    .star.hit { color: #ffe44d; } .star.hurt { color: #ff5a4d; } .star.gain { color: #fff7b0; }
+    .ebar {
+      position: absolute; left: 0; top: 0; display: flex; flex-direction: column; align-items: center; gap: 1px;
+      font-size: 10px; font-weight: 800; color: #fff; text-shadow: 0 1px 2px #000; will-change: transform; opacity: 0;
+    }
+    .ebar b { display: block; width: 44px; height: 6px; border-radius: 4px; background: rgba(0, 0, 0, .6); border: 1px solid #000; overflow: hidden; }
+    .ebar i { display: block; height: 100%; width: 100%; background: linear-gradient(#ff7a6b, #e53935); }
+    .ebar.calm i { background: linear-gradient(#9be37a, #43a047); }
+    .ebar.rage i { background: linear-gradient(#ffb74d, #ff6d00); }
     .dmg.hurt { color: #ff5252; }
     .dmg.hit { color: #fff59d; }
     .dmg.crit { color: #ff9800; }
@@ -369,6 +382,7 @@
   <div id="topBtns">
     <button id="musicBtn" class="ibtn" type="button" data-on="🎵" data-off="🎵" aria-label="Musik">🎵</button>
     <button id="sfxBtn" class="ibtn" type="button" data-on="🔊" data-off="🔊" aria-label="Efek suara">🔊</button>
+    <button id="qBtn" class="ibtn" type="button" aria-label="Kualitas grafis">◪</button>
     <button id="fsBtn" class="ibtn" type="button" aria-label="Layar penuh">⛶</button>
   </div>
 

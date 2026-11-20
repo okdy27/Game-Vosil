@@ -1626,7 +1626,7 @@
   let preds = [], spawnCd = 4, animalCd = 2, chased = false, isNight = false, lastBiome = null;
   let biteVoiceT = -9;
   let swimming = false, swimBlend = 0, swimToastCd = 0, strokeT = 0, ringT = 0;
-  let climbToastCd = 0, biomeCd = 0, drinkCd = 0, toastT = 0, saveT = 0, hurtT = 0, shake = 0;
+  let climbLocked = false, climbToastCd = 0, biomeCd = 0, drinkCd = 0, toastT = 0, saveT = 0, hurtT = 0, shake = 0;
   let camGy = 0, lvDay = 0;
   let camYaw = 0, camPitch = 0.71, camLift = 0;
   let camX = 0, camZ = 0, camLead = { x: 0, z: 0 }, lastWet = false, shown = {};
@@ -2328,7 +2328,10 @@
   // dayung: kaki mengayuh cepat, badan agak terangkat, ekor menyapu kiri-kanan
   function applySwim(c, b, spd, t) {
     if (b < 0.01) return;
-    const ph = t * (5.5 + spd * 0.9);
+    // fase diakumulasi (bukan clock*kecepatan): perubahan kecepatan tidak boleh melompatkan fase kaki -> penyebab 'gedek-gedek'
+    c.swSpd = approach(c.swSpd === undefined ? spd : c.swSpd, spd, 4);
+    c.swPh = (c.swPh || 0) + animDt * (5.5 + c.swSpd * 0.9);
+    const ph = c.swPh;
     for (let i = 0; i < 2; i++) {
       const L = c.legs[i], o = ph + i * Math.PI;
       L.hip.rotation.x += (Math.sin(o) * 0.95 - L.hip.rotation.x) * b;
@@ -2727,7 +2730,7 @@
     for (const p of preds) {                                          // dinosaurus darat tidak bisa masuk air dalam
       if (p.dead) continue;
       if (!p.def.aqua && Math.abs(p.x - player.x) < 90 && Math.abs(p.z - player.z) < 90 && WL - heightAt(p.x, p.z) > 0.9) {
-        if (p.px !== undefined && WL - heightAt(p.px, p.pz) <= 0.9) { p.x = p.px; p.z = p.pz; }
+        if (p.px !== undefined && WL - heightAt(p.px, p.pz) <= 0.9) { p.x = p.px; p.z = p.pz; p.shoreBlk = 0.25; }   // tertahan di tepi: diam, tidak bergetar
         else {                                                       // terjebak di air (muncul/terdorong): pindah ke daratan terdekat
           for (let k = 0; k < 14; k++) {
             const a2 = Math.random() * Math.PI * 2, d2 = 14 + k * 3;
@@ -2840,6 +2843,7 @@
       }
 
       pushOut(p, 0.8 * def.scale);
+      if (p.shoreBlk > 0) { p.shoreBlk -= dt; sp = 0; }
       p.speedNow = sp;
       if (d > 90) { p.dead = true; p.deadT = 99; }      // terlalu jauh: dibuang
     }
@@ -2914,10 +2918,12 @@
       const gx = ix / mag, gz = iz / mag;
       const dh = heightAt(player.x + gx, player.z + gz) - heightAt(player.x, player.z);
       slopeMul = Math.min(1.25, Math.max(0.55, 1 - dh * 0.8));
-      if (dh > 0.85) {                                  // tebing curam: memanjat menguras tenaga, tenaga habis = merosot
+      if (player.stamina >= 25) climbLocked = false;
+      if (dh > 0.85 && !swimming) {                     // tebing curam: memanjat menguras tenaga; tenaga habis = terkunci diam (tanpa getar)
         slopeMul = 0.4;
         player.stamina = Math.max(0, player.stamina - 34 * dt);
-        if (player.stamina <= 0.5) slide = true;
+        if (player.stamina <= 0.5) climbLocked = true;
+        if (climbLocked) { slide = true; slopeMul = 0; }
         if (climbToastCd <= 0) { toast('🧗 Tebing curam! Memanjat menguras tenaga', 2); climbToastCd = 9; }
       }
     }
@@ -2925,7 +2931,7 @@
     if (lastWet && !swimming) slopeMul *= 0.7;          // mengarungi air dangkal
     const target = (sprinting ? SPRINT : WALK) * mag * speedMul * slopeMul;
     let tx = mag > 0 ? (ix / mag) * target : 0, tz = mag > 0 ? (iz / mag) * target : 0;
-    if (slide) { tx = -(ix / mag) * 3; tz = -(iz / mag) * 3; }
+    if (slide) { tx = 0; tz = 0; }
     const k = Math.min(1, dt * 12);
     if (!swimming) {
       player.vx += (tx - player.vx) * k;
@@ -3223,7 +3229,7 @@
       hero.root.rotation.y = player.yaw;
       poseCreature(hero, phase, run, air, player.vy, player.atkT >= 0 ? clamp(player.atkT / 0.35, 0, 1) : -1, clock);
       if (swimBlend > 0.01) applySwim(hero, swimBlend, spd, clock);
-      tiltToGround(hero.root, player.x, player.z, player.yaw, 0.9 * scaleNow / 1.1, dt, swimBlend > 0.5 || air);
+      tiltToGround(hero.root, player.x, player.z, player.yaw, 0.9 * scaleNow / 1.1, dt, swimBlend > 0.3 || lastWet || air);
     }
     const s = Math.max(0.5, 1 - player.y / 3.2);
     heroShadow.visible = swimBlend < 0.5;

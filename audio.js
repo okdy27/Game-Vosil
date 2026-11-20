@@ -79,6 +79,7 @@ const GameAudio = (() => {
         const d = noiseBuf.getChannelData(0);
         for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
         applyPrefs();
+        loadSamples();
       }
       if (actx.state === 'suspended') actx.resume();
     } catch (e) { /* abaikan: game tetap jalan tanpa suara */ }
@@ -283,6 +284,45 @@ const GameAudio = (() => {
     die:    { d: 1.3, p: 0.85, v: 1, end: 0.45 }
   };
   const voiceEnds = [], sigAt = {};
+  // ----- Suara dinosaurus dari FILE (opsional): letakkan di folder audio/ + audio/manifest.json -----
+  // manifest: { "rex_attack": "rex_attack.ogg", "rex": "rex.ogg", ... }  (kunci "spesies_jenis" lebih diutamakan daripada "spesies")
+  // Tanpa file / gagal dimuat -> otomatis memakai suara sintesis.
+  const sampleBufs = {};
+  let samplesLoading = false;
+  function loadSamples() {
+    if (samplesLoading || !actx || typeof fetch !== 'function') return;
+    samplesLoading = true;
+    fetch('audio/manifest.json', { cache: 'no-cache' }).then((r) => (r.ok ? r.json() : null)).then((man) => {
+      if (!man || typeof man !== 'object') return;
+      Object.keys(man).forEach((k) => {
+        if (k.charAt(0) === '_' || typeof man[k] !== 'string') return;
+        fetch('audio/' + man[k]).then((r) => (r.ok ? r.arrayBuffer() : null)).then((ab) => {
+          if (!ab) return null;
+          return new Promise((res, rej) => { try { const p = actx.decodeAudioData(ab, res, rej); if (p && p.then) p.then(res, rej); } catch (e) { rej(e); } });
+        }).then((buf) => {
+          if (!buf) return;
+          let pk = 0;                                              // normalkan puncak -> volume antar-file seragam
+          for (let c = 0; c < buf.numberOfChannels; c++) { const d = buf.getChannelData(c); for (let i = 0; i < d.length; i++) { const a = Math.abs(d[i]); if (a > pk) pk = a; } }
+          sampleBufs[k] = { buf, g: pk > 0.001 ? 0.8 / pk : 1 };
+        }).catch(() => { /* file rusak: pakai sintesis */ });
+      });
+    }).catch(() => { /* tidak ada manifest: pakai sintesis */ });
+  }
+  function playSample(species, kind, v, pan, now) {
+    const e = sampleBufs[species + '_' + kind] || sampleBufs[species];
+    if (!e) return false;
+    try {
+      const src = actx.createBufferSource(); src.buffer = e.buf;
+      const hpf = actx.createBiquadFilter(); hpf.type = 'highpass'; hpf.frequency.value = 110; hpf.Q.value = 0.5;   // buang sub-bass untuk speaker HP
+      const out = actx.createGain(); out.gain.value = Math.min(1, v * 1.6) * e.g;
+      src.connect(hpf); hpf.connect(out);
+      if (pan && actx.createStereoPanner) { const sp = actx.createStereoPanner(); sp.pan.value = Math.max(-1, Math.min(1, pan)); out.connect(sp); sp.connect(voiceBus); } else out.connect(voiceBus);
+      src.start(now);
+      voiceEnds.push(now + Math.min(3, e.buf.duration) + 0.1); voiceEnds.sort((a, b) => a - b);
+      return true;
+    } catch (err) { return false; }
+  }
+
   let lastVoiceAt = -9;
   function voiceFor(species, kind, vol, pan) {
     if (!actx || !voiceBus || !noiseBuf || !prefs.sfx) return;
@@ -297,6 +337,7 @@ const GameAudio = (() => {
     lastVoiceAt = now; sigAt[sig] = now;
     const v = Math.min(1.2, vol == null ? 1 : vol) * V.vol * K.v * 0.5;
     if (v < 0.01) return;
+    if (playSample(species, kind, v, pan, now)) return;     // file suara buatan pengguna (audio/manifest.json) bila ada
     const t = now, d = V.dur * K.d;
     voiceEnds.push(t + d + 0.1); voiceEnds.sort((a, b) => a - b);
     const rep = V.twice && kind === 'call' ? 2 : 1;
@@ -362,7 +403,7 @@ const GameAudio = (() => {
   //  SIANG / eksplorasi : melodi seruling tipis + pad ringan + petikan lembut, banyak jeda hening (mid-high, memberi ruang suara alam)
   //  MALAM / waspada    : drone rendah, perkusi kayu & detak pelan, harmoni disonan tipis (low-mid, membangun kewaspadaan)
   //  DIKEJAR / combat   : drum tribal penuh, ostinato senar/synth, bas agresif, tempo cepat (full spectrum)
-  const music = (() => {
+  const procMusic = (() => {
     const PROG = [
       { root: 38, pad: [50, 53, 57, 62] },   // Dm
       { root: 34, pad: [46, 50, 53, 58] },   // Bb
@@ -523,6 +564,62 @@ const GameAudio = (() => {
         running = false;
         if (timer) clearInterval(timer);
         timer = null;
+      }
+    };
+  })();
+
+
+  // ----- Musik latar dari FILE (opsional): bgm.ogg / bgm.m4a / bgm.mp3 / bgm.webm di folder game -----
+  // Dicoba berurutan sesuai dukungan browser; gagal semua -> musik prosedural bawaan tetap dipakai.
+  const music = (() => {
+    let el = null, gain = null, state = 'idle', wanted = false, duckT = null;
+    const CANDS = [['bgm.ogg', 'audio/ogg; codecs="vorbis"'], ['bgm.webm', 'audio/webm; codecs="opus"'], ['bgm.m4a', 'audio/mp4; codecs="mp4a.40.2"'], ['bgm.mp3', 'audio/mpeg']];
+    function tryFile(i) {
+      while (i < CANDS.length && !(el.canPlayType && el.canPlayType(CANDS[i][1]))) i++;
+      if (i >= CANDS.length) { state = 'none'; return; }
+      el.onerror = () => tryFile(i + 1);
+      el.src = CANDS[i][0];
+      el.load();
+    }
+    function begin() {
+      if (state !== 'idle' || !actx || !musicBus || typeof Audio !== 'function') return;
+      state = 'loading';
+      try {
+        el = new Audio(); el.loop = true; el.preload = 'auto'; el.crossOrigin = 'anonymous';
+        el.addEventListener('canplay', () => {
+          if (state !== 'loading') return;
+          try {
+            const msrc = actx.createMediaElementSource(el);
+            const hp = actx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 70; hp.Q.value = 0.5;   // buang sub-bass
+            gain = actx.createGain(); gain.gain.value = 0;
+            msrc.connect(hp); hp.connect(gain); gain.connect(musicBus);
+            const pr = el.play();
+            const ok = () => {
+              state = 'file';
+              gain.gain.setTargetAtTime(0.9, actx.currentTime, 1.2);   // fade-in halus, musik prosedural diganti
+              procMusic.stop();
+              duckT = setInterval(() => {                               // saat dikeroyok musik file sedikit mengecil agar efek tempur terdengar
+                const dg = Math.max(0, Math.min(1, dangerFn() || 0));
+                gain.gain.setTargetAtTime(0.9 - 0.3 * dg, actx.currentTime, 0.4);
+              }, 120);
+            };
+            if (pr && pr.then) pr.then(ok, () => { state = 'none'; }); else ok();
+          } catch (e) { state = 'none'; }
+        });
+        tryFile(0);
+      } catch (e) { state = 'none'; }
+    }
+    return {
+      start() {
+        wanted = true;
+        if (state === 'file') { try { el.play(); } catch (e) { /* abaikan */ } return; }
+        procMusic.start();                    // langsung ada suara; diganti file begitu siap
+        begin();
+      },
+      stop() {
+        wanted = false;
+        procMusic.stop();
+        if (state === 'file') { try { el.pause(); } catch (e) { /* abaikan */ } }
       }
     };
   })();

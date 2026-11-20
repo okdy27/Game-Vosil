@@ -247,7 +247,15 @@
   function rawHeight(x, z) {
     const big = (vnoise(x / 66, z / 66, 71) - 0.5) * 12.5;       // bukit dan lembah besar
     const mid = (vnoise(x / 26, z / 26, 72) - 0.5) * 2.8;      // gelombang kecil
-    return (big + mid) * smooth(12, 70, Math.hypot(x, z));     // sekitar titik awal tetap landai
+    const dist = Math.hypot(x, z);
+    const mesa = smooth(0.50, 0.62, vnoise(x / 80, z / 80, 93)) * 4.8 * smooth(30, 65, dist);   // dataran tinggi bertebing
+    return (big + mid) * smooth(12, 70, dist) + mesa;         // sekitar titik awal tetap landai
+  }
+  // permukaan air sungai & danau (tetap di satu ketinggian); sungai mengikis tanah di sepanjang jalurnya
+  const WL = -4.2;
+  function riverT(x, z) {
+    const rv = Math.abs(vnoise(x / 120, z / 120, 91) - 0.5);
+    return (1 - smooth(0.008, 0.11, rv)) * smooth(25, 55, Math.hypot(x, z));
   }
   function pondOf(cx, cz) {                                     // satu kolam per potongan (paling banyak), tetap sama setiap dipanggil
     const key = cx + ',' + cz;
@@ -258,13 +266,22 @@
     if ((cx === 0 && cz === -1) || rng() < biome.pond) {       // potongan (0,-1): selalu ada kolam dekat awal
       const r = 3 + rng() * 2;
       const x = cx * CH + 11 + rng() * (CH - 22), z = cz * CH + 11 + rng() * (CH - 22);
-      p = { x, z, r, base: rawHeight(x, z) - 0.3 };
+      const b0 = rawHeight(x, z);
+      const guaranteed = cx === 0 && cz === -1;                 // kolam awal selalu ada
+      let rough = !guaranteed && (riverT(x, z) > 0 || b0 < WL + 1.2);
+      for (let k = 0; k < 4 && !rough && !guaranteed; k++) {                   // kolam hanya di tanah yang cukup rata
+        const ax = x + Math.cos(k * 1.571) * 9, az = z + Math.sin(k * 1.571) * 9;
+        if (Math.abs(rawHeight(ax, az) - b0) > 1.4 || riverT(ax, az) > 0) rough = true;
+      }
+      if (!rough) p = { x, z, r, base: b0 - 0.3 };
     }
     pondCache.set(key, p);
     return p;
   }
   function heightAt(x, z) {
     let h = rawHeight(x, z);
+    const rt = riverT(x, z);
+    if (rt > 0) h = lerp(h, Math.min(h, Math.max(WL - 0.8, h - 7)), rt);   // alur sungai (di dataran tinggi: jurang kering sedalam 7 m)
     const p = pondOf(Math.floor(x / CH), Math.floor(z / CH));
     if (p) {                                                    // kolam berada di cekungan datar
       const d = Math.hypot(x - p.x, z - p.z);
@@ -293,7 +310,12 @@
         let cr = bc.r * v, cg = bc.g * v, cb = bc.b * v;
         const steep = smooth(0.07, 0.3, 1 - nor[k + 1]) * 0.65;          // lereng curam: tanah/batu terbuka, lembah: lebih gelap & lembap
         cr += (0.5 * v - cr) * steep; cg += (0.42 * v - cg) * steep; cb += (0.32 * v - cb) * steep;
-        const damp = smooth(-1.5, -5, h) * 0.25;
+        const rock = smooth(0.22, 0.4, 1 - nor[k + 1]) * 0.8;            // dinding tebing: batu abu-abu
+        cr += (0.56 * v - cr) * rock; cg += (0.54 * v - cg) * rock; cb += (0.5 * v - cb) * rock;
+        const shore = smooth(WL + 1.3, WL + 0.15, h), bed = smooth(WL, WL - 1.2, h);   // tepi air berpasir, dasar berlumpur
+        cr += (0.74 * v - cr) * shore * 0.85; cg += (0.66 * v - cg) * shore * 0.85; cb += (0.46 * v - cb) * shore * 0.85;
+        cr *= 1 - bed * 0.45; cg *= 1 - bed * 0.4; cb *= 1 - bed * 0.35;
+        const damp = smooth(-1.5, -5, h) * 0.25 * (1 - shore);
         cr *= 1 - damp; cg *= 1 - damp * 0.6; cb *= 1 - damp * 0.8;
         col[k] = Math.min(1, cr); col[k + 1] = Math.min(1, cg); col[k + 2] = Math.min(1, cb);
       }
@@ -329,6 +351,7 @@
   const coinInGeo = new THREE.CylinderGeometry(0.26, 0.26, 0.14, 10);
   coinInGeo.rotateX(Math.PI / 2);
   const pondGeo = new THREE.CircleGeometry(1, 20);
+  const riverGeo = new THREE.PlaneGeometry(CH, CH); riverGeo.rotateX(-Math.PI / 2);
   const eggGeo = new THREE.SphereGeometry(0.42, 12, 10);
   const spotGeo = new THREE.SphereGeometry(0.09, 6, 6);
   const ringGeo = new THREE.TorusGeometry(0.62, 0.045, 6, 24);
@@ -613,6 +636,15 @@
     const groundMesh = new THREE.Mesh(ch.geo, mGround);
     groundMesh.userData.keep = true;
     group.add(groundMesh);
+    let lowest = 1e9;                                           // adakah tanah di bawah permukaan air (sungai/danau)?
+    for (let j = 0; j <= 8; j++) for (let i = 0; i <= 8; i++) lowest = Math.min(lowest, heightAt(ox + i * CH / 8, oz + j * CH / 8));
+    if (lowest < WL + 0.05) {
+      const w = new THREE.Mesh(riverGeo, mPond);
+      w.position.set(ox + CH / 2, WL, oz + CH / 2);
+      w.userData.keep = true;
+      group.add(w);
+      ch.river = true;
+    }
 
     const shadows = [];
     const sh = (x, z, r, h) => shadows.push([x, z, r, h]);
@@ -620,6 +652,7 @@
     const tryPlace = (r) => {
       for (let i = 0; i < 10; i++) {
         const x = ox + 1.5 + rng() * (CH - 3), z = oz + 1.5 + rng() * (CH - 3);
+        if (heightAt(x, z) < WL + 0.5) continue;
         if (placed.every((p) => (p.x - x) * (p.x - x) + (p.z - z) * (p.z - z) > (p.r + r) * (p.r + r))) {
           placed.push({ x, z, r });
           return { x, z };
@@ -936,6 +969,7 @@
   }
 
   function inPond(x, z) {
+    if (heightAt(x, z) < WL - 0.05) return true;
     const cx0 = Math.floor(x / CH), cz0 = Math.floor(z / CH);
     for (let a = -1; a <= 1; a++) {
       for (let b = -1; b <= 1; b++) {
@@ -1518,7 +1552,7 @@
   let runCoins = 0, kills = 0, overAt = 0, startPerf = 0;
   let powerLeft = 0, scaleNow = curChar.scale * lvScale(1), phase = 0, deathReason = '';
   let preds = [], spawnCd = 4, animalCd = 2, chased = false, isNight = false, lastBiome = null;
-  let biomeCd = 0, drinkCd = 0, toastT = 0, saveT = 0, hurtT = 0, shake = 0;
+  let climbToastCd = 0, biomeCd = 0, drinkCd = 0, toastT = 0, saveT = 0, hurtT = 0, shake = 0;
   let camGy = 0, lvDay = 0;
   let camYaw = 0, camPitch = 0.71, camLift = 0;
   let camX = 0, camZ = 0, camLead = { x: 0, z: 0 }, lastWet = false, shown = {};
@@ -2471,14 +2505,23 @@
 
     const weak = player.hunger <= 0 || player.thirst <= 0;
     const speedMul = (powerLeft > 0 ? 1.25 : 1) * (weak ? 0.85 : 1) * curChar.speed * speedLv();
-    let slopeMul = 1;                                   // tanjakan memperlambat, turunan sedikit mempercepat
+    let slopeMul = 1, slide = false;                    // tanjakan memperlambat, turunan sedikit mempercepat
     if (mag > 0.1) {
       const gx = ix / mag, gz = iz / mag;
       const dh = heightAt(player.x + gx, player.z + gz) - heightAt(player.x, player.z);
       slopeMul = Math.min(1.25, Math.max(0.55, 1 - dh * 0.8));
+      if (dh > 0.85) {                                  // tebing curam: memanjat menguras tenaga, tenaga habis = merosot
+        slopeMul = 0.4;
+        player.stamina = Math.max(0, player.stamina - 34 * dt);
+        if (player.stamina <= 0.5) slide = true;
+        if (climbToastCd <= 0) { toast('🧗 Tebing curam! Memanjat menguras tenaga', 2); climbToastCd = 9; }
+      }
     }
+    climbToastCd -= dt;
+    if (lastWet) slopeMul *= 0.7;                       // mengarungi air
     const target = (sprinting ? SPRINT : WALK) * mag * speedMul * slopeMul;
-    const tx = mag > 0 ? (ix / mag) * target : 0, tz = mag > 0 ? (iz / mag) * target : 0;
+    let tx = mag > 0 ? (ix / mag) * target : 0, tz = mag > 0 ? (iz / mag) * target : 0;
+    if (slide) { tx = -(ix / mag) * 3; tz = -(iz / mag) * 3; }
     const k = Math.min(1, dt * 12);
     player.vx += (tx - player.vx) * k;
     player.vz += (tz - player.vz) * k;

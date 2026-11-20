@@ -368,6 +368,37 @@
   const mCoin = std(0xffc107, { metalness: 0.5, roughness: 0.35, emissive: 0x6b4a00 });
   const mCoinIn = std(0xffe082, { emissive: 0x4a3600 });
   const mPond = new THREE.MeshBasicMaterial({ color: 0x3fa7e0, transparent: true, opacity: 0.92 });
+  // tekstur air yang bisa diulang mulus: pola gelombang gelap-terang (untuk dasar) dan kilau cahaya (untuk lapisan atas)
+  function wrapCanvasTex(size, draw, rep) {
+    try {
+      const cv = document.createElement('canvas'); cv.width = cv.height = size;
+      const c = cv.getContext('2d'); draw(c, size);
+      const tx = new THREE.CanvasTexture(cv);
+      tx.wrapS = tx.wrapT = THREE.RepeatWrapping; tx.repeat.set(rep, rep);
+      return tx;
+    } catch (e) { return null; }
+  }
+  const waveTex = wrapCanvasTex(128, (c, S) => {
+    c.fillStyle = '#d8ecff'; c.fillRect(0, 0, S, S);
+    let sd = 7; const rnd = () => (sd = (sd * 16807) % 2147483647) / 2147483647;
+    for (let i = 0; i < 46; i++) {
+      const x = rnd() * S, y = rnd() * S, w = 14 + rnd() * 30, h = 2 + rnd() * 4, dark = rnd() < 0.5;
+      c.fillStyle = dark ? 'rgba(90,150,200,0.34)' : 'rgba(255,255,255,0.5)';
+      for (const ox of [-S, 0, S]) for (const oy of [-S, 0, S]) { c.beginPath(); c.ellipse(x + ox, y + oy, w, h, 0, 0, Math.PI * 2); c.fill(); }
+    }
+  }, 3);
+  const glintTex = wrapCanvasTex(128, (c, S) => {
+    c.fillStyle = '#000'; c.fillRect(0, 0, S, S);
+    let sd = 11; const rnd = () => (sd = (sd * 16807) % 2147483647) / 2147483647;
+    for (let i = 0; i < 60; i++) {
+      const x = rnd() * S, y = rnd() * S, w = 2 + rnd() * 7, a = 0.35 + rnd() * 0.65;
+      c.fillStyle = 'rgba(255,255,255,' + a.toFixed(2) + ')';
+      for (const ox of [-S, 0, S]) for (const oy of [-S, 0, S]) { c.beginPath(); c.ellipse(x + ox, y + oy, w, 1.2, 0, 0, Math.PI * 2); c.fill(); }
+    }
+  }, 4);
+  if (waveTex) { mPond.map = waveTex; mPond.needsUpdate = true; }
+  const mGlint = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.4, depthWrite: false, blending: THREE.AdditiveBlending });
+  if (glintTex) { mGlint.map = glintTex; mGlint.needsUpdate = true; }
   // bayangan lembut: mengikuti arah matahari (cahaya dari kiri-atas-belakang -> bayangan jatuh ke kanan-depan)
   const mShadow = new THREE.MeshBasicMaterial({ color: 0x0a1a12, transparent: true, opacity: 0.5, depthWrite: false });
   mShadow.polygonOffset = true; mShadow.polygonOffsetFactor = -2; mShadow.polygonOffsetUnits = -2;
@@ -643,6 +674,10 @@
       w.position.set(ox + CH / 2, WL, oz + CH / 2);
       w.userData.keep = true;
       group.add(w);
+      const gl = new THREE.Mesh(riverGeo, mGlint);               // kilau cahaya yang bergerak
+      gl.position.set(ox + CH / 2, WL + 0.03, oz + CH / 2);
+      gl.userData.keep = true;
+      group.add(gl);
       ch.river = true;
     }
 
@@ -1143,6 +1178,22 @@
   // atk: kemajuan gigitan 0..1, atau -1 jika tidak menggigit
   let animDt = 0.016;
   const approach = (cur, target, rate) => cur + (target - cur) * Math.min(1, animDt * rate);
+  // badan dimiringkan mengikuti kemiringan tanah (naik tebing: moncong naik, kaki tetap menapak)
+  function tiltToGround(root, x, z, yaw, len, dt, off) {
+    root.rotation.order = 'YXZ';
+    const ud = root.userData;
+    let tp = 0, tr = 0;
+    if (!off) {
+      const fx = -Math.sin(yaw), fz = -Math.cos(yaw), sx = -fz, sz = fx;
+      tp = Math.atan2(heightAt(x + fx * len, z + fz * len) - heightAt(x - fx * len, z - fz * len), 2 * len);
+      tr = Math.atan2(heightAt(x + sx * len * 0.6, z + sz * len * 0.6) - heightAt(x - sx * len * 0.6, z - sz * len * 0.6), 1.2 * len);
+      tp = clamp(tp, -0.75, 0.75); tr = clamp(tr, -0.5, 0.5);
+    }
+    ud.tp = approach(ud.tp || 0, tp, 8);
+    ud.tr = approach(ud.tr || 0, tr, 8);
+    root.rotation.x = ud.tp;
+    root.rotation.z = ud.tr * 0.6;
+  }
   function poseCreature(c, phase, run, air, vy, atk, t) {
     // nilai dihaluskan supaya perpindahan diam <-> lari <-> lompat tidak patah-patah
     const r = c.runS = approach(c.runS === undefined ? run : c.runS, run, 9);
@@ -1552,6 +1603,8 @@
   let runCoins = 0, kills = 0, overAt = 0, startPerf = 0;
   let powerLeft = 0, scaleNow = curChar.scale * lvScale(1), phase = 0, deathReason = '';
   let preds = [], spawnCd = 4, animalCd = 2, chased = false, isNight = false, lastBiome = null;
+  let biteVoiceT = -9;
+  let swimming = false, swimBlend = 0, swimToastCd = 0, strokeT = 0, ringT = 0;
   let climbToastCd = 0, biomeCd = 0, drinkCd = 0, toastT = 0, saveT = 0, hurtT = 0, shake = 0;
   let camGy = 0, lvDay = 0;
   let camYaw = 0, camPitch = 0.71, camLift = 0;
@@ -1641,7 +1694,7 @@
   function starBurst(x, y, z, n, cls) {
     if (!starPool.length) return;
     n = Math.max(2, Math.round(n * fxMul));
-    const ch = cls === 'hurt' ? '✸' : cls === 'gain' ? '✦' : '★';
+    const ch = cls === 'water' ? '●' : cls === 'hurt' ? '✸' : cls === 'gain' ? '✦' : '★';
     for (let k = 0; k < n; k++) {
       let d = starPool.find((q) => q.life >= q.max);
       if (!d) return;
@@ -1650,7 +1703,7 @@
       d.x = x; d.y = y; d.z = z; d.ox = 0; d.oy = 0;
       d.vx = Math.cos(a) * sp; d.vy = Math.sin(a) * sp - 70; d.rot = rand(-180, 180);
       d.el.textContent = ch; d.el.className = 'star ' + (cls || 'hit');
-      d.el.style.fontSize = Math.round(rand(11, 21)) + 'px';
+      d.el.style.fontSize = (cls === 'water' ? Math.round(rand(5, 10)) : Math.round(rand(11, 21))) + 'px';
     }
   }
   function updateStars(dt) {
@@ -1754,6 +1807,7 @@
     scene.fog.far = lerp(50, 68, k);               // lebih pendek dari area yang dimuat (60 m) supaya tepi dunia tersamar
     mPond.color.setRGB(lerp(0.06, 0.25, k), lerp(0.16, 0.66, k), lerp(0.3, 0.88, k));   // air gelap saat malam
     mDeep.opacity = lerp(0.7, 0.55, k);
+    mGlint.opacity = 0.12 + 0.4 * k;
     mShadow.opacity = 0.14 + 0.42 * k;               // siang: bayangan tegas, malam: nyaris tak terlihat
     hemi.intensity = 0.3 + 0.42 * k;
     sunLight.intensity = 0.12 + 0.95 * k;
@@ -1773,7 +1827,7 @@
       hp: 100, hunger: 100, thirst: 100, stamina: 100, exhausted: false,
       invuln: 0, atkT: -1, atkCd: 0, atkHit: false, lastDmg: 99, level: 1, xp: 0, counterT: 0
     });
-    roarCd = 0; time = 0; runTime = 0; runCoins = 0; kills = 0; powerLeft = 0; scaleNow = baseScale(); shake = 0; lvDay = 0;
+    roarCd = 0; hordeCd = 70; horde = null; dangerNow = 0; swimming = false; swimBlend = 0; time = 0; runTime = 0; runCoins = 0; kills = 0; powerLeft = 0; scaleNow = baseScale(); shake = 0; lvDay = 0;
     spawnCd = 8; animalCd = 2; chased = false; lastBiome = null; biomeCd = 0; drinkCd = 0; deathReason = '';
     camX = 0; camZ = 0; camLead = { x: 0, z: 0 }; shown = {};
     state = 'playing';
@@ -1799,6 +1853,7 @@
     writeSave();
     GameAudio.music.stop();
     GameAudio.sfx.crash();
+    GameAudio.sfx.dino(save.char, 'die', 1);
     if (newBest && days > 0) GameAudio.sfx.record();
     shake = 1;
     $('overReason').textContent = reason;
@@ -2042,6 +2097,7 @@
     hurtT = 0.25;
     shake = Math.max(shake, 0.6);
     GameAudio.sfx.hit();
+    GameAudio.sfx.dino(save.char, 'hurt', 0.9);
     if (player.hp <= 0) { player.hp = 0; die(reason); }
     return true;
   }
@@ -2066,12 +2122,14 @@
     if (p.hp > 0 && !p.enraged && !p.def.timid && !p.def.neutral && p.hp <= p.maxHp * 0.3) {   // hampir kalah: mengamuk
       p.enraged = true;
       toast('💢 ' + p.def.name + ' mengamuk!', 1.8);
-      GameAudio.sfx.roar();
+      cry(p.type, 'call', p.x, p.z, 1.4);
     }
+    if (p.hp > 0 && clock - (p.cryT || -9) > 0.6) { p.cryT = clock; cry(p.type, 'hurt', p.x, p.z, 1); }
     if (p.hp <= 0) killPred(p);
   }
 
   function killPred(p) {
+    cry(p.type, 'die', p.x, p.z, 1.2);
     p.dead = true;
     p.deadT = 0;
     if (!p.def.timid && !p.def.neutral) kills++;                 // hanya predator yang dihitung
@@ -2087,6 +2145,49 @@
     GameAudio.sfx.smash();
     GameAudio.sfx.eat();
     toast((p.def.reward ? '+' + p.def.reward + ' koin · ' : '') + 'daging +' + p.def.food + ' lapar', 2.2);
+  }
+
+  // ---------- Renang: riak di permukaan air & pose dayung ----------
+  const swimRings = [];
+  const swimRingGeo = new THREE.RingGeometry(0.9, 1, 40); swimRingGeo.rotateX(-Math.PI / 2);
+  for (let i = 0; i < 8; i++) {
+    const m = new THREE.MeshBasicMaterial({ color: 0xeaf7ff, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide });
+    const mesh = new THREE.Mesh(swimRingGeo, m);
+    mesh.visible = false; scene.add(mesh);
+    swimRings.push({ mesh, m, t: 9, x: 0, z: 0 });
+  }
+  function spawnSwimRing(x, z, big) {
+    const r = swimRings.find((q) => q.t >= 1.2) || swimRings[0];
+    r.t = 0; r.x = x; r.z = z; r.big = big || 1; r.mesh.visible = true;
+  }
+  function updateSwimRings(dt) {
+    for (const r of swimRings) {
+      if (r.t >= 1.2) { r.mesh.visible = false; continue; }
+      r.t += dt;
+      const f = Math.min(1, r.t / 1.2);
+      r.mesh.position.set(r.x, WL + 0.06, r.z);
+      const sc = (0.5 + f * 2.4) * r.big * (scaleNow / 1.1);
+      r.mesh.scale.set(sc, 1, sc);
+      r.m.opacity = 0.55 * (1 - f) * (1 - f);
+    }
+  }
+  // dayung: kaki mengayuh cepat, badan agak terangkat, ekor menyapu kiri-kanan
+  function applySwim(c, b, spd, t) {
+    if (b < 0.01) return;
+    const ph = t * (5.5 + spd * 0.9);
+    for (let i = 0; i < 2; i++) {
+      const L = c.legs[i], o = ph + i * Math.PI;
+      L.hip.rotation.x += (Math.sin(o) * 0.95 - L.hip.rotation.x) * b;
+      L.knee.rotation.x += (-0.6 - 0.35 * Math.sin(o + 1) - L.knee.rotation.x) * b;
+      if (L.foot) L.foot.rotation.x += (0.4 - L.foot.rotation.x) * b;
+    }
+    c.body.rotation.x += (0.2 - c.body.rotation.x) * b;
+    c.body.rotation.z += (Math.sin(ph * 0.5) * 0.05 - c.body.rotation.z) * b;
+    c.body.position.y += (0.05 - c.body.position.y) * b;
+    const sw = Math.sin(t * 4.2) * 0.5 * b;
+    c.tail1.rotation.y = sw * 0.7; c.tail2.rotation.y = Math.sin(t * 4.2 - 0.9) * 0.6 * b;
+    if (c.tail3) c.tail3.rotation.y = Math.sin(t * 4.2 - 1.8) * 0.7 * b;
+    for (let i = 0; i < 2; i++) c.arms[i].rotation.x = -0.9 * b;
   }
 
   // ---------- Skill: Raungan (saat dikeroyok) ----------
@@ -2119,7 +2220,7 @@
     }
     player.invuln = Math.max(player.invuln, 0.7);
     shake = Math.max(shake, 0.7);
-    GameAudio.sfx.roar();
+    GameAudio.sfx.dino(save.char === 'vosil' ? 'carno' : save.char, 'call', 1.6);
     showDmg(player.x, (player.gy || 0) + player.y + 3.0 * scaleNow / 1.1, player.z, 'RAUNGAN!', 'crit', 1.3);
     starBurst(player.x, (player.gy || 0) + player.y + 1.6 * scaleNow / 1.1, player.z, 10, 'gain');
     if (hit === 0) toast('Raungan... tidak ada musuh dekat', 1.4);
@@ -2166,6 +2267,7 @@
     player.atkHit = false;
     player.atkCd = 0.55;
     GameAudio.sfx.bite();
+    if (clock - biteVoiceT > 2.4) { biteVoiceT = clock; GameAudio.sfx.dino(save.char, 'attack', 0.55); }
   }
 
   function biteHit() {
@@ -2211,6 +2313,101 @@
     c.fillStyle = g; c.fillRect(0, 0, 64, 64);
   });
 
+  // ---------- Suara dinosaurus (volume & posisi stereo mengikuti jarak/arah dari kamera) ----------
+  let dangerNow = 0, cryCd = 6, flyCryCd = 14;
+  function cry(type, kind, x, z, boost) {
+    const dx = x - player.x, dz = z - player.z, d = Math.hypot(dx, dz);
+    const range = type === 'brachio' || type === 'diplo' ? 95 : 55;
+    const vol = clamp(1 - d / range, 0, 1) * (boost || 1);
+    if (vol < 0.05) return;
+    const pan = d > 3 ? clamp(((dx * Math.cos(camYaw) - dz * Math.sin(camYaw)) / d) * 0.9, -0.9, 0.9) : 0;
+    GameAudio.sfx.dino(type, kind, vol, pan);
+  }
+  GameAudio.setDanger(() => dangerNow);
+  function updateDanger(dt) {                                    // ketegangan musik: jumlah musuh yang menyerang dan sisa HP
+    let n = 0;
+    for (const p of preds) {
+      if (p.dead || p.def.timid || p.def.neutral || p.state === 'wander' || p.state === 'flee') continue;
+      if (Math.hypot(p.x - player.x, p.z - player.z) < 16) n++;
+    }
+    let target = clamp(n / 4, 0, 1);
+    if (n > 0 && player.hp < 35) target = Math.min(1, target + 0.3);
+    if (state !== 'playing') target = 0;
+    dangerNow += (target - dangerNow) * Math.min(1, dt * 2);
+    // seruan hewan di sekitar supaya dunia terdengar hidup
+    cryCd -= dt;
+    if (cryCd <= 0 && state === 'playing') {
+      cryCd = rand(5, 11);
+      const near = preds.filter((p) => !p.dead && p.state === 'wander' && Math.hypot(p.x - player.x, p.z - player.z) < 60);
+      if (near.length) { const p = near[Math.floor(Math.random() * near.length)]; cry(p.type, 'call', p.x, p.z, 0.8); }
+    }
+    flyCryCd -= dt;
+    if (flyCryCd <= 0 && state === 'playing' && !isNight) {
+      flyCryCd = rand(12, 24);
+      const f = flyers[Math.floor(Math.random() * flyers.length)];
+      if (f) cry('flyer', 'call', f.g.position.x, f.g.position.z, 1.3);
+    }
+  }
+
+  // ---------- Serbuan kawanan: 5 atau 7 musuh sekaligus ----------
+  let hordeCd = 70, horde = null;
+  function startHorde() {
+    const day = Math.floor(runTime / DAY_LEN);
+    const n = (day >= 2 || player.level >= 4) ? 7 : 5;
+    horde = { t: 0, warn: 2.8, n, spawned: 0, members: [], pulse: -1 };
+    toast('🐾 Semak-semak bergetar... SESUATU MENDEKAT!', 2.8);
+    GameAudio.sfx.horde();
+    shake = Math.max(shake, 0.3);
+  }
+  function spawnHordeMember(i) {
+    const day = Math.floor(runTime / DAY_LEN);
+    const type = horde.n >= 7 && i === 0 && day >= 1 ? 'carno' : i % 2 === 0 ? 'raptor' : 'velo';
+    const p = spawnPredator(type);
+    const base = horde.base;
+    for (let k = 0; k < 8; k++) {                                  // melingkar mengepung, bukan di dalam air
+      const a = base + (i / horde.n) * Math.PI * 2 + rand(-0.25, 0.25), d = rand(12, 17);
+      p.x = player.x + Math.cos(a) * d; p.z = player.z + Math.sin(a) * d;
+      if (WL - heightAt(p.x, p.z) < 0.5) break;
+    }
+    p.state = 'chase'; p.roared = true; p.horde = true;
+    p.hp *= 0.85; p.maxHp *= 0.85; p.dmgMul *= 0.85;
+    p.cd = 0.6 + i * 0.3;                                          // serangan tidak serentak, bergelombang
+    if (!save.seen[type]) { save.seen[type] = true; writeSave(); }
+    puff(8, p.x, p.z, 0.9);
+    cry(type, 'call', p.x, p.z, 1.1);
+    horde.members.push(p);
+  }
+  function updateHorde(dt) {
+    if (state !== 'playing') return;
+    if (!horde) {
+      hordeCd -= dt;
+      if (hordeCd > 0) return;
+      const hostile = preds.filter((p) => !p.dead && !p.def.timid && !p.def.neutral).length;
+      if (hostile <= 2 && !swimming && player.hp > 40) startHorde(); else hordeCd = 12;
+      if (horde) horde.base = Math.random() * Math.PI * 2;
+      return;
+    }
+    horde.t += dt;
+    if (horde.t < horde.warn) {
+      const pu = Math.floor(horde.t * 2.5);
+      if (pu !== horde.pulse) { horde.pulse = pu; shake = Math.max(shake, 0.18 + pu * 0.04); }
+      return;
+    }
+    if (horde.spawned === 0) { toast('🔥 KAWANAN MENYERBU! ' + horde.n + ' musuh! Tekan RAUNG 📢', 3); shake = Math.max(shake, 0.9); }
+    while (horde.spawned < horde.n && horde.t >= horde.warn + horde.spawned * 0.2) { spawnHordeMember(horde.spawned); horde.spawned++; }
+    if (horde.spawned < horde.n) return;
+    const alive = horde.members.filter((p) => !p.dead && preds.includes(p));
+    if (!alive.length) {
+      const bonus = horde.n * 12;
+      gainXp(bonus); runCoins += horde.n * 4; save.coins += horde.n * 4; writeSave();
+      toast('🏆 Kawanan dikalahkan! +' + bonus + ' XP, +' + horde.n * 4 + ' koin', 3);
+      GameAudio.sfx.record();
+      horde = null; hordeCd = rand(100, 160);
+    } else if (alive.every((p) => Math.hypot(p.x - player.x, p.z - player.z) > 60)) {
+      horde = null; hordeCd = 60;
+    }
+  }
+
   function spawnPredator(type) {
     const def = PTYPES[type];
     const a = Math.random() * Math.PI * 2, d = rand(36, 46);
@@ -2233,6 +2430,10 @@
       flash: 0, dead: false, deadT: 0, roared: false, speedNow: 0
     };
     pushOut(p, 0.8 * def.scale);
+    for (let k = 0; k < 10 && !def.aqua && WL - heightAt(p.x, p.z) > 0.7; k++) {   // dinosaurus darat tidak muncul di tengah air
+      const a2 = Math.random() * Math.PI * 2, d2 = rand(30, 48);
+      p.x = player.x + Math.cos(a2) * d2; p.z = player.z + Math.sin(a2) * d2;
+    }
     preds.push(p);
     return p;
   }
@@ -2288,11 +2489,11 @@
     p.st = 0;
     p.hitDone = false;
     p.dur = def.atk === 'charge' ? 0.5 : def.atk === 'sweep' ? 0.3 : def.atk === 'bite' ? 0.22 : 0.26;
+    cry(p.type, 'attack', p.x, p.z, 1);
     if (def.atk === 'sweep') resolveHitSweep(p);
     else GameAudio.sfx.bite();
   }
   function resolveHitSweep(p) {
-    GameAudio.sfx.roar();
     if (Math.hypot(player.x - p.x, player.z - p.z) < p.def.sweepR) resolveHit(p);
   }
   function resolveHit(p) {
@@ -2360,6 +2561,20 @@
       spawnPredator(pickAnimalType());
     }
 
+    for (const p of preds) {                                          // dinosaurus darat tidak bisa masuk air dalam
+      if (p.dead) continue;
+      if (!p.def.aqua && WL - heightAt(p.x, p.z) > 0.9) {
+        if (p.px !== undefined && WL - heightAt(p.px, p.pz) <= 0.9) { p.x = p.px; p.z = p.pz; }
+        else {                                                       // terjebak di air (muncul/terdorong): pindah ke daratan terdekat
+          for (let k = 0; k < 14; k++) {
+            const a2 = Math.random() * Math.PI * 2, d2 = 14 + k * 3;
+            const nx = player.x + Math.cos(a2) * d2, nz = player.z + Math.sin(a2) * d2;
+            if (WL - heightAt(nx, nz) < 0.3) { p.x = nx; p.z = nz; break; }
+          }
+          p.px = p.x; p.pz = p.z;
+        }
+      } else { p.px = p.x; p.pz = p.z; }
+    }
     for (const p of preds) {
       const def = p.def;
       if (p.dead) { p.deadT += dt; continue; }
@@ -2388,7 +2603,7 @@
         } else if (!def.neutral && d < detect) {
           p.state = 'chase';
           if (!p.roared) {
-            p.roared = true; GameAudio.sfx.roar();
+            p.roared = true; cry(p.type, 'call', p.x, p.z, 1.3);
             const fresh = !save.seen[p.type];
             if (fresh) { save.seen[p.type] = true; writeSave(); }
             toast('⚠ ' + def.name + ' mengejar!' + (fresh ? ' 📖 spesies baru' : ''), fresh ? 2.4 : 1.6);
@@ -2500,11 +2715,37 @@
     if (player.stamina <= 0) player.exhausted = true;
     else if (player.stamina >= 25) player.exhausted = false;
     const sprinting = wantSprint && !player.exhausted && player.stamina > 0;
-    if (sprinting) player.stamina = Math.max(0, player.stamina - 28 * curChar.stam * dt);
+    if (swimming) { /* tenaga diatur di blok renang */ }
+    else if (sprinting) player.stamina = Math.max(0, player.stamina - 28 * curChar.stam * dt);
     else player.stamina = Math.min(100, player.stamina + (mag > 0.2 ? 12 : 22) * dt);
 
     const weak = player.hunger <= 0 || player.thirst <= 0;
     const speedMul = (powerLeft > 0 ? 1.25 : 1) * (weak ? 0.85 : 1) * curChar.speed * speedLv();
+    // berenang: air cukup dalam -> mode renang (lebih lambat, tanpa lompat, tenaga terkuras pelan)
+    const depth = WL - heightAt(player.x, player.z);
+    const wasSwim = swimming;
+    if (!swimming && depth > 1.0) swimming = true; else if (swimming && depth < 0.7) swimming = false;
+    if (swimming !== wasSwim) {
+      GameAudio.sfx.splash();
+      starBurst(player.x, WL + 0.4, player.z, 8, 'water');
+      spawnSwimRing(player.x, player.z, 1.6);
+      if (swimming && swimToastCd <= 0) { toast('🏊 Berenang! Dinosaurus darat tidak bisa mengikuti', 2.4); swimToastCd = 25; }
+    }
+    swimToastCd -= dt;
+    if (swimming) {
+      const dash = wantSprint && player.stamina > 0;
+      player.stamina = clamp(player.stamina + (mag > 0.2 ? (dash ? -16 : -3.5) : 6) * dt, 0, 100);
+      const tired = player.stamina <= 0.5;
+      const st = (dash ? 5.6 : 3.4) * (tired ? 0.55 : 1) * mag * speedMul;
+      const sk = Math.min(1, dt * 6);
+      player.vx += ((mag > 0 ? (ix / mag) * st : 0) - player.vx) * sk;
+      player.vz += ((mag > 0 ? (iz / mag) * st : 0) - player.vz) * sk;
+      player.x += player.vx * dt; player.z += player.vz * dt;
+      player.y = 0; player.vy = 0; input.jump = false;
+      strokeT -= dt; ringT -= dt;
+      if (mag > 0.2 && strokeT <= 0) { strokeT = dash ? 0.38 : 0.6; GameAudio.sfx.swim(); starBurst(player.x, WL + 0.3, player.z, 2, 'water'); }
+      if (ringT <= 0) { ringT = mag > 0.2 ? 0.45 : 0.9; spawnSwimRing(player.x, player.z, 1); }
+    }
     let slopeMul = 1, slide = false;                    // tanjakan memperlambat, turunan sedikit mempercepat
     if (mag > 0.1) {
       const gx = ix / mag, gz = iz / mag;
@@ -2518,15 +2759,17 @@
       }
     }
     climbToastCd -= dt;
-    if (lastWet) slopeMul *= 0.7;                       // mengarungi air
+    if (lastWet && !swimming) slopeMul *= 0.7;          // mengarungi air dangkal
     const target = (sprinting ? SPRINT : WALK) * mag * speedMul * slopeMul;
     let tx = mag > 0 ? (ix / mag) * target : 0, tz = mag > 0 ? (iz / mag) * target : 0;
     if (slide) { tx = -(ix / mag) * 3; tz = -(iz / mag) * 3; }
     const k = Math.min(1, dt * 12);
-    player.vx += (tx - player.vx) * k;
-    player.vz += (tz - player.vz) * k;
-    player.x += player.vx * dt;
-    player.z += player.vz * dt;
+    if (!swimming) {
+      player.vx += (tx - player.vx) * k;
+      player.vz += (tz - player.vz) * k;
+      player.x += player.vx * dt;
+      player.z += player.vz * dt;
+    }
     pushOut(player, 0.55 * (scaleNow / 1.1));
 
     const spd = Math.hypot(player.vx, player.vz);
@@ -2535,7 +2778,7 @@
     // lompat
     if (input.jump) {
       input.jump = false;
-      if (player.y === 0 && player.vy === 0) { player.vy = JUMP_V; GameAudio.sfx.jump(); }
+      if (player.y === 0 && player.vy === 0 && !swimming) { player.vy = JUMP_V; GameAudio.sfx.jump(); }
     }
     if (player.y > 0 || player.vy > 0) {
       player.vy -= GRAVITY * dt;
@@ -2753,6 +2996,8 @@
   function updateWater(dt) {
     waterT += dt;
     mPond.opacity = 0.9 + Math.sin(waterT * 1.6) * 0.04;
+    if (waveTex) { waveTex.offset.x = (waterT * 0.035) % 1; waveTex.offset.y = Math.sin(waterT * 0.4) * 0.03; }      // aliran pelan
+    if (glintTex) { glintTex.offset.x = (-waterT * 0.05) % 1; glintTex.offset.y = (waterT * 0.03) % 1; }
     for (const ch of chunks.values()) {
       for (const rp of ch.ripples) {
         const f = (waterT * 0.28 + rp.ph) % 1;
@@ -2802,7 +3047,9 @@
     phase += (spd * 1.5 + 1.2) * dt * (spd > 0.4 ? 1 : 0.3);
     const run = clamp(spd / 6, 0, 1.3);
     const air = player.y > 0.001;
-    const gy = heightAt(player.x, player.z);
+    swimBlend = approach(swimBlend, swimming ? 1 : 0, 6);
+    const groundY = heightAt(player.x, player.z);
+    const gy = swimBlend > 0.01 ? lerp(groundY, WL - 0.42 * (scaleNow / 1.1) + Math.sin(clock * 2.4) * 0.05, swimBlend) : groundY;
     player.gy = gy;
     hero.root.position.set(player.x, gy + player.y, player.z);
     if (state === 'over') {
@@ -2812,13 +3059,18 @@
       hero.root.rotation.z = 0;
       hero.root.rotation.y = player.yaw;
       poseCreature(hero, phase, run, air, player.vy, player.atkT >= 0 ? clamp(player.atkT / 0.35, 0, 1) : -1, clock);
+      if (swimBlend > 0.01) applySwim(hero, swimBlend, spd, clock);
+      tiltToGround(hero.root, player.x, player.z, player.yaw, 0.9 * scaleNow / 1.1, dt, swimBlend > 0.5 || air);
     }
     const s = Math.max(0.5, 1 - player.y / 3.2);
+    heroShadow.visible = swimBlend < 0.5;
     placeShadow(heroShadow, player.x, player.z, gy, 0.75 * scaleNow * s, 1.9 * scaleNow);
 
     for (const p of preds) {
       const c = p.c;
-      const pgy = heightAt(p.x, p.z);
+      const pgyG = heightAt(p.x, p.z);
+      const deepP = WL - pgyG > 0.9;
+      const pgy = deepP ? WL - 0.4 * p.def.scale : pgyG;
       c.root.position.set(p.x, pgy, p.z);
       if (p.sh) {
         const big = p.def.giant ? 1.6 : p.def.model ? 1.15 : 0.8;
@@ -2840,6 +3092,9 @@
       const run = p.state === 'strike' ? 1.3 : clamp(p.speedNow / 6, 0, 1.3);
       if (c.isTrike) poseTrike(c, p.phase, run, p.state === 'strike' ? atk : -1, clock);
       else poseCreature(c, p.phase, run, false, 0, p.state === 'strike' ? atk : -1, clock);
+      p.swimB = approach(p.swimB || 0, deepP ? 1 : 0, 6);
+      if (!c.isTrike && p.swimB > 0.01 && c.legs) applySwim(c, p.swimB, p.speedNow, clock);
+      tiltToGround(c.root, p.x, p.z, p.yaw, 0.9 * p.def.scale, dt, deepP || p.state === 'stun' && false);
       if (wp > 0) {                                                                    // bersiap: menunduk dan menarik badan ke belakang
         if (c.isTrike) { c.headPivot.rotation.x = 0.5 * wp; c.body.rotation.x = 0.1 * wp; }
         else { c.body.rotation.x = 0.28 * wp; c.body.position.y -= 0.18 * wp; c.headPivot.rotation.x = -0.35 * wp; }
@@ -2905,6 +3160,9 @@
     updateStars(dt);
     updateBars();
     updateRoar(dt);
+    updateDanger(dt);
+    updateHorde(dt);
+    updateSwimRings(dt);
     updateFlyCoins(dt);
 
     if (toastT > 0) { toastT -= dt; if (toastT <= 0) toastEl.classList.remove('show'); }

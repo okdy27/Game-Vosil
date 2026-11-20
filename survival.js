@@ -56,7 +56,7 @@
   const coinBox = $('coinBox'), lvNo = $('lvNo'), xpFill = $('xpFill'), lvFlash = $('lvFlash'), rotBtn = $('rotBtn');
   const camZone = $('camZone'), charRow = $('charRow'), charInfo = $('charInfo');
   const stickZone = $('stickZone'), stickBase = $('stickBase'), stickKnob = $('stickKnob');
-  const btnAttack = $('btnAttack'), btnJump = $('btnJump'), btnSprint = $('btnSprint'), fsBtn = $('fsBtn');
+  const btnAttack = $('btnAttack'), btnJump = $('btnJump'), btnSprint = $('btnSprint'), fsBtn = $('fsBtn'), btnRoar = $('btnRoar');
 
   // ---------- Penyimpanan lokal ----------
   function loadSave() {
@@ -245,8 +245,8 @@
   const SEG = 15, CELL = CH / SEG;
   const pondCache = new Map();
   function rawHeight(x, z) {
-    const big = (vnoise(x / 75, z / 75, 71) - 0.5) * 10;       // bukit dan lembah besar
-    const mid = (vnoise(x / 26, z / 26, 72) - 0.5) * 2.6;      // gelombang kecil
+    const big = (vnoise(x / 66, z / 66, 71) - 0.5) * 12.5;       // bukit dan lembah besar
+    const mid = (vnoise(x / 26, z / 26, 72) - 0.5) * 2.8;      // gelombang kecil
     return (big + mid) * smooth(12, 70, Math.hypot(x, z));     // sekitar titik awal tetap landai
   }
   function pondOf(cx, cz) {                                     // satu kolam per potongan (paling banyak), tetap sama setiap dipanggil
@@ -289,8 +289,13 @@
         const l = Math.hypot(nx, ny, nz);
         nor[k] = nx / l; nor[k + 1] = ny / l; nor[k + 2] = nz / l;
         const bc = biomeAt(x, z).col;
-        const v = (0.88 + 0.24 * vnoise(x / 5, z / 5, 9)) * Math.min(1.12, Math.max(0.78, 0.95 + h * 0.025));
-        col[k] = Math.min(1, bc.r * v); col[k + 1] = Math.min(1, bc.g * v); col[k + 2] = Math.min(1, bc.b * v);
+        const v = (0.86 + 0.2 * vnoise(x / 5, z / 5, 9) + 0.1 * (vnoise(x / 17, z / 17, 13) - 0.5)) * Math.min(1.14, Math.max(0.72, 0.93 + h * 0.03));
+        let cr = bc.r * v, cg = bc.g * v, cb = bc.b * v;
+        const steep = smooth(0.07, 0.3, 1 - nor[k + 1]) * 0.65;          // lereng curam: tanah/batu terbuka, lembah: lebih gelap & lembap
+        cr += (0.5 * v - cr) * steep; cg += (0.42 * v - cg) * steep; cb += (0.32 * v - cb) * steep;
+        const damp = smooth(-1.5, -5, h) * 0.25;
+        cr *= 1 - damp; cg *= 1 - damp * 0.6; cb *= 1 - damp * 0.8;
+        col[k] = Math.min(1, cr); col[k + 1] = Math.min(1, cg); col[k + 2] = Math.min(1, cb);
       }
     }
     const idx = [];
@@ -341,7 +346,7 @@
   const mCoinIn = std(0xffe082, { emissive: 0x4a3600 });
   const mPond = new THREE.MeshBasicMaterial({ color: 0x3fa7e0, transparent: true, opacity: 0.92 });
   // bayangan lembut: mengikuti arah matahari (cahaya dari kiri-atas-belakang -> bayangan jatuh ke kanan-depan)
-  const mShadow = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.3, depthWrite: false });
+  const mShadow = new THREE.MeshBasicMaterial({ color: 0x0a1a12, transparent: true, opacity: 0.5, depthWrite: false });
   mShadow.polygonOffset = true; mShadow.polygonOffsetFactor = -2; mShadow.polygonOffsetUnits = -2;
   const SUN_L = Math.hypot(8, 6), SUN_DX = 8 / SUN_L, SUN_DZ = -6 / SUN_L, SUN_PHI = Math.atan2(-SUN_DZ, SUN_DX);
   const shadowDisc = new THREE.CircleGeometry(1, 16);
@@ -349,15 +354,15 @@
   try {
     const cv = document.createElement('canvas'); cv.width = cv.height = 64;
     const cx2 = cv.getContext('2d'), gr = cx2.createRadialGradient(32, 32, 0, 32, 32, 32);
-    gr.addColorStop(0, 'rgba(0,0,0,1)'); gr.addColorStop(0.5, 'rgba(0,0,0,0.85)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+    gr.addColorStop(0, 'rgba(0,0,0,1)'); gr.addColorStop(0.62, 'rgba(0,0,0,0.92)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
     cx2.fillStyle = gr; cx2.fillRect(0, 0, 64, 64);
     mShadow.map = new THREE.CanvasTexture(cv);
     mShadow.needsUpdate = true;
   } catch (e) { /* tanpa tekstur: bayangan tegas biasa */ }
   // garis tepi hitam tipis: salinan bentuk yang digelembungkan sepanjang normal dan hanya sisi belakangnya digambar
-  const mOutline = new THREE.MeshBasicMaterial({ color: 0x1a1410, side: THREE.BackSide });
+  const mOutline = new THREE.MeshBasicMaterial({ color: 0x211a14, side: THREE.BackSide });
   mOutline.onBeforeCompile = (sh) => {
-    sh.vertexShader = sh.vertexShader.replace('#include <begin_vertex>', 'vec3 transformed = position + normalize(normal) * 0.04;');
+    sh.vertexShader = sh.vertexShader.replace('#include <begin_vertex>', 'vec3 transformed = position + normalize(normal) * 0.011;');
   };
   function outlineTree(root) {
     try {
@@ -1715,9 +1720,9 @@
     scene.fog.far = lerp(50, 68, k);               // lebih pendek dari area yang dimuat (60 m) supaya tepi dunia tersamar
     mPond.color.setRGB(lerp(0.06, 0.25, k), lerp(0.16, 0.66, k), lerp(0.3, 0.88, k));   // air gelap saat malam
     mDeep.opacity = lerp(0.7, 0.55, k);
-    mShadow.opacity = 0.1 + 0.22 * k;               // siang: bayangan tegas, malam: nyaris tak terlihat
-    hemi.intensity = 0.3 + 0.65 * k;
-    sunLight.intensity = 0.12 + 0.7 * k;
+    mShadow.opacity = 0.14 + 0.42 * k;               // siang: bayangan tegas, malam: nyaris tak terlihat
+    hemi.intensity = 0.3 + 0.42 * k;
+    sunLight.intensity = 0.12 + 0.95 * k;
     isNight = k < 0.4;
   }
 
@@ -1734,7 +1739,7 @@
       hp: 100, hunger: 100, thirst: 100, stamina: 100, exhausted: false,
       invuln: 0, atkT: -1, atkCd: 0, atkHit: false, lastDmg: 99, level: 1, xp: 0, counterT: 0
     });
-    time = 0; runTime = 0; runCoins = 0; kills = 0; powerLeft = 0; scaleNow = baseScale(); shake = 0; lvDay = 0;
+    roarCd = 0; time = 0; runTime = 0; runCoins = 0; kills = 0; powerLeft = 0; scaleNow = baseScale(); shake = 0; lvDay = 0;
     spawnCd = 8; animalCd = 2; chased = false; lastBiome = null; biomeCd = 0; drinkCd = 0; deathReason = '';
     camX = 0; camZ = 0; camLead = { x: 0, z: 0 }; shown = {};
     state = 'playing';
@@ -1890,6 +1895,7 @@
   }
   bindBtn(btnAttack, () => { input.attack = true; });
   bindBtn(btnJump, () => { input.jump = true; });
+  if (btnRoar) bindBtn(btnRoar, () => { doRoar(); });
   bindBtn(btnSprint, () => { input.sprint = true; }, () => { input.sprint = false; });
 
   canvas.addEventListener('pointerup', autoFs);             // gesture sentuh yang sah untuk layar penuh
@@ -1914,6 +1920,7 @@
     }
     if (k === ' ') input.jump = true;
     else if (k === 'j' || k === 'k') input.attack = true;
+    else if (k === 'r' || k === 'l') doRoar();
   });
   window.addEventListener('keyup', (e) => {
     const k = e.key.toLowerCase();
@@ -2048,6 +2055,69 @@
     toast((p.def.reward ? '+' + p.def.reward + ' koin · ' : '') + 'daging +' + p.def.food + ' lapar', 2.2);
   }
 
+  // ---------- Skill: Raungan (saat dikeroyok) ----------
+  let roarCd = 0, roarT = 99, roarR = 8, roarHint = 0;
+  const roarRingGeo = new THREE.RingGeometry(0.9, 1, 48); roarRingGeo.rotateX(-Math.PI / 2);
+  const mRoar = new THREE.MeshBasicMaterial({ color: 0xffe0b2, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide });
+  const roarRing = new THREE.Mesh(roarRingGeo, mRoar);
+  roarRing.visible = false;
+  scene.add(roarRing);
+  const roarCooldown = () => Math.max(8, 15 - 0.6 * (player.level - 1));
+  function doRoar() {
+    if (state !== 'playing' || roarCd > 0) return;
+    roarCd = roarCooldown();
+    roarR = 8 + 0.2 * player.level;
+    roarT = 0;
+    const dmg = 8 + 3 * player.level;
+    let hit = 0;
+    for (const p of preds.slice()) {
+      if (p.dead) continue;
+      const dx = p.x - player.x, dz = p.z - player.z, d = Math.hypot(dx, dz) || 1;
+      if (d > roarR) continue;
+      hit++;
+      const calm = p.def.timid || p.def.neutral, giant = !!p.def.giant;
+      const kb = (giant ? 0.8 : 3.2) * (1 - d / roarR * 0.5);
+      p.x += (dx / d) * kb; p.z += (dz / d) * kb;
+      if (!calm) damagePred(p, dmg * (giant ? 0.6 : 1), 'roar');
+      if (p.dead) continue;
+      if (p.def.timid) { p.state = 'flee'; p.t = 3; }
+      else { p.state = 'stun'; p.t = giant ? 0.9 : 1.9; p.cd = Math.max(p.cd, 1.6); p.warn && (p.warn.visible = false); }
+    }
+    player.invuln = Math.max(player.invuln, 0.7);
+    shake = Math.max(shake, 0.7);
+    GameAudio.sfx.roar();
+    showDmg(player.x, (player.gy || 0) + player.y + 3.0 * scaleNow / 1.1, player.z, 'RAUNGAN!', 'crit', 1.3);
+    starBurst(player.x, (player.gy || 0) + player.y + 1.6 * scaleNow / 1.1, player.z, 10, 'gain');
+    if (hit === 0) toast('Raungan... tidak ada musuh dekat', 1.4);
+  }
+  function updateRoar(dt) {
+    roarCd = Math.max(0, roarCd - dt);
+    roarHint = Math.max(0, roarHint - dt);
+    if (roarT < 0.6) {
+      roarT += dt;
+      const f = Math.min(1, roarT / 0.6);
+      roarRing.visible = true;
+      roarRing.position.set(player.x, (player.gy || heightAt(player.x, player.z)) + 0.25, player.z);
+      roarRing.scale.set(1 + f * roarR, 1, 1 + f * roarR);
+      mRoar.opacity = 0.7 * (1 - f) * (1 - f);
+    } else roarRing.visible = false;
+    if (state !== 'playing') return;
+    let swarm = 0;
+    for (const p of preds) {
+      if (p.dead || p.def.timid || p.def.neutral) continue;
+      if (Math.hypot(p.x - player.x, p.z - player.z) < 9 && p.state !== 'wander' && p.state !== 'flee') swarm++;
+    }
+    if (btnRoar) {
+      const ready = roarCd <= 0;
+      btnRoar.classList.toggle('cd', !ready);
+      btnRoar.classList.toggle('urgent', ready && swarm >= 3);
+      const sp = btnRoar.querySelector('span');
+      const txt = ready ? 'RAUNG' : Math.ceil(roarCd) + ' dtk';
+      if (sp && sp.textContent !== txt) sp.textContent = txt;
+    }
+    if (swarm >= 3 && roarCd <= 0 && roarHint <= 0) { toast('Dikeroyok! Tekan RAUNG 📢', 2.2); roarHint = 14; }
+  }
+
   function startAttack() {
     if (player.atkCd > 0 || player.atkT >= 0) return;
     // bantuan bidik: hadapkan ke predator terdekat jika dekat
@@ -2084,8 +2154,28 @@
   const warnPlane = new THREE.PlaneGeometry(1, 1); warnPlane.rotateX(-Math.PI / 2);
   const warnRing = new THREE.RingGeometry(0.82, 1, 32); warnRing.rotateX(-Math.PI / 2);
   const warnDisc = new THREE.CircleGeometry(1, 32); warnDisc.rotateX(-Math.PI / 2);
-  const mWarn = new THREE.MeshBasicMaterial({ color: 0xff3b30, transparent: true, opacity: 0.4, depthWrite: false });
-  mWarn.polygonOffset = true; mWarn.polygonOffsetFactor = -3; mWarn.polygonOffsetUnits = -3;
+  const mkWarnMat = (draw) => {
+    const m = new THREE.MeshBasicMaterial({ color: 0xff8a50, transparent: true, opacity: 0, depthWrite: false });
+    m.polygonOffset = true; m.polygonOffsetFactor = -3; m.polygonOffsetUnits = -3;
+    try {
+      const cv = document.createElement('canvas'); cv.width = cv.height = 64;
+      const c2 = cv.getContext('2d'); draw(c2);
+      m.map = new THREE.CanvasTexture(cv); m.needsUpdate = true;
+    } catch (e) { m.opacity = 0; }
+    return m;
+  };
+  // lingkaran peringatan: pusat hampir bening, tepi berpendar lembut
+  const mWarnDisc = mkWarnMat((c) => {
+    const g = c.createRadialGradient(32, 32, 0, 32, 32, 32);
+    g.addColorStop(0, 'rgba(255,255,255,0.12)'); g.addColorStop(0.7, 'rgba(255,255,255,0.4)'); g.addColorStop(0.9, 'rgba(255,255,255,0.8)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+    c.fillStyle = g; c.fillRect(0, 0, 64, 64);
+  });
+  // jalur terkaman: tepi kiri-kanan memudar
+  const mWarnPlane = mkWarnMat((c) => {
+    const g = c.createLinearGradient(0, 0, 64, 0);
+    g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(0.3, 'rgba(255,255,255,0.45)'); g.addColorStop(0.7, 'rgba(255,255,255,0.45)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+    c.fillStyle = g; c.fillRect(0, 0, 64, 64);
+  });
 
   function spawnPredator(type) {
     const def = PTYPES[type];
@@ -2096,7 +2186,7 @@
     scene.add(c.root);
     const shd = new THREE.Mesh(shadowDisc, mShadow);
     scene.add(shd);
-    const warn = new THREE.Mesh(warnDisc, mWarn);
+    const warn = new THREE.Mesh(warnDisc, mWarnDisc);
     warn.visible = false;
     scene.add(warn);
     const dayNow = Math.floor(runTime / DAY_LEN), hostile = !def.timid && !def.neutral;
@@ -2196,17 +2286,17 @@
     if (p.state !== 'windup' || p.dead) { w.visible = false; return; }
     const prog = clamp(1 - p.t / p.t0, 0, 1);
     w.visible = true;
-    mWarn.opacity = 0.18 + 0.45 * prog;
+    const ease = prog * prog * (3 - 2 * prog);
     w.rotation.set(0, 0, 0);
     if (def.atk === 'sweep') {                          // lingkaran: seluruh area ini berbahaya
-      w.geometry = warnDisc;
+      w.geometry = warnDisc; w.material = mWarnDisc; mWarnDisc.opacity = 0.12 + 0.3 * ease;
       w.position.set(p.x, pgy + 0.16, p.z);
       w.scale.set(def.sweepR, 1, def.sweepR);
     } else {                                            // jalur terkaman
       const len = def.atk === 'charge' ? def.lunge + 1 : (def.lunge || 1.6) + hitRadius(p);
       const wid = hitRadius(p) * 1.6;
       const lx = p.locked ? p.lx : -Math.sin(p.yaw), lz = p.locked ? p.lz : -Math.cos(p.yaw);
-      w.geometry = warnPlane;
+      w.geometry = warnPlane; w.material = mWarnPlane; mWarnPlane.opacity = 0.1 + 0.34 * ease;
       w.position.set(p.x + lx * len / 2, pgy + 0.16, p.z + lz * len / 2);
       w.rotation.y = Math.atan2(lx, lz);
       w.scale.set(wid, 1, len);
@@ -2385,7 +2475,7 @@
     if (mag > 0.1) {
       const gx = ix / mag, gz = iz / mag;
       const dh = heightAt(player.x + gx, player.z + gz) - heightAt(player.x, player.z);
-      slopeMul = Math.min(1.15, Math.max(0.65, 1 - dh * 0.6));
+      slopeMul = Math.min(1.25, Math.max(0.55, 1 - dh * 0.8));
     }
     const target = (sprinting ? SPRINT : WALK) * mag * speedMul * slopeMul;
     const tx = mag > 0 ? (ix / mag) * target : 0, tz = mag > 0 ? (iz / mag) * target : 0;
@@ -2771,6 +2861,7 @@
     updateDmg(dt);
     updateStars(dt);
     updateBars();
+    updateRoar(dt);
     updateFlyCoins(dt);
 
     if (toastT > 0) { toastT -= dt; if (toastT <= 0) toastEl.classList.remove('show'); }

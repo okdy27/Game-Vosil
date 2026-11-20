@@ -138,9 +138,9 @@
     #hurt {
       position: fixed; inset: 0;
       pointer-events: none;
-      background: radial-gradient(ellipse at center, rgba(255, 0, 0, 0) 45%, rgba(220, 0, 0, .65) 100%);
+      background: radial-gradient(ellipse at center, rgba(255, 0, 0, 0) 45%, rgba(200, 20, 20, .38) 100%);
       opacity: 0;
-      transition: opacity .35s;
+      transition: opacity .7s ease-out;
     }
     #hurt.on { opacity: 1; transition: none; }
 
@@ -239,6 +239,16 @@
       right: calc(var(--sr) + 142px);
       bottom: calc(var(--sb) + 22px);
     }
+    #btnRoar {
+      width: 66px; height: 66px;
+      right: calc(var(--sr) + 152px);
+      bottom: calc(var(--sb) + 112px);
+      font-size: 24px;
+      background: rgba(255, 152, 0, .38);
+    }
+    #btnRoar.cd { opacity: .45; }
+    #btnRoar.urgent { animation: roarPulse .7s ease-in-out infinite; border-color: #ffd54f; }
+    @keyframes roarPulse { 50% { transform: scale(1.12); box-shadow: 0 0 16px 4px rgba(255, 193, 7, .7); } }
     #btnSprint {
       width: 74px; height: 74px;
       right: calc(var(--sr) + 52px);
@@ -393,6 +403,7 @@
   <div id="stickKnob" class="hidden"></div>
 
   <div id="btns">
+    <button id="btnRoar" class="abtn" type="button">📢<span>RAUNG</span></button>
     <button id="btnSprint" class="abtn" type="button">🏃<span>LARI</span></button>
     <button id="btnJump" class="abtn" type="button">⤴<span>LOMPAT</span></button>
     <button id="btnAttack" class="abtn" type="button">🦖<span>GIGIT</span></button>

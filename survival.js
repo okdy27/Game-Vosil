@@ -400,7 +400,7 @@
   const mGlint = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.4, depthWrite: false, blending: THREE.AdditiveBlending });
   if (glintTex) { mGlint.map = glintTex; mGlint.needsUpdate = true; }
   // bayangan lembut: mengikuti arah matahari (cahaya dari kiri-atas-belakang -> bayangan jatuh ke kanan-depan)
-  const mShadow = new THREE.MeshBasicMaterial({ color: 0x0a1a12, transparent: true, opacity: 0.5, depthWrite: false });
+  const mShadow = new THREE.MeshBasicMaterial({ color: 0x0a1a12, transparent: true, opacity: 0.5, depthWrite: false, side: THREE.DoubleSide });
   mShadow.polygonOffset = true; mShadow.polygonOffsetFactor = -2; mShadow.polygonOffsetUnits = -2;
   const SUN_L = Math.hypot(8, 6), SUN_DX = 8 / SUN_L, SUN_DZ = -6 / SUN_L, SUN_PHI = Math.atan2(-SUN_DZ, SUN_DX);
   const shadowDisc = new THREE.CircleGeometry(1, 16);
@@ -443,11 +443,32 @@
     try { renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, q.pr)); resize(); } catch (e) { /* abaikan */ }
   }
   // bayangan dinamis (dino): elips yang memanjang searah bayangan, ditaruh di tanah
+  // bayangan dinamis yang menempel ke kontur tanah (tiap titiknya mengikuti tinggi tanah, jadi tidak patah di tebing/lereng)
+  function makeDynShadow() {
+    try {
+      const g = new THREE.CircleGeometry(1, 14);
+      const pa = g.attributes.position.array, n = pa.length / 3, u = new Float32Array(n * 2);
+      for (let i = 0; i < n; i++) { u[i * 2] = pa[i * 3]; u[i * 2 + 1] = pa[i * 3 + 1]; }
+      const m = new THREE.Mesh(g, mShadow);
+      m.userData.unit = u; m.frustumCulled = false;
+      return m;
+    } catch (e) { return new THREE.Mesh(shadowDisc, mShadow); }
+  }
   function placeShadow(mesh, x, z, gy, r, h) {
-    const L = h * 0.35;
-    mesh.position.set(x + SUN_DX * L, gy + 0.1, z + SUN_DZ * L);
-    mesh.rotation.set(-Math.PI / 2, 0, SUN_PHI);
-    mesh.scale.set(r + L, r, 1);
+    const L = h * 0.35, u = mesh.userData.unit;
+    if (!u) {
+      mesh.position.set(x + SUN_DX * L, gy + 0.1, z + SUN_DZ * L);
+      mesh.rotation.set(-Math.PI / 2, 0, SUN_PHI);
+      mesh.scale.set(r + L, r, 1);
+      return;
+    }
+    const a = r + L, cx = x + SUN_DX * L, cz = z + SUN_DZ * L, pa = mesh.geometry.attributes.position.array;
+    for (let i = 0, n = u.length / 2; i < n; i++) {
+      const uu = u[i * 2] * a, vv = -u[i * 2 + 1] * r;
+      const wx = cx + uu * SUN_DX - vv * SUN_DZ, wz = cz + uu * SUN_DZ + vv * SUN_DX;
+      pa[i * 3] = wx; pa[i * 3 + 1] = heightAt(wx, wz) + 0.1; pa[i * 3 + 2] = wz;
+    }
+    mesh.geometry.attributes.position.needsUpdate = true;
   }
   // bayangan statis satu potongan peta: semua bayangan digabung jadi satu bentuk yang menempel ke kontur tanah
   function buildShadows(list) {
@@ -1595,7 +1616,7 @@
     showDmg(player.x, (player.gy || 0) + 3.2 * scaleNow / 1.1, player.z, 'LEVEL ' + player.level + '!', 'gain', 1.5);
     try { if (lvFlash && lvFlash.classList) { lvFlash.classList.remove('on'); void lvFlash.offsetWidth; lvFlash.classList.add('on'); } } catch (e) { /* abaikan */ }
   }
-  const heroShadow = new THREE.Mesh(shadowDisc, mShadow);
+  const heroShadow = makeDynShadow();
   scene.add(heroShadow);
 
   let state = 'menu';               // 'menu' | 'playing' | 'over'
@@ -1827,7 +1848,7 @@
       hp: 100, hunger: 100, thirst: 100, stamina: 100, exhausted: false,
       invuln: 0, atkT: -1, atkCd: 0, atkHit: false, lastDmg: 99, level: 1, xp: 0, counterT: 0
     });
-    roarCd = 0; hordeCd = 70; horde = null; dangerNow = 0; swimming = false; swimBlend = 0; time = 0; runTime = 0; runCoins = 0; kills = 0; powerLeft = 0; scaleNow = baseScale(); shake = 0; lvDay = 0;
+    roarCd = 0; hordeCd = 70; horde = null; dangerNow = 0; waryNow = 0; swimming = false; swimBlend = 0; time = 0; runTime = 0; runCoins = 0; kills = 0; powerLeft = 0; scaleNow = baseScale(); shake = 0; lvDay = 0;
     spawnCd = 8; animalCd = 2; chased = false; lastBiome = null; biomeCd = 0; drinkCd = 0; deathReason = '';
     camX = 0; camZ = 0; camLead = { x: 0, z: 0 }; shown = {};
     state = 'playing';
@@ -2160,7 +2181,41 @@
     const r = swimRings.find((q) => q.t >= 1.2) || swimRings[0];
     r.t = 0; r.x = x; r.z = z; r.big = big || 1; r.mesh.visible = true;
   }
+  // busa di sekeliling badan + jejak air berbentuk V di belakang saat berenang
+  const foamGeo = new THREE.RingGeometry(0.62, 1, 28); foamGeo.rotateX(-Math.PI / 2);
+  const mFoam = new THREE.MeshBasicMaterial({ color: 0xf2fbff, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide });
+  const swimFoam = new THREE.Mesh(foamGeo, mFoam); swimFoam.visible = false; scene.add(swimFoam);
+  const wakeGeo = new THREE.PlaneGeometry(1, 1); wakeGeo.rotateX(-Math.PI / 2);
+  const mWake = new THREE.MeshBasicMaterial({ color: 0xeaf8ff, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide });
+  try {
+    const cv = document.createElement('canvas'); cv.width = 8; cv.height = 64;
+    const c2 = cv.getContext('2d'), g = c2.createLinearGradient(0, 0, 0, 64);
+    g.addColorStop(0, 'rgba(255,255,255,0.9)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+    c2.fillStyle = g; c2.fillRect(0, 0, 8, 64);
+    mWake.map = new THREE.CanvasTexture(cv); mWake.needsUpdate = true;
+  } catch (e) { /* tanpa gradasi */ }
+  const wakes = [new THREE.Mesh(wakeGeo, mWake), new THREE.Mesh(wakeGeo, mWake)];
+  wakes.forEach((w) => { w.visible = false; scene.add(w); });
+  function updateSwimFx() {
+    const on = swimBlend > 0.05;
+    swimFoam.visible = on; wakes.forEach((w) => { w.visible = on; });
+    if (!on) return;
+    const k = scaleNow / 1.1, sp = Math.hypot(player.vx, player.vz), mv = clamp(sp / 3.4, 0, 1.4);
+    swimFoam.position.set(player.x, WL + 0.07, player.z);
+    swimFoam.rotation.y = player.yaw;
+    swimFoam.scale.set((0.85 + Math.sin(clock * 5) * 0.04) * k, 1, (1.45 + mv * 0.3) * k);
+    mFoam.opacity = swimBlend * (0.22 + mv * 0.3);
+    const bx = Math.sin(player.yaw), bz = Math.cos(player.yaw);       // arah belakang
+    for (let i = 0; i < 2; i++) {
+      const sd = i ? 1 : -1, w = wakes[i];
+      w.position.set(player.x + bx * 2.4 * k - bz * sd * 0.9 * k, WL + 0.06, player.z + bz * 2.4 * k + bx * sd * 0.9 * k);
+      w.rotation.y = player.yaw + sd * 0.3;
+      w.scale.set(0.45 * k, 1, (3 + mv * 2) * k);
+    }
+    mWake.opacity = swimBlend * mv * 0.55;
+  }
   function updateSwimRings(dt) {
+    updateSwimFx();
     for (const r of swimRings) {
       if (r.t >= 1.2) { r.mesh.visible = false; continue; }
       r.t += dt;
@@ -2182,7 +2237,8 @@
       if (L.foot) L.foot.rotation.x += (0.4 - L.foot.rotation.x) * b;
     }
     c.body.rotation.x += (0.2 - c.body.rotation.x) * b;
-    c.body.rotation.z += (Math.sin(ph * 0.5) * 0.05 - c.body.rotation.z) * b;
+    c.body.rotation.z += (Math.sin(ph * 0.5) * 0.1 - c.body.rotation.z) * b;
+    if (c.headPivot) c.headPivot.rotation.x += (-0.35 - c.headPivot.rotation.x) * b;      // kepala terangkat di atas air
     c.body.position.y += (0.05 - c.body.position.y) * b;
     const sw = Math.sin(t * 4.2) * 0.5 * b;
     c.tail1.rotation.y = sw * 0.7; c.tail2.rotation.y = Math.sin(t * 4.2 - 0.9) * 0.6 * b;
@@ -2314,7 +2370,7 @@
   });
 
   // ---------- Suara dinosaurus (volume & posisi stereo mengikuti jarak/arah dari kamera) ----------
-  let dangerNow = 0, cryCd = 6, flyCryCd = 14;
+  let dangerNow = 0, waryNow = 0, cryCd = 6, flyCryCd = 14;
   function cry(type, kind, x, z, boost) {
     const dx = x - player.x, dz = z - player.z, d = Math.hypot(dx, dz);
     const range = type === 'brachio' || type === 'diplo' ? 95 : 55;
@@ -2324,6 +2380,7 @@
     GameAudio.sfx.dino(type, kind, vol, pan);
   }
   GameAudio.setDanger(() => dangerNow);
+  GameAudio.setWary(() => waryNow);
   function updateDanger(dt) {                                    // ketegangan musik: jumlah musuh yang menyerang dan sisa HP
     let n = 0;
     for (const p of preds) {
@@ -2334,6 +2391,13 @@
     if (n > 0 && player.hp < 35) target = Math.min(1, target + 0.3);
     if (state !== 'playing') target = 0;
     dangerNow += (target - dangerNow) * Math.min(1, dt * 2);
+    // "waspada": malam, area berbahaya (musuh dekat belum menyerang), HP rendah, atau kawanan akan datang
+    let w = isNight ? 0.85 : 0;
+    if (horde && horde.spawned === 0) w = 1;
+    if (player.hp < 35) w = Math.max(w, 0.7);
+    for (const p of preds) if (!p.dead && !p.def.timid && !p.def.neutral && Math.hypot(p.x - player.x, p.z - player.z) < 40) { w = Math.max(w, 0.6); break; }
+    if (state !== 'playing') w = 0;
+    waryNow += (w - waryNow) * Math.min(1, dt * 0.8);
     // seruan hewan di sekitar supaya dunia terdengar hidup
     cryCd -= dt;
     if (cryCd <= 0 && state === 'playing') {
@@ -2415,7 +2479,7 @@
       : def.model ? makeQuad(def.pal, def.scale, def.model)
       : makeCreature(Object.assign({ scale: def.scale, variant: def.variant }, def.pal));
     scene.add(c.root);
-    const shd = new THREE.Mesh(shadowDisc, mShadow);
+    const shd = makeDynShadow();
     scene.add(shd);
     const warn = new THREE.Mesh(warnDisc, mWarnDisc);
     warn.visible = false;
@@ -2467,7 +2531,7 @@
   function removePred(p) {
     scene.remove(p.c.root);
     disposeTree(p.c.root);
-    if (p.sh) scene.remove(p.sh);
+    if (p.sh) { scene.remove(p.sh); if (p.sh.userData.unit && p.sh.geometry) p.sh.geometry.dispose(); }
     if (p.warn) scene.remove(p.warn);
   }
 
@@ -2563,7 +2627,7 @@
 
     for (const p of preds) {                                          // dinosaurus darat tidak bisa masuk air dalam
       if (p.dead) continue;
-      if (!p.def.aqua && WL - heightAt(p.x, p.z) > 0.9) {
+      if (!p.def.aqua && Math.abs(p.x - player.x) < 90 && Math.abs(p.z - player.z) < 90 && WL - heightAt(p.x, p.z) > 0.9) {
         if (p.px !== undefined && WL - heightAt(p.px, p.pz) <= 0.9) { p.x = p.px; p.z = p.pz; }
         else {                                                       // terjebak di air (muncul/terdorong): pindah ke daratan terdekat
           for (let k = 0; k < 14; k++) {
@@ -3049,7 +3113,7 @@
     const air = player.y > 0.001;
     swimBlend = approach(swimBlend, swimming ? 1 : 0, 6);
     const groundY = heightAt(player.x, player.z);
-    const gy = swimBlend > 0.01 ? lerp(groundY, WL - 0.42 * (scaleNow / 1.1) + Math.sin(clock * 2.4) * 0.05, swimBlend) : groundY;
+    const gy = swimBlend > 0.01 ? lerp(groundY, WL - 0.78 * (scaleNow / 1.1) + Math.sin(clock * 2.4) * 0.06, swimBlend) : groundY;
     player.gy = gy;
     hero.root.position.set(player.x, gy + player.y, player.z);
     if (state === 'over') {
@@ -3070,7 +3134,7 @@
       const c = p.c;
       const pgyG = heightAt(p.x, p.z);
       const deepP = WL - pgyG > 0.9;
-      const pgy = deepP ? WL - 0.4 * p.def.scale : pgyG;
+      const pgy = deepP ? WL - 0.7 * p.def.scale : pgyG;
       c.root.position.set(p.x, pgy, p.z);
       if (p.sh) {
         const big = p.def.giant ? 1.6 : p.def.model ? 1.15 : 0.8;
@@ -3093,7 +3157,7 @@
       if (c.isTrike) poseTrike(c, p.phase, run, p.state === 'strike' ? atk : -1, clock);
       else poseCreature(c, p.phase, run, false, 0, p.state === 'strike' ? atk : -1, clock);
       p.swimB = approach(p.swimB || 0, deepP ? 1 : 0, 6);
-      if (!c.isTrike && p.swimB > 0.01 && c.legs) applySwim(c, p.swimB, p.speedNow, clock);
+      if (!c.isTrike && p.swimB > 0.01 && c.legs) applySwim(c, p.swimB, 4, clock);
       tiltToGround(c.root, p.x, p.z, p.yaw, 0.9 * p.def.scale, dt, deepP || p.state === 'stun' && false);
       if (wp > 0) {                                                                    // bersiap: menunduk dan menarik badan ke belakang
         if (c.isTrike) { c.headPivot.rotation.x = 0.5 * wp; c.body.rotation.x = 0.1 * wp; }

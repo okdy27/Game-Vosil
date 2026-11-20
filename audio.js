@@ -25,7 +25,7 @@ const GameAudio = (() => {
   }
 
   let actx = null, musicBus = null, sfxBus = null, noiseBuf = null;
-  let intensityFn = () => 0, dangerFn = () => 0;
+  let intensityFn = () => 0, dangerFn = () => 0, waryFn = () => 0;
 
   const musicBtn = document.getElementById('musicBtn');
   const sfxBtn = document.getElementById('sfxBtn');
@@ -37,8 +37,8 @@ const GameAudio = (() => {
   }
 
   function applyPrefs() {
-    if (musicBus) musicBus.gain.value = prefs.music ? 0.75 : 0;
-    if (sfxBus) sfxBus.gain.value = prefs.sfx ? 0.9 : 0;
+    if (musicBus) musicBus.gain.value = prefs.music ? 1.0 : 0;
+    if (sfxBus) sfxBus.gain.value = prefs.sfx ? 0.42 : 0;      // efek lebih pelan dari musik agar tidak menutupi / pecah
     setBtn(musicBtn, prefs.music, '🎵 Musik: ON', '🎵 Musik: OFF');
     setBtn(sfxBtn, prefs.sfx, '🔊 Efek: ON', '🔊 Efek: OFF');
   }
@@ -47,11 +47,21 @@ const GameAudio = (() => {
     try {
       if (!actx) {
         actx = new (window.AudioContext || window.webkitAudioContext)();
+        // rantai keluaran: high-pass (speaker HP tidak bisa < ~90 Hz, sub-bass hanya membuat pecah)
+        // -> kompresor halus -> limiter keras (mencegah clipping / suara sember di speaker)
         const master = actx.createGain();
-        master.gain.value = 0.8;
-        const comp = actx.createDynamicsCompressor();     // supaya tidak pecah saat banyak suara
-        master.connect(comp);
-        comp.connect(actx.destination);
+        master.gain.value = 0.75;
+        const hp = actx.createBiquadFilter();
+        hp.type = 'highpass'; hp.frequency.value = 85; hp.Q.value = 0.5;
+        const comp = actx.createDynamicsCompressor();
+        try {
+          comp.threshold.value = -20; comp.knee.value = 12; comp.ratio.value = 5; comp.attack.value = 0.004; comp.release.value = 0.22;
+        } catch (e) { /* nilai bawaan */ }
+        const lim = actx.createDynamicsCompressor();
+        try {
+          lim.threshold.value = -4; lim.knee.value = 0; lim.ratio.value = 20; lim.attack.value = 0.001; lim.release.value = 0.1;
+        } catch (e) { /* nilai bawaan */ }
+        master.connect(hp); hp.connect(comp); comp.connect(lim); lim.connect(actx.destination);
         musicBus = actx.createGain();
         musicBus.connect(master);
         sfxBus = actx.createGain();
@@ -244,13 +254,13 @@ const GameAudio = (() => {
   const VOICES = {
     raptor:   { dur: 0.42, type: 'square',   f: [[0, 700], [0.25, 1500], [0.6, 1100], [1, 600]], lp: [3200, 1800], vib: [28, 40], am: [36, 0.5], noise: [2500, 0.1], vol: 0.2 },
     velo:     { dur: 0.34, type: 'square',   f: [[0, 1100], [0.3, 2200], [0.7, 1700], [1, 900]], lp: [4200, 2200], vib: [34, 60], am: [48, 0.55], noise: [3500, 0.08], vol: 0.17 },
-    rex:      { dur: 1.35, type: 'sawtooth', f: [[0, 70], [0.2, 118], [0.55, 90], [1, 46]], lp: [900, 260], vib: [9, 5], am: [34, 0.6], noise: [500, 0.35], sub: 0.5, vol: 0.42 },
+    rex:      { dur: 1.35, type: 'sawtooth', f: [[0, 105], [0.2, 170], [0.55, 135], [1, 80]], lp: [1100, 420], vib: [9, 5], am: [34, 0.6], noise: [500, 0.35], sub: 0.5, vol: 0.42 },
     carno:    { dur: 0.85, type: 'sawtooth', f: [[0, 120], [0.3, 190], [1, 80]], lp: [1100, 350], vib: [14, 10], am: [22, 0.55], noise: [700, 0.22], sub: 0.3, vol: 0.34 },
     spino:    { dur: 1.1,  type: 'sawtooth', f: [[0, 160], [0.4, 120], [1, 70]], lp: [1500, 400], vib: [18, 12], am: [58, 0.45], noise: [3200, 0.4], sub: 0.3, vol: 0.34 },
     stego:    { dur: 0.75, type: 'triangle', f: [[0, 130], [0.4, 175], [1, 95]], lp: [900, 400], vib: [6, 7], am: [0, 0], noise: [400, 0.08], vol: 0.3 },
     anky:     { dur: 0.4,  type: 'sawtooth', f: [[0, 95], [0.3, 120], [1, 65]], lp: [700, 300], vib: [0, 0], am: [28, 0.7], noise: [600, 0.5], vol: 0.3 },
-    brachio:  { dur: 2.0,  type: 'sine',     f: [[0, 52], [0.4, 78], [0.75, 70], [1, 46]], lp: [500, 220], vib: [4.5, 3], am: [0, 0], noise: [200, 0.06], vol: 0.45 },
-    diplo:    { dur: 1.6,  type: 'sine',     f: [[0, 66], [0.4, 100], [1, 60]], lp: [600, 260], vib: [5, 4], am: [0, 0], noise: [250, 0.05], vol: 0.42 },
+    brachio:  { dur: 2.0,  type: 'sawtooth', f: [[0, 95], [0.4, 140], [0.75, 125], [1, 85]], lp: [700, 380], vib: [4.5, 3], am: [0, 0], noise: [200, 0.06], vol: 0.45 },
+    diplo:    { dur: 1.6,  type: 'sawtooth', f: [[0, 110], [0.4, 160], [1, 100]], lp: [800, 420], vib: [5, 4], am: [0, 0], noise: [250, 0.05], vol: 0.42 },
     trike:    { dur: 0.95, type: 'sawtooth', f: [[0, 140], [0.35, 175], [1, 100]], lp: [1000, 420], vib: [7, 6], am: [18, 0.3], noise: [500, 0.12], vol: 0.3 },
     gallim:   { dur: 0.26, type: 'triangle', f: [[0, 800], [0.5, 1250], [1, 900]], lp: [3000, 2000], vib: [22, 40], am: [0, 0], noise: [0, 0], vol: 0.16, twice: 0.18 },
     parasaur: { dur: 1.1,  type: 'sawtooth', f: [[0, 210], [0.35, 262], [0.8, 250], [1, 190]], lp: [1400, 700], vib: [6, 6], am: [0, 0], noise: [900, 0.07], vol: 0.3 },
@@ -269,8 +279,8 @@ const GameAudio = (() => {
     const V = VOICES[species] || VOICES.raptor, K = KIND[kind] || KIND.call;
     const now = actx.currentTime;
     while (voiceEnds.length && voiceEnds[0] < now) voiceEnds.shift();
-    if (voiceEnds.length >= 6) return;                        // batasi suara serentak
-    const v = (vol == null ? 1 : vol) * V.vol * K.v;
+    if (voiceEnds.length >= 5) return;                        // batasi suara serentak
+    const v = Math.min(1.2, vol == null ? 1 : vol) * V.vol * K.v * 0.5;
     if (v < 0.01) return;
     const t = now, d = V.dur * K.d;
     voiceEnds.push(t + d + 0.1); voiceEnds.sort((a, b) => a - b);
@@ -289,8 +299,11 @@ const GameAudio = (() => {
           out.connect(sp); sp.connect(sfxBus);
         } else out.connect(sfxBus);
       } catch (e) { out.connect(sfxBus); }
+      const hpf = actx.createBiquadFilter();                  // buang dengung < 110 Hz (tidak terdengar di HP, hanya menyebabkan pecah)
+      hpf.type = 'highpass'; hpf.frequency.value = 110; hpf.Q.value = 0.5;
+      hpf.connect(out);
       const lp = actx.createBiquadFilter();
-      lp.type = 'lowpass'; lp.Q.value = 3;
+      lp.type = 'lowpass'; lp.Q.value = 1.2;
       lp.frequency.setValueAtTime(V.lp[0], t0);
       lp.frequency.exponentialRampToValueAtTime(Math.max(60, V.lp[1]), t0 + d);
       const am = actx.createGain(); am.gain.value = 1 - V.am[1] * 0.5;
@@ -299,15 +312,15 @@ const GameAudio = (() => {
         const fr = pt[1] * K.p * (i === V.f.length - 1 ? K.end : 1);
         if (i === 0) o.frequency.setValueAtTime(fr, t0); else o.frequency.exponentialRampToValueAtTime(Math.max(20, fr), t0 + pt[0] * d);
       });
-      o.connect(am); am.connect(lp); lp.connect(out);
+      o.connect(am); am.connect(lp); lp.connect(hpf);
       const stops = [o];
       if (V.sub) {                                            // lapisan sub-bass untuk bobot
-        const o2 = actx.createOscillator(), g2 = actx.createGain(); o2.type = 'sine';
+        const o2 = actx.createOscillator(), g2 = actx.createGain(); o2.type = 'triangle';
         V.f.forEach((pt, i) => {
-          const fr = pt[1] * K.p * 0.5 * (i === V.f.length - 1 ? K.end : 1);
+          const fr = pt[1] * K.p * 1.0 * (i === V.f.length - 1 ? K.end : 1);
           if (i === 0) o2.frequency.setValueAtTime(fr, t0); else o2.frequency.exponentialRampToValueAtTime(Math.max(20, fr), t0 + pt[0] * d);
         });
-        g2.gain.value = V.sub; o2.connect(g2); g2.connect(lp); stops.push(o2);
+        g2.gain.value = V.sub * 0.6; o2.connect(g2); g2.connect(lp); stops.push(o2);
       }
       if (V.vib[0] > 0) {                                     // getaran nada
         const lf = actx.createOscillator(), lg = actx.createGain();
@@ -322,27 +335,26 @@ const GameAudio = (() => {
       if (V.noise[1] > 0) {                                   // desah napas
         const src = actx.createBufferSource(); src.buffer = noiseBuf;
         const bp = actx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = V.noise[0]; bp.Q.value = 0.8;
-        const ng = actx.createGain(); ng.gain.value = V.noise[1];
-        src.connect(bp); bp.connect(ng); ng.connect(out);
+        const ng = actx.createGain(); ng.gain.value = Math.min(0.25, V.noise[1]);
+        src.connect(bp); bp.connect(ng); ng.connect(hpf);
         src.start(t0); src.stop(t0 + d + 0.05);
       }
       stops.forEach((n) => { n.start(t0); n.stop(t0 + d + 0.05); });
     }
   }
 
-  // ----- Musik latar: tema "legenda rimba purba" (D minor, tenang tapi menegangkan) -----
-  // Lapisan: pad hangat + drone bas, seruling melodi pendek, drum taiko rendah, burung hutan (saat tenang),
-  // dan senar tremolo + drum rapat yang masuk bertahap saat bahaya naik (setDanger).
+  // ----- Musik latar: tema "legenda rimba purba" (D minor), tiga fase yang bercampur mulus -----
+  //  SIANG / eksplorasi : melodi seruling tipis + pad ringan + petikan lembut, banyak jeda hening (mid-high, memberi ruang suara alam)
+  //  MALAM / waspada    : drone rendah, perkusi kayu & detak pelan, harmoni disonan tipis (low-mid, membangun kewaspadaan)
+  //  DIKEJAR / combat   : drum tribal penuh, ostinato senar/synth, bas agresif, tempo cepat (full spectrum)
   const music = (() => {
-    // Dm - Bb - Gm - A  (tiap akor 1 birama = 4 ketuk = 8 langkah)
     const PROG = [
-      { root: 38, pad: [50, 53, 57, 62] },
-      { root: 34, pad: [46, 50, 53, 58] },
-      { root: 31, pad: [43, 46, 50, 55] },
-      { root: 33, pad: [45, 49, 52, 57] }
+      { root: 38, pad: [50, 53, 57, 62] },   // Dm
+      { root: 34, pad: [46, 50, 53, 58] },   // Bb
+      { root: 31, pad: [43, 46, 50, 55] },   // Gm
+      { root: 33, pad: [45, 49, 52, 57] }    // A
     ];
-    // melodi seruling 8 birama: [langkah, nada midi, panjang(langkah)]
-    const MEL = [
+    const MEL = [                              // melodi seruling, 8 birama: [langkah, nada midi, panjang]
       [[0, 69, 3], [3, 67, 1], [4, 65, 2], [6, 62, 2]],
       [[0, 65, 2], [2, 69, 2], [4, 70, 3], [7, 69, 1]],
       [[0, 67, 3], [3, 65, 1], [4, 62, 4]],
@@ -352,31 +364,34 @@ const GameAudio = (() => {
       [[0, 74, 2], [2, 70, 2], [4, 67, 3], [7, 65, 1]],
       [[0, 69, 4], [4, 64, 2], [6, 61, 2]]
     ];
-    let timer = null, running = false, step = 0, nextTime = 0, danger = 0, reverbIn = null;
+    const OSTI = [0, 0, 7, 0, 5, 0, 3, 7];    // pola ostinato (semiton dari root)
+    const TOM_LOW = [1, 0, 0.5, 1, 0, 0.5, 1, 0.6];
+    const TOM_HI = [0, 0, 0, 0, 0.7, 0, 0.6, 0.8];
+    let timer = null, running = false, step = 0, nextTime = 0, danger = 0, wary = 0, prevDanger = 0, stingerAt = -99, reverbIn = null;
 
-    function ensureReverb() {                              // gema gua/hutan buatan
+    function ensureReverb() {
       if (reverbIn || !actx) return;
       try {
-        const len = Math.floor(actx.sampleRate * 2.4), ir = actx.createBuffer(2, len, actx.sampleRate);
+        const len = Math.floor(actx.sampleRate * 2.2), ir = actx.createBuffer(2, len, actx.sampleRate);
         for (let c = 0; c < 2; c++) {
           const d = ir.getChannelData(c);
           for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.6);
         }
         const conv = actx.createConvolver(); conv.buffer = ir;
-        const wet = actx.createGain(); wet.gain.value = 0.55;
+        const wet = actx.createGain(); wet.gain.value = 0.5;
         reverbIn = actx.createGain(); reverbIn.gain.value = 1;
         reverbIn.connect(conv); conv.connect(wet); wet.connect(musicBus);
       } catch (e) { reverbIn = null; }
     }
-    function mTone(freq, t, dur, type, vol, opts) {          // nada dengan attack/release lembut + kirim ke reverb
+    function mTone(freq, t, dur, type, vol, opts) {
       const o = actx.createOscillator(), g = actx.createGain(), f = actx.createBiquadFilter();
       o.type = type; o.frequency.setValueAtTime(freq, t);
       if (opts && opts.slideTo) o.frequency.exponentialRampToValueAtTime(opts.slideTo, t + dur);
       f.type = 'lowpass'; f.frequency.value = (opts && opts.lp) || 1800; f.Q.value = 0.7;
       const at = (opts && opts.attack) || 0.02;
       g.gain.setValueAtTime(0.0001, t);
-      g.gain.exponentialRampToValueAtTime(vol, t + at);
-      g.gain.setValueAtTime(vol, t + Math.max(at, dur * 0.6));
+      g.gain.exponentialRampToValueAtTime(Math.max(0.0002, vol), t + at);
+      g.gain.setValueAtTime(Math.max(0.0002, vol), t + Math.max(at, dur * 0.6));
       g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
       o.connect(f); f.connect(g); g.connect(musicBus);
       if (reverbIn && !(opts && opts.dry)) { const w = actx.createGain(); w.gain.value = (opts && opts.wet) || 0.5; g.connect(w); w.connect(reverbIn); }
@@ -387,49 +402,90 @@ const GameAudio = (() => {
       }
       o.start(t); o.stop(t + dur + 0.05);
     }
-    function taiko(t, vol) {
-      tone(musicBus, 110, t, 0.35, 'sine', vol, 42);
-      noise(musicBus, t, 0.18, vol * 0.35, 'lowpass', 380);
+    // drum: bagian nada (terdengar di speaker HP) + sedikit derau
+    function tom(t, vol, f0, f1, dur) {
+      tone(musicBus, f0, t, dur, 'sine', vol, f1);
+      tone(musicBus, f0 * 2, t, dur * 0.5, 'triangle', vol * 0.35, f1 * 2);
+      noise(musicBus, t, 0.07, vol * 0.3, 'lowpass', 900);
+    }
+    function wood(t, vol, pitch) {                           // perkusi kayu: "tok" kering
+      tone(musicBus, pitch, t, 0.07, 'triangle', vol, pitch * 0.6);
+      noise(musicBus, t, 0.03, vol * 0.5, 'bandpass', 2000);
+    }
+    function heart(t, vol) {                                 // detak pelan
+      tone(musicBus, 120, t, 0.2, 'sine', vol, 62);
+      tone(musicBus, 240, t, 0.12, 'triangle', vol * 0.35, 130);
     }
 
     function playStep(s, t, stepDur) {
       const k = s % 8, bar = Math.floor(s / 8) % 8, ch = PROG[bar % 4];
-      const beat = stepDur * 2, barDur = stepDur * 8;
-      if (k === 0) {
-        ch.pad.forEach((n) => {                             // pad hangat (dua osilator sedikit sumbang)
-          mTone(midiHz(n), t, barDur + 0.9, 'sawtooth', 0.045, { attack: 1.0, lp: 650 + danger * 500, wet: 0.7 });
-          mTone(midiHz(n) * 1.006, t, barDur + 0.9, 'triangle', 0.05, { attack: 1.2, lp: 900, wet: 0.7 });
-        });
-        mTone(midiHz(ch.root), t, barDur + 0.4, 'sine', 0.3, { attack: 0.3, lp: 300, dry: true });   // drone bas
-        taiko(t, 0.5 + danger * 0.3);
-        if (danger < 0.3 && Math.random() < 0.45) {         // burung hutan jauh
-          const bt = t + stepDur * (1 + Math.floor(Math.random() * 5));
-          const base = 2400 + Math.random() * 900;
-          [0, 0.1, 0.2].forEach((d, i) => mTone(base + i * 280, bt + d, 0.08, 'sine', 0.03, { wet: 0.9, slideTo: base + i * 280 + 500 }));
-        }
-      }
-      if (k === 4 && (danger > 0.12 || bar % 2 === 1)) taiko(t, 0.22 + danger * 0.3);
-      if (danger > 0.4 && (k === 3 || k === 7 || k === 5)) taiko(t, 0.18 + danger * 0.25);
-      if (danger > 0.55) {                                  // senar tremolo menegangkan
-        const root = ch.root + 24 + (k % 4 === 2 ? 7 : 0);
-        mTone(midiHz(root), t, stepDur * 0.9, 'sawtooth', 0.025 + danger * 0.03, { lp: 900 + danger * 900, dry: true });
-      }
-      if (danger > 0.75 && k % 2 === 0) mTone(midiHz(ch.root + 36 + (bar % 2 ? 1 : 0)), t, stepDur * 1.6, 'sawtooth', 0.02, { lp: 2200, wet: 0.4 });   // dissonan tinggi
+      const barDur = stepDur * 8;
+      const wd = (1 - wary) * (1 - danger);                  // bobot fase siang
+      const wn = wary * (1 - danger);                        // bobot fase malam/waspada
+      const wc = danger;                                     // bobot fase combat
 
-      // seruling melodi (berhenti saat bahaya tinggi supaya terasa tegang)
-      if (danger < 0.7) {
-        for (const n of MEL[bar]) {
-          if (n[0] === k) mTone(midiHz(n[1]), t, stepDur * n[2], 'triangle', 0.1 * (1 - danger * 0.8), { attack: 0.08, lp: 2600, vib: true, wet: 0.85 });
+      // ---------- SIANG: tipis, banyak jeda ----------
+      if (wd > 0.08) {
+        if (k === 0 && bar % 2 === 0) {                      // pad ringan, oktaf atas
+          ch.pad.forEach((n) => mTone(midiHz(n + 12), t, barDur * 2 + 0.6, 'triangle', 0.028 * wd, { attack: 1.6, lp: 1400, wet: 0.8 }));
+          mTone(midiHz(ch.root + 12), t, 1.4, 'triangle', 0.07 * wd, { attack: 0.01, lp: 900, wet: 0.5 });   // petikan lembut (gitar)
+        }
+        if (k === 4 && bar % 2 === 0) mTone(midiHz(ch.pad[2]), t, 0.9, 'triangle', 0.045 * wd, { attack: 0.01, lp: 1100, wet: 0.6 });
+        if (bar % 4 !== 2) {                                 // seruling (birama ke-3 & ke-7 sengaja hening)
+          for (const n of MEL[bar]) if (n[0] === k) mTone(midiHz(n[1]), t, stepDur * n[2], 'triangle', 0.09 * wd, { attack: 0.08, lp: 2800, vib: true, wet: 0.85 });
+        }
+        if (k === 0 && wd > 0.5 && Math.random() < 0.4) {    // burung hutan jauh
+          const bt = t + stepDur * (1 + Math.floor(Math.random() * 5)), base = 2400 + Math.random() * 900;
+          [0, 0.1, 0.2].forEach((d, i) => mTone(base + i * 280, bt + d, 0.08, 'sine', 0.026 * wd, { wet: 0.9, slideTo: base + i * 280 + 500 }));
         }
       }
+
+      // ---------- MALAM / WASPADA: drone, kayu, detak, disonan tipis ----------
+      if (wn > 0.08) {
+        if (k === 0) {
+          mTone(midiHz(ch.root + 12), t, barDur + 0.5, 'sawtooth', 0.055 * wn, { attack: 0.8, lp: 420, dry: true });         // drone rendah (terdengar di HP)
+          mTone(midiHz(ch.root + 19), t, barDur + 0.5, 'sawtooth', 0.03 * wn, { attack: 1.0, lp: 380, dry: true });
+          if (bar % 2 === 1) mTone(midiHz(ch.root + 13), t, barDur, 'sawtooth', 0.022 * wn, { attack: 1.2, lp: 500, wet: 0.5 });   // disonan tipis (kedua minor)
+          heart(t, 0.3 * wn);
+        }
+        if (k === 2 && bar % 2 === 0) heart(t, 0.18 * wn);
+        if (k === 0 || (k === 5 && bar % 2 === 1)) wood(t, 0.22 * wn, k === 0 ? 330 : 260);
+        if (k === 3 && bar % 2 === 0) wood(t, 0.14 * wn, 420);
+        if (k === 2 && bar % 2 === 1) {                      // nada tinggi tipis yang bergetar (A5 vs Bb5)
+          mTone(midiHz(81), t, barDur * 0.8, 'sine', 0.012 * wn, { attack: 1.0, wet: 0.9 });
+          mTone(midiHz(82), t, barDur * 0.8, 'sine', 0.009 * wn, { attack: 1.2, wet: 0.9 });
+        }
+      }
+
+      // ---------- COMBAT: tribal, ostinato, bas ----------
+      if (wc > 0.08) {
+        if (TOM_LOW[k]) tom(t, 0.36 * wc * TOM_LOW[k], 150, 85, 0.22);
+        if (TOM_HI[k]) tom(t, 0.26 * wc * TOM_HI[k], 230, 150, 0.14);
+        if (k === 0) { tom(t, 0.4 * wc, 130, 70, 0.4); }
+        if (bar % 4 === 3 && k >= 6) tom(t, 0.22 * wc, 190 - (k - 6) * 20, 120, 0.12);       // gulungan di ujung frasa
+        const on = OSTI[k];
+        mTone(midiHz(ch.root + 24 + on), t, stepDur * 0.85, 'sawtooth', (0.03 + wc * 0.03) * wc, { attack: 0.01, lp: 900 + wc * 1100, wet: 0.25 });
+        if (k % 2 === 0) mTone(midiHz(ch.root + 12), t, stepDur * 1.7, 'sawtooth', 0.075 * wc, { attack: 0.01, lp: 330, dry: true });   // bas agresif
+        if (k === 0 || k === 4) mTone(midiHz(ch.pad[0] + 12 + (k === 4 ? 7 : 0)), t, stepDur * 3, 'square', 0.02 * wc, { attack: 0.03, lp: 1500, wet: 0.4 });
+      }
+      // ombak halus di bawah semua fase: bas panjang sangat pelan agar peralihan tidak terasa putus
+      if (k === 0) mTone(midiHz(ch.root + 12), t, barDur + 0.3, 'triangle', 0.025, { attack: 0.5, lp: 350, dry: true });
+    }
+
+    function stinger(t) {                                    // sambaran saat mulai dikejar
+      tom(t, 0.5, 120, 60, 0.6);
+      [0, 3, 7].forEach((iv) => mTone(midiHz(50 + iv), t, 1.3, 'sawtooth', 0.045, { attack: 0.02, lp: 1300, wet: 0.7 }));
+      noise(musicBus, t, 0.5, 0.18, 'bandpass', 1200);
     }
 
     function scheduler() {
       if (!actx) return;
       if (nextTime < actx.currentTime - 0.2) nextTime = actx.currentTime + 0.05;
       while (nextTime < actx.currentTime + 0.2) {
-        const bpm = 66 + danger * 30 + Math.max(0, Math.min(1, intensityFn() || 0)) * 4;
-        const stepDur = 60 / bpm / 2;                        // langkah = 1/8
+        const bpm = 60 - wary * 4 + danger * 52 + Math.max(0, Math.min(1, intensityFn() || 0)) * 2;
+        const stepDur = 60 / bpm / 2;
+        if (danger > 0.45 && prevDanger <= 0.45 && nextTime - stingerAt > 20) { stinger(nextTime); stingerAt = nextTime; }
+        prevDanger = danger;
         playStep(step, nextTime, stepDur);
         nextTime += stepDur;
         step = (step + 1) % 64;
@@ -442,8 +498,9 @@ const GameAudio = (() => {
         running = true; step = 0; nextTime = actx.currentTime + 0.1;
         ensureReverb();
         timer = setInterval(() => {
-          const target = Math.max(0, Math.min(1, dangerFn() || 0));
-          danger += (target - danger) * 0.06;                // naik/turun mulus
+          const td = Math.max(0, Math.min(1, dangerFn() || 0)), tw = Math.max(0, Math.min(1, waryFn() || 0));
+          danger += (td - danger) * 0.08;
+          wary += (tw - wary) * 0.04;
           scheduler();
         }, 25);
       },
@@ -461,6 +518,7 @@ const GameAudio = (() => {
     music,
     prefs,
     setIntensity(fn) { intensityFn = fn; },
-    setDanger(fn) { dangerFn = fn; }   // 0 = tenang, 1 = pertarungan panas
+    setDanger(fn) { dangerFn = fn; },
+    setWary(fn) { waryFn = fn; }         // 0 = aman (siang), 1 = waspada (malam / area berbahaya)   // 0 = tenang, 1 = pertarungan panas
   };
 })();

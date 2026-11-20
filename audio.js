@@ -24,7 +24,7 @@ const GameAudio = (() => {
     try { localStorage.setItem(AUDIO_KEY, JSON.stringify(prefs)); } catch (e) { /* abaikan */ }
   }
 
-  let actx = null, musicBus = null, sfxBus = null, noiseBuf = null;
+  let actx = null, musicBus = null, sfxBus = null, voiceBus = null, noiseBuf = null;
   let intensityFn = () => 0, dangerFn = () => 0, waryFn = () => 0;
 
   const musicBtn = document.getElementById('musicBtn');
@@ -50,7 +50,7 @@ const GameAudio = (() => {
         // rantai keluaran: high-pass (speaker HP tidak bisa < ~90 Hz, sub-bass hanya membuat pecah)
         // -> kompresor halus -> limiter keras (mencegah clipping / suara sember di speaker)
         const master = actx.createGain();
-        master.gain.value = 0.75;
+        master.gain.value = 0.7;
         const hp = actx.createBiquadFilter();
         hp.type = 'highpass'; hp.frequency.value = 85; hp.Q.value = 0.5;
         const comp = actx.createDynamicsCompressor();
@@ -59,13 +59,22 @@ const GameAudio = (() => {
         } catch (e) { /* nilai bawaan */ }
         const lim = actx.createDynamicsCompressor();
         try {
-          lim.threshold.value = -4; lim.knee.value = 0; lim.ratio.value = 20; lim.attack.value = 0.001; lim.release.value = 0.1;
+          lim.threshold.value = -8; lim.knee.value = 0; lim.ratio.value = 20; lim.attack.value = 0.001; lim.release.value = 0.1;
         } catch (e) { /* nilai bawaan */ }
-        master.connect(hp); hp.connect(comp); comp.connect(lim); lim.connect(actx.destination);
+        const trim = actx.createGain();                     // sisakan ruang ~3 dB di bawah batas keras speaker
+        trim.gain.value = 0.7;
+        master.connect(hp); hp.connect(comp); comp.connect(lim); lim.connect(trim); trim.connect(actx.destination);
         musicBus = actx.createGain();
         musicBus.connect(master);
         sfxBus = actx.createGain();
         sfxBus.connect(master);
+        // jalur khusus suara dinosaurus: dikompres sendiri dulu sebelum bercampur dengan efek lain,
+        // supaya 5-7 dino bersuara bersamaan tidak membuat puncak sinyal (peak) melonjak
+        voiceBus = actx.createGain();
+        voiceBus.gain.value = 0.8;
+        const vcomp = actx.createDynamicsCompressor();
+        try { vcomp.threshold.value = -26; vcomp.knee.value = 8; vcomp.ratio.value = 10; vcomp.attack.value = 0.002; vcomp.release.value = 0.15; } catch (e) { /* bawaan */ }
+        voiceBus.connect(vcomp); vcomp.connect(sfxBus);
         noiseBuf = actx.createBuffer(1, actx.sampleRate, actx.sampleRate);   // derau untuk drum & desis
         const d = noiseBuf.getChannelData(0);
         for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
@@ -208,8 +217,8 @@ const GameAudio = (() => {
     hit() {                         // pemain terkena serangan
       if (!sfxOk()) return;
       const t = actx.currentTime;
-      noise(sfxBus, t, 0.2, 0.5, 'lowpass', 900);
-      tone(sfxBus, 210, t, 0.25, 'sawtooth', 0.25, 70);
+      noise(sfxBus, t, 0.2, 0.3, 'lowpass', 900);
+      tone(sfxBus, 210, t, 0.25, 'triangle', 0.22, 90);
     },
     bite() {                        // pemain menggigit
       if (!sfxOk()) return;
@@ -252,8 +261,8 @@ const GameAudio = (() => {
   // ----- Suara dinosaurus (sintesis: osilator + formant + getaran + parau) -----
   // f: kontur nada [[waktu 0..1, Hz], ...]; lp: filter low-pass awal->akhir; vib: [Hz, kedalaman Hz]; am: [Hz, kedalaman 0..1] = parau/geraman
   const VOICES = {
-    raptor:   { dur: 0.42, type: 'square',   f: [[0, 700], [0.25, 1500], [0.6, 1100], [1, 600]], lp: [3200, 1800], vib: [28, 40], am: [36, 0.5], noise: [2500, 0.1], vol: 0.2 },
-    velo:     { dur: 0.34, type: 'square',   f: [[0, 1100], [0.3, 2200], [0.7, 1700], [1, 900]], lp: [4200, 2200], vib: [34, 60], am: [48, 0.55], noise: [3500, 0.08], vol: 0.17 },
+    raptor:   { dur: 0.42, type: 'sawtooth', f: [[0, 600], [0.25, 1250], [0.6, 950], [1, 520]], lp: [2200, 1300], vib: [28, 30], am: [36, 0.4], noise: [2000, 0.06], vol: 0.16 },
+    velo:     { dur: 0.34, type: 'sawtooth', f: [[0, 900], [0.3, 1700], [0.7, 1350], [1, 750]], lp: [2600, 1500], vib: [34, 45], am: [48, 0.45], noise: [2500, 0.05], vol: 0.14 },
     rex:      { dur: 1.35, type: 'sawtooth', f: [[0, 105], [0.2, 170], [0.55, 135], [1, 80]], lp: [1100, 420], vib: [9, 5], am: [34, 0.6], noise: [500, 0.35], sub: 0.5, vol: 0.42 },
     carno:    { dur: 0.85, type: 'sawtooth', f: [[0, 120], [0.3, 190], [1, 80]], lp: [1100, 350], vib: [14, 10], am: [22, 0.55], noise: [700, 0.22], sub: 0.3, vol: 0.34 },
     spino:    { dur: 1.1,  type: 'sawtooth', f: [[0, 160], [0.4, 120], [1, 70]], lp: [1500, 400], vib: [18, 12], am: [58, 0.45], noise: [3200, 0.4], sub: 0.3, vol: 0.34 },
@@ -264,7 +273,7 @@ const GameAudio = (() => {
     trike:    { dur: 0.95, type: 'sawtooth', f: [[0, 140], [0.35, 175], [1, 100]], lp: [1000, 420], vib: [7, 6], am: [18, 0.3], noise: [500, 0.12], vol: 0.3 },
     gallim:   { dur: 0.26, type: 'triangle', f: [[0, 800], [0.5, 1250], [1, 900]], lp: [3000, 2000], vib: [22, 40], am: [0, 0], noise: [0, 0], vol: 0.16, twice: 0.18 },
     parasaur: { dur: 1.1,  type: 'sawtooth', f: [[0, 210], [0.35, 262], [0.8, 250], [1, 190]], lp: [1400, 700], vib: [6, 6], am: [0, 0], noise: [900, 0.07], vol: 0.3 },
-    flyer:    { dur: 0.5,  type: 'sawtooth', f: [[0, 1500], [0.35, 2500], [1, 1300]], lp: [4000, 2500], vib: [26, 80], am: [30, 0.4], noise: [4000, 0.12], vol: 0.12 },
+    flyer:    { dur: 0.5,  type: 'sawtooth', f: [[0, 1300], [0.35, 2000], [1, 1100]], lp: [2800, 1800], vib: [26, 60], am: [30, 0.35], noise: [3000, 0.06], vol: 0.1 },
     vosil:    { dur: 0.6,  type: 'sawtooth', f: [[0, 150], [0.3, 260], [1, 110]], lp: [1800, 600], vib: [10, 10], am: [30, 0.45], noise: [900, 0.2], sub: 0.3, vol: 0.3 }
   };
   const KIND = {                       // pengubah per jenis suara
@@ -273,13 +282,19 @@ const GameAudio = (() => {
     hurt:   { d: 0.38, p: 1.3, v: 0.9, end: 0.7 },
     die:    { d: 1.3, p: 0.85, v: 1, end: 0.45 }
   };
-  const voiceEnds = [];
+  const voiceEnds = [], sigAt = {};
+  let lastVoiceAt = -9;
   function voiceFor(species, kind, vol, pan) {
-    if (!actx || !sfxBus || !noiseBuf || !prefs.sfx) return;
+    if (!actx || !voiceBus || !noiseBuf || !prefs.sfx) return;
     const V = VOICES[species] || VOICES.raptor, K = KIND[kind] || KIND.call;
     const now = actx.currentTime;
     while (voiceEnds.length && voiceEnds[0] < now) voiceEnds.shift();
-    if (voiceEnds.length >= 5) return;                        // batasi suara serentak
+    // pembatas: maks 3 suara dino serentak, jarak antar-suara >= 0.12 dtk, dan suara yang sama tidak diulang < 0.3 dtk
+    if (voiceEnds.length >= 3) return;
+    if (now - lastVoiceAt < 0.12) return;
+    const sig = species + ':' + kind;
+    if (sigAt[sig] && now - sigAt[sig] < 0.3) return;
+    lastVoiceAt = now; sigAt[sig] = now;
     const v = Math.min(1.2, vol == null ? 1 : vol) * V.vol * K.v * 0.5;
     if (v < 0.01) return;
     const t = now, d = V.dur * K.d;
@@ -296,9 +311,9 @@ const GameAudio = (() => {
       try {
         if (pan && actx.createStereoPanner) {
           const sp = actx.createStereoPanner(); sp.pan.value = Math.max(-1, Math.min(1, pan));
-          out.connect(sp); sp.connect(sfxBus);
-        } else out.connect(sfxBus);
-      } catch (e) { out.connect(sfxBus); }
+          out.connect(sp); sp.connect(voiceBus);
+        } else out.connect(voiceBus);
+      } catch (e) { out.connect(voiceBus); }
       const hpf = actx.createBiquadFilter();                  // buang dengung < 110 Hz (tidak terdengar di HP, hanya menyebabkan pecah)
       hpf.type = 'highpass'; hpf.frequency.value = 110; hpf.Q.value = 0.5;
       hpf.connect(out);
@@ -510,6 +525,26 @@ const GameAudio = (() => {
         timer = null;
       }
     };
+  })();
+
+  // pembatas efek umum: efek yang sama tidak diputar lebih rapat dari 70 ms, dan maks 7 efek per 100 ms
+  (() => {
+    let burstAt = 0, burstN = 0;
+    const lastAt = {};
+    Object.keys(sfx).forEach((k) => {
+      if (k === 'dino' || typeof sfx[k] !== 'function') return;
+      const fn = sfx[k];
+      sfx[k] = function () {
+        const now = actx ? actx.currentTime : 0;
+        if (actx) {
+          if (lastAt[k] !== undefined && now - lastAt[k] < 0.07) return;
+          if (now - burstAt > 0.1) { burstAt = now; burstN = 0; }
+          if (++burstN > 7) return;
+          lastAt[k] = now;
+        }
+        return fn.apply(sfx, arguments);
+      };
+    });
   })();
 
   return {

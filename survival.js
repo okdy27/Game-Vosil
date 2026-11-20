@@ -1780,6 +1780,105 @@
     const p = Math.round(clamp(v, 0, 100));
     if (shown[key] !== p) { shown[key] = p; el.style.width = p + '%'; }
   }
+  // ---------- Mini map (arah atas = arah kamera) ----------
+  const miniEl = $('miniMap');
+  let mmCtx = null;
+  try { mmCtx = miniEl && miniEl.getContext ? miniEl.getContext('2d') : null; } catch (e) { mmCtx = null; }
+  const MM_N = 34, MM_R = 85;
+  let mmTerr = null, mmTerrCtx = null, mmOk = !!mmCtx, mmX = 1e9, mmZ = 1e9, mmYaw = 9, mmT = 0, mmE = 0;
+  function mmBuildTerrain() {
+    if (!mmTerr) { mmTerr = document.createElement('canvas'); mmTerr.width = mmTerr.height = MM_N; mmTerrCtx = mmTerr.getContext('2d'); }
+    const img = mmTerrCtx.createImageData(MM_N, MM_N), d = img.data;
+    const rx = Math.cos(camYaw), rz = -Math.sin(camYaw), fx = -Math.sin(camYaw), fz = -Math.cos(camYaw);
+    for (let j = 0; j < MM_N; j++) for (let i = 0; i < MM_N; i++) {
+      const u = ((i + 0.5) / MM_N * 2 - 1) * MM_R, v = ((j + 0.5) / MM_N * 2 - 1) * MM_R;
+      const wx = player.x + rx * u - fx * v, wz = player.z + rz * u - fz * v;
+      const h = heightAt(wx, wz), h2 = heightAt(wx + 3, wz + 3);
+      let r, g, b;
+      if (h < WL - 0.05) { const dp = Math.min(1, (WL - h) / 3); r = 58 - 22 * dp; g = 140 - 40 * dp; b = 200 - 30 * dp; }
+      else if (h < WL + 0.5) { r = 206; g = 190; b = 132; }
+      else {
+        const tt = clamp((h - WL) / 14, 0, 1);
+        r = 92 + tt * 70; g = 156 - tt * 22; b = 72 + tt * 12;
+        const steep = Math.abs(h2 - h) / 4.2;                  // lereng curam / tebing -> abu-abu batu
+        const rk = clamp((steep - 0.55) / 0.4, 0, 1);
+        r += (122 - r) * rk; g += (116 - g) * rk; b += (108 - b) * rk;
+        const sh = 1 + clamp((h - h2) / 4.2 * 0.5, -0.22, 0.22);
+        r *= sh; g *= sh; b *= sh;
+      }
+      const o = (j * MM_N + i) * 4;
+      d[o] = clamp(r, 0, 255); d[o + 1] = clamp(g, 0, 255); d[o + 2] = clamp(b, 0, 255); d[o + 3] = 255;
+    }
+    mmTerrCtx.putImageData(img, 0, 0);
+    mmX = player.x; mmZ = player.z; mmYaw = camYaw;
+  }
+  function updateMinimap(dt) {
+    if (!mmOk || state !== 'playing') return;
+    mmE += dt;
+    if (mmE < 0.1) return;
+    mmT += mmE; mmE = 0;
+    try {
+      if (!mmTerr || ((Math.hypot(player.x - mmX, player.z - mmZ) > 6 || Math.abs(camYaw - mmYaw) > 0.12) && mmT > 0.25) || mmT > 2) { mmBuildTerrain(); mmT = 0; }
+      const S = miniEl.width, c = S / 2, rad = c - 3, k = rad / MM_R;
+      const rx = Math.cos(camYaw), rz = -Math.sin(camYaw), fx = -Math.sin(camYaw), fz = -Math.cos(camYaw);
+      const ctx = mmCtx;
+      ctx.clearRect(0, 0, S, S);
+      ctx.save();
+      ctx.beginPath(); ctx.arc(c, c, c - 1, 0, Math.PI * 2); ctx.clip();
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(mmTerr, 0, 0, S, S);
+      if (isNight) { ctx.fillStyle = 'rgba(10,20,50,0.38)'; ctx.fillRect(0, 0, S, S); }
+      const pt = (x, z) => { const dx = x - player.x, dz = z - player.z; return [c + (dx * rx + dz * rz) * k, c - (dx * fx + dz * fz) * k, Math.hypot(dx, dz)]; };
+      // kolam
+      ctx.fillStyle = 'rgba(70,160,225,0.95)';
+      for (const ch of chunks.values()) for (const pd of ch.ponds) {
+        const q = pt(pd.x, pd.z); if (q[2] > MM_R + 8) continue;
+        ctx.beginPath(); ctx.arc(q[0], q[1], Math.max(2, (pd.r || 4) * k), 0, Math.PI * 2); ctx.fill();
+      }
+      // koin & telur
+      let n = 0;
+      ctx.fillStyle = '#ffd54f';
+      for (const ch of chunks.values()) for (const cn of ch.coins) {
+        if (taken.has(cn.id) || n > 70) continue;
+        const q = pt(cn.x, cn.z); if (q[2] > MM_R) continue;
+        ctx.fillRect(q[0] - 1, q[1] - 1, 2.2, 2.2); n++;
+      }
+      for (const ch of chunks.values()) for (const eg of ch.eggs) {
+        if (taken.has(eg.id)) continue;
+        const q = pt(eg.x, eg.z); if (q[2] > MM_R) continue;
+        ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(q[0], q[1], 2.6, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#ff9800'; ctx.lineWidth = 1; ctx.stroke();
+      }
+      // hewan & musuh
+      for (const p of preds) {
+        if (p.dead) continue;
+        const hostile = !p.def.timid && !p.def.neutral;
+        let q = pt(p.x, p.z);
+        let edge = false;
+        if (q[2] > MM_R) { if (!hostile || q[2] > MM_R * 1.8) continue; const a = Math.atan2(q[1] - c, q[0] - c); q = [c + Math.cos(a) * rad, c + Math.sin(a) * rad]; edge = true; }
+        const active = hostile && p.state !== 'wander' && p.state !== 'flee';
+        ctx.fillStyle = hostile ? (active ? '#ff3b30' : '#ff8a65') : '#c6ff6a';
+        ctx.globalAlpha = edge ? 0.6 : 1;
+        ctx.beginPath(); ctx.arc(q[0], q[1], active ? 3.4 : 2.6, 0, Math.PI * 2); ctx.fill();
+        if (active) { ctx.strokeStyle = 'rgba(255,255,255,.85)'; ctx.lineWidth = 1; ctx.stroke(); }
+        ctx.globalAlpha = 1;
+      }
+      ctx.restore();
+      // pemain (segitiga menghadap arah jalan)
+      const pfx = -Math.sin(player.yaw), pfz = -Math.cos(player.yaw);
+      const ax = pfx * rx + pfz * rz, ay = -(pfx * fx + pfz * fz), an = Math.atan2(ay, ax);
+      ctx.save(); ctx.translate(c, c); ctx.rotate(an);
+      ctx.fillStyle = '#ffffff'; ctx.strokeStyle = '#1b3a10'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(6, 0); ctx.lineTo(-4.5, 4.2); ctx.lineTo(-2.2, 0); ctx.lineTo(-4.5, -4.2); ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.restore();
+      // utara (-Z)
+      const na = Math.atan2(-(-fz), -rz);               // arah layar dari vektor utara
+      const nx = c + Math.cos(na) * (c - 9), ny = c + Math.sin(na) * (c - 9);
+      ctx.fillStyle = '#ffeb3b'; ctx.font = 'bold ' + Math.round(S * 0.11) + 'px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.strokeStyle = 'rgba(0,0,0,.7)'; ctx.lineWidth = 2.5; ctx.strokeText('U', nx, ny); ctx.fillText('U', nx, ny);
+    } catch (e) { mmOk = false; }
+  }
+
   function updateHud() {
     setW(fHp, 'hp', player.hp);
     setW(fHunger, 'hu', player.hunger);
@@ -3227,6 +3326,7 @@
     updateDanger(dt);
     updateHorde(dt);
     updateSwimRings(dt);
+    updateMinimap(dt);
     updateFlyCoins(dt);
 
     if (toastT > 0) { toastT -= dt; if (toastT <= 0) toastEl.classList.remove('show'); }

@@ -44,30 +44,78 @@
 
     /* ---------- HUD ---------- */
     #hud { position: fixed; inset: 0; pointer-events: none; text-shadow: 0 2px 5px rgba(0, 0, 0, .55); }
-    #bars {
+    /* kiri atas: mini map + panel status berbingkai kayu, sulur dan akar */
+    #hudL {
       position: absolute;
-      top: calc(var(--st) + 10px);
-      left: calc(var(--sl) + 12px);
-      width: min(34vw, 230px);
+      top: calc(var(--st) + 16px);
+      left: calc(var(--sl) + 14px);
+      display: flex;
+      align-items: flex-start;
+      gap: 9px;
+    }
+    #miniWrap {
+      position: relative;
+      width: clamp(78px, 24vh, 100px);
+      aspect-ratio: 1;
+      border-radius: 50%;
+      background: #26180b;
+      box-shadow: 0 0 0 3px #6a4524, 0 0 0 5px #2b1a0b, 0 0 0 6px #9a6e3a, 0 4px 10px rgba(0, 0, 0, .6), inset 0 0 8px rgba(0, 0, 0, .7);
+    }
+    #miniMap { width: 100%; height: 100%; display: block; border-radius: 50%; }
+    #miniWrap::after {
+      content: ''; position: absolute; left: -12px; top: -13px; width: 44px; height: 25px;
+      background: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 34'><path d='M2 31 C10 23 8 12 20 9 S36 6 46 13' fill='none' stroke='%23305f22' stroke-width='2.6' stroke-linecap='round'/><g fill='%2362b043' stroke='%232a5a1d' stroke-width='.7'><ellipse cx='12' cy='19' rx='6.2' ry='3' transform='rotate(-55 12 19)'/><ellipse cx='22' cy='9' rx='6.2' ry='3' transform='rotate(-15 22 9)'/><ellipse cx='34' cy='8' rx='5.6' ry='2.8' transform='rotate(15 34 8)'/><ellipse cx='45' cy='13' rx='5.2' ry='2.6' transform='rotate(45 45 13)'/><ellipse cx='7' cy='27' rx='5' ry='2.6' transform='rotate(-75 7 27)'/></g></svg>") no-repeat center / contain;
+      filter: drop-shadow(0 1px 1px rgba(0, 0, 0, .6));
+    }
+    #bars {
+      position: relative;
+      width: clamp(112px, 17vw, 138px);
+      padding: 6px 10px 6px 7px;
       display: flex;
       flex-direction: column;
-      gap: 5px;
+      gap: 3px;
+      border-radius: 8px;
+      border: 2px solid #2b1a0b;
+      background:
+        linear-gradient(180deg, rgba(255, 235, 190, .14), rgba(0, 0, 0, .22)),
+        repeating-linear-gradient(94deg, #6d4624 0 7px, #603d1e 7px 10px, #744c27 10px 17px, #5a381b 17px 19px);
+      box-shadow: inset 0 0 0 1px #a97a43, inset 0 2px 4px rgba(255, 224, 170, .22), inset 0 -3px 6px rgba(0, 0, 0, .35), 0 4px 10px rgba(0, 0, 0, .6);
     }
-    .bar { display: flex; align-items: center; gap: 6px; font-size: 14px; }
-    .bar i { width: 20px; text-align: center; font-style: normal; }
+    #bars::before, #bars::after {                        /* paku di sudut kanan */
+      content: ''; position: absolute; width: 5px; height: 5px; border-radius: 50%; right: 3px;
+      background: radial-gradient(circle at 35% 30%, #d9c08a, #5b4423 70%); box-shadow: 0 1px 1px rgba(0, 0, 0, .7);
+    }
+    #bars::before { top: 3px; }
+    #bars::after { bottom: 3px; }
+    #bars .vine {
+      position: absolute; right: -9px; top: -13px; width: 40px; height: 23px; transform: scaleX(-1);
+      background: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 34'><path d='M2 31 C10 23 8 12 20 9 S36 6 46 13' fill='none' stroke='%23305f22' stroke-width='2.6' stroke-linecap='round'/><g fill='%2362b043' stroke='%232a5a1d' stroke-width='.7'><ellipse cx='12' cy='19' rx='6.2' ry='3' transform='rotate(-55 12 19)'/><ellipse cx='22' cy='9' rx='6.2' ry='3' transform='rotate(-15 22 9)'/><ellipse cx='34' cy='8' rx='5.6' ry='2.8' transform='rotate(15 34 8)'/><ellipse cx='45' cy='13' rx='5.2' ry='2.6' transform='rotate(45 45 13)'/><ellipse cx='7' cy='27' rx='5' ry='2.6' transform='rotate(-75 7 27)'/></g></svg>") no-repeat center / contain; filter: drop-shadow(0 1px 1px rgba(0, 0, 0, .6));
+    }
+    #bars .roots {
+      position: absolute; left: 12px; bottom: -17px; width: 58px; height: 25px;
+      background: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 70 30'><g fill='none' stroke-linecap='round'><g stroke='%2339220f' stroke-width='3.4'><path d='M4 0 C9 8 2 14 11 23'/><path d='M22 0 C24 9 32 10 29 20 S36 26 38 29'/><path d='M46 0 C43 8 52 12 49 19'/><path d='M62 0 C64 8 57 14 63 23'/></g><g stroke='%23805530' stroke-width='1.3'><path d='M4 0 C9 8 2 14 11 23'/><path d='M22 0 C24 9 32 10 29 20 S36 26 38 29'/><path d='M46 0 C43 8 52 12 49 19'/><path d='M62 0 C64 8 57 14 63 23'/></g></g></svg>") no-repeat center / contain; filter: drop-shadow(0 1px 1px rgba(0, 0, 0, .55));
+    }
+    .bar { display: flex; align-items: center; gap: 5px; font-size: 11px; text-shadow: none; }
+    .bar i {
+      width: 15px; height: 15px; flex: none; display: grid; place-items: center; font-style: normal; font-size: 9px;
+      border-radius: 50%; border: 1px solid #25160a;
+      background: radial-gradient(circle at 35% 30%, #8a5f33, #4a2d14 75%);
+      box-shadow: inset 0 1px 1px rgba(255, 224, 170, .35), 0 1px 2px rgba(0, 0, 0, .6);
+    }
     .track {
       flex: 1;
-      height: 11px;
-      border-radius: 7px;
-      background: rgba(0, 0, 0, .42);
-      border: 1px solid rgba(255, 255, 255, .45);
+      height: 9px;
+      border-radius: 5px;
+      background: linear-gradient(180deg, #120b05, #2a1a0c);
+      border: 1px solid #3f2812;
+      box-shadow: inset 0 1px 3px rgba(0, 0, 0, .85), 0 1px 0 rgba(255, 224, 170, .22);
       overflow: hidden;
     }
-    .fill { height: 100%; width: 100%; transition: width .15s linear; }
-    #fHp { background: linear-gradient(90deg, #d32f2f, #ff6f60); }
-    #fHunger { background: linear-gradient(90deg, #ef6c00, #ffb74d); }
-    #fThirst { background: linear-gradient(90deg, #0277bd, #4fc3f7); }
-    #fStam { background: linear-gradient(90deg, #f9a825, #fff176); }
+    .fill { height: 100%; width: 100%; transition: width .15s linear; background-blend-mode: normal; }
+    #fHp { background: linear-gradient(180deg, rgba(255, 255, 255, .38), rgba(255, 255, 255, 0) 55%), linear-gradient(90deg, #c62828, #ff6f60); }
+    #fHunger { background: linear-gradient(180deg, rgba(255, 255, 255, .38), rgba(255, 255, 255, 0) 55%), linear-gradient(90deg, #e65100, #ffb74d); }
+    #fThirst { background: linear-gradient(180deg, rgba(255, 255, 255, .38), rgba(255, 255, 255, 0) 55%), linear-gradient(90deg, #0277bd, #4fc3f7); }
+    #fStam { background: linear-gradient(180deg, rgba(255, 255, 255, .38), rgba(255, 255, 255, 0) 55%), linear-gradient(90deg, #c0a21a, #fff176); }
     .bar.low .track { animation: blink .5s steps(2) infinite; }
     .bar.small .track { height: 7px; }
 
@@ -106,9 +154,9 @@
     #toast {
       position: absolute;
       top: calc(var(--st) + 14px);
-      left: 50%;
+      left: calc(50% + 70px);
       transform: translateX(-50%);
-      max-width: 40vw;
+      max-width: 36vw;
       text-align: center;
       font-weight: 700;
       font-size: 16px;
@@ -123,7 +171,7 @@
     #power {
       position: absolute;
       top: calc(var(--st) + 58px);
-      left: 50%;
+      left: calc(50% + 70px);
       transform: translateX(-50%);
       text-align: center;
       font-weight: 800;
@@ -370,11 +418,15 @@
   <canvas id="game"></canvas>
 
   <div id="hud" class="hidden">
+    <div id="hudL">
+    <div id="miniWrap"><canvas id="miniMap" width="200" height="200"></canvas></div>
     <div id="bars">
+      <span class="vine"></span><span class="roots"></span>
       <div class="bar"><i>❤️</i><div class="track"><div id="fHp" class="fill"></div></div></div>
       <div class="bar" id="rowHunger"><i>🍖</i><div class="track"><div id="fHunger" class="fill"></div></div></div>
       <div class="bar" id="rowThirst"><i>💧</i><div class="track"><div id="fThirst" class="fill"></div></div></div>
       <div class="bar small"><i>⚡</i><div class="track"><div id="fStam" class="fill"></div></div></div>
+    </div>
     </div>
     <div id="stats">
       <div id="coinBox"><span class="coinIcon"></span><span id="runCoins">0</span></div>

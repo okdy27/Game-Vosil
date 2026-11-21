@@ -918,6 +918,7 @@
         const mon = makeMonument();
         mon.position.set(pos.x, heightAt(pos.x, pos.z), pos.z);
         mon.rotation.y = rng() * Math.PI * 2;
+        mon.userData.keep = true;                      // jangan digabung (merge) -> tekstur logo hilang menjadi hitam
         group.add(mon);
         ch.colliders.push({ x: pos.x, z: pos.z, r: 1.35 });
         sh(pos.x, pos.z, 1.2, 1.6);

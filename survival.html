@@ -264,8 +264,10 @@
     .abtn {
       position: fixed;
       border-radius: 50%;
-      border: 3px solid rgba(255, 255, 255, .7);
-      background: rgba(30, 40, 50, .4);
+      border: 2px solid rgba(255, 255, 255, .38);
+      background: rgba(30, 40, 50, .12);
+      opacity: .55;                                   /* transparan: tidak menutupi pemandangan */
+      text-shadow: 0 1px 3px rgba(0,0,0,.8);
       color: #fff;
       font-size: 26px;
       display: flex; align-items: center; justify-content: center;
@@ -274,12 +276,12 @@
       padding: 0;
     }
     .abtn span { font-size: 11px; font-weight: 700; display: block; margin-top: -2px; }
-    .abtn.on { background: rgba(255, 255, 255, .4); transform: scale(.95); }
+    .abtn.on { background: rgba(255, 255, 255, .28); opacity: .85; transform: scale(.95); }
     #btnAttack {
       width: 98px; height: 98px;
       right: calc(var(--sr) + 30px);
       bottom: calc(var(--sb) + 26px);
-      background: rgba(211, 47, 47, .5);
+      background: rgba(211, 47, 47, .2);
       font-size: 36px;
     }
     #btnJump {
@@ -292,9 +294,9 @@
       right: calc(var(--sr) + 152px);
       bottom: calc(var(--sb) + 112px);
       font-size: 24px;
-      background: rgba(255, 152, 0, .38);
+      background: rgba(255, 152, 0, .16);
     }
-    #btnRoar.cd { opacity: .45; }
+    #btnRoar.cd { opacity: .3; }
     #btnRoar.urgent { animation: roarPulse .7s ease-in-out infinite; border-color: #ffd54f; }
     @keyframes roarPulse { 50% { transform: scale(1.12); box-shadow: 0 0 16px 4px rgba(255, 193, 7, .7); } }
     #btnSprint {
@@ -474,6 +476,7 @@
   <div id="topBtns">
     <button id="musicBtn" class="ibtn" type="button" data-on="🎵" data-off="🎵" aria-label="Musik">🎵</button>
     <button id="sfxBtn" class="ibtn" type="button" data-on="🔊" data-off="🔊" aria-label="Efek suara">🔊</button>
+    <button id="bagTop" class="ibtn" type="button" aria-label="Tas">🎒</button>
     <button id="qBtn" class="ibtn" type="button" aria-label="Kualitas grafis">◪</button>
     <button id="fsBtn" class="ibtn" type="button" aria-label="Layar penuh">⛶</button>
   </div>

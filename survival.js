@@ -2238,7 +2238,7 @@
       '<button class="bBtn wide" data-ex="all"' + (tv || coinPts ? '' : ' disabled') + '>Tukar semua aset (+' + (tv + coinPts) + ' poin)</button>' +
       '<h4>Poin tukar → Token Vosil</h4><div class="bRow"><span class="nm">⭐ ' + save.pts + ' poin tukar<small>' + EXCH.ptPerVosil + ' poin = 1 VOSIL · estimasi ' + est + ' VOSIL</small></span>' +
       '<button class="bBtn" disabled>Klaim (segera)</button></div>' +
-      (EXCH.note ? '<p id="bagNote" style="color:#ffcc80">📢 ' + esc(EXCH.note) + (EXCH.updated ? ' (' + esc(EXCH.updated) + ')' : '') + '</p>' : '') + '<p id="bagNote">Nilai tukar dapat berubah sewaktu-waktu sesuai kebijakan. Poin tukar tersimpan di perangkat ini. Klaim token akan aktif di tahap wallet World Chain dan diverifikasi server sebelum dikirim.</p>';
+      (EXCH.note ? '<p id="bagNote" style="color:#ffcc80">📢 ' + esc(EXCH.note) + (EXCH.updated ? ' (' + esc(EXCH.updated) + ')' : '') + '</p>' : '') + (state === 'playing' ? '<button class="bBtn wide" data-ex="resume" style="background:#66bb6a">▶ Lanjut bermain (game dijeda)</button>' : '') + '<p id="bagNote">Nilai tukar dapat berubah sewaktu-waktu sesuai kebijakan. Poin tukar tersimpan di perangkat ini. Klaim token akan aktif di tahap wallet World Chain dan diverifikasi server sebelum dikirim.</p>';
   }
   function doExchange(what) {
     let add = 0;
@@ -2252,16 +2252,18 @@
     renderBag(); refreshPanels();
     GameAudio.sfx.coin();
   }
-  function openBag() { bagOpen = true; renderBag(); bagEl.classList.remove('hidden'); }
+  function openBag() {
+    if (state === 'playing') { input.sprint = false; input.attack = false; input.jump = false; for (const k in keys) keys[k] = false; }
+    bagOpen = true; renderBag(); bagEl.classList.remove('hidden'); }
   function closeBag() { bagOpen = false; bagEl.classList.add('hidden'); }
-  ['bagBtn', 'bagBtn2'].forEach((id) => {
+  ['bagBtn', 'bagBtn2', 'bagTop'].forEach((id) => {
     const b = $(id); if (!b) return;
     b.addEventListener('pointerdown', (e) => e.stopPropagation());
     b.addEventListener('click', (e) => { e.stopPropagation(); GameAudio.init(); openBag(); });
   });
   $('bagX').addEventListener('click', closeBag);
   bagEl.addEventListener('pointerdown', (e) => { e.stopPropagation(); if (e.target === bagEl) closeBag(); });
-  bagBody.addEventListener('click', (e) => { const b = e.target.closest && e.target.closest('[data-ex]'); if (b && !b.disabled) doExchange(b.getAttribute('data-ex')); });
+  bagBody.addEventListener('click', (e) => { const b = e.target.closest && e.target.closest('[data-ex]'); if (b && !b.disabled) { const ex = b.getAttribute('data-ex'); if (ex === 'resume') closeBag(); else doExchange(ex); } });
 
   if (rotBtn) rotBtn.addEventListener('click', () => { enterImmersive(); });
   let autoFsTried = false;
@@ -3408,11 +3410,12 @@
   const isPortrait = () => window.innerHeight > window.innerWidth * 1.05;
   let last = performance.now();
   function frame(now) {
-    const dt = Math.min(0.05, Math.max(0, (now - last) / 1000));
+    const paused = bagOpen && state === 'playing';                 // tas dibuka saat bermain = game dijeda
+    const dt = paused ? 0.0001 : Math.min(0.05, Math.max(0, (now - last) / 1000));
     last = now;
     clock += dt;
 
-    if (state === 'playing' && !isPortrait()) update(dt);
+    if (state === 'playing' && !isPortrait() && !paused) update(dt);
     else if (state === 'menu') { player.yaw = Math.sin(clock * 0.5) * 0.6 + Math.PI; }
     animate(dt);
     updateCamera(dt);

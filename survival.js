@@ -55,7 +55,7 @@
   const toastEl = $('toast'), hurtEl = $('hurt');
   const powerEl = $('power'), powerFill = $('powerFill');
   const coinBox = $('coinBox'), lvNo = $('lvNo'), xpFill = $('xpFill'), lvFlash = $('lvFlash'), rotBtn = $('rotBtn');
-  const camZone = $('camZone'), charRow = $('charRow'), charInfo = $('charInfo');
+  const camZone = $('camZone'), charRow = $('charRow'), charInfo = $('charInfo'), charRow2 = $('charRow2'), charInfo2 = $('charInfo2');
   const stickZone = $('stickZone'), stickBase = $('stickBase'), stickKnob = $('stickKnob');
   const btnAttack = $('btnAttack'), btnJump = $('btnJump'), btnSprint = $('btnSprint'), fsBtn = $('fsBtn'), btnRoar = $('btnRoar');
 
@@ -647,8 +647,12 @@
     g.add(berries);
     return { group: g, berries };
   }
+  const coinShGeo = new THREE.CircleGeometry(0.5, 14); coinShGeo.rotateX(-Math.PI / 2);
+  const mCoinSh = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.28, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
   function makeCoin() {
     const g = new THREE.Group();
+    const sh = new THREE.Mesh(coinShGeo, mCoinSh); sh.position.y = -0.85; sh.renderOrder = 2; sh.userData.coinSh = true;   // bayangan di tanah
+    g.add(sh); g.userData.sh = sh;
     g.add(new THREE.Mesh(coinGeo, mCoin));
     g.add(new THREE.Mesh(coinInGeo, mCoinIn));
     return g;
@@ -1708,12 +1712,13 @@
         }
         d.mesh.position.set(d.x, d.y, d.z);
       } else d.mesh.position.y = Math.max(heightAt(d.x, d.z), WL) + 0.7 + Math.sin(clock * 4 + i) * 0.1;
+      { const dsh = d.mesh.userData.sh; if (dsh) dsh.position.y = -(d.mesh.position.y - Math.max(heightAt(d.x, d.z), WL)) + 0.07; }
       d.mesh.visible = d.t < DROP_LIFE - 6 || Math.sin(d.t * 22) > -0.2;       // berkedip sebelum lenyap
       const dx = d.x - player.x, dz = d.z - player.z;
       if (d.t > 0.45 && dx * dx + dz * dz < (1.7 * sc) * (1.7 * sc) && player.y < 1.8) {
         runCoins += d.val; save.coins += d.val;
         flyCoins.push({ mesh: d.mesh, t: 0, x0: d.x, y0: d.mesh.position.y, z0: d.z });
-        d.mesh.visible = true;
+        d.mesh.visible = true; if (d.mesh.userData.sh) d.mesh.userData.sh.visible = false;
         showDmg(d.x, d.mesh.position.y + 0.5, d.z, '+' + d.val, 'gain', 0.9);
         GameAudio.sfx.coin();
         drops.splice(i, 1);
@@ -2007,6 +2012,7 @@
 
   // ---------- Mulai / selesai ----------
   function startGame() {
+    if (PLAYABLES[save.char] && PLAYABLES[save.char] !== curChar) applyChar(save.char);
     clearWorld();
     for (const p of preds) removePred(p);
     preds = [];
@@ -2129,34 +2135,45 @@
 
   // pilih dino yang dimainkan
   function renderChars() {
-    if (!charRow) return;
-    charRow.innerHTML = Object.keys(PLAYABLES).map((id) => {
+    const html = Object.keys(PLAYABLES).map((id) => {
       const c = PLAYABLES[id], col = '#' + c.pal.body.toString(16).padStart(6, '0');
-      return '<button type="button" class="chr' + (curChar === c ? ' sel' : '') + '" data-id="' + id + '"><i style="background:' + col + '"></i>' + c.name + '</button>';
+      return '<button type="button" class="chr' + (save.char === id ? ' sel' : '') + '" data-id="' + id + '"><i style="background:' + col + '"></i>' + c.name + '</button>';
     }).join('');
-    if (charInfo) charInfo.textContent = curChar.info;
+    const info = (PLAYABLES[save.char] || curChar).info;
+    if (charRow) charRow.innerHTML = html;
+    if (charRow2) charRow2.innerHTML = html;
+    if (charInfo) charInfo.textContent = info;
+    if (charInfo2) charInfo2.textContent = info;
   }
-  function selectChar(id) {
+  function applyChar(id) {                                     // ganti model dino sekarang juga (di luar permainan)
     const c = PLAYABLES[id];
     if (!c || c === curChar) return;
     curChar = c;
-    save.char = id;
-    writeSave();
     scene.remove(hero.root);
     disposeTree(hero.root);
     hero = buildHero();
     scene.add(hero.root);
     scaleNow = baseScale();
+  }
+  function selectChar(id) {
+    const c = PLAYABLES[id];
+    if (!c) return;
+    save.char = id;
+    writeSave();
+    if (state !== 'playing') applyChar(id);                    // saat bermain: berlaku di permainan berikutnya
+    else toast('🦖 ' + c.name + ' dipakai di permainan berikutnya', 2.2);
     renderChars();
     GameAudio.sfx.coin();
   }
-  if (charRow) charRow.addEventListener('click', (e) => {
+  const charClick = (e) => {
     e.stopPropagation();
     GameAudio.init();
     let el = e.target;
     while (el && !(el.dataset && el.dataset.id)) el = el.parentNode;
-    if (el && state === 'menu') selectChar(el.dataset.id);
-  });
+    if (el) selectChar(el.dataset.id);
+  };
+  if (charRow) charRow.addEventListener('click', charClick);
+  if (charRow2) charRow2.addEventListener('click', charClick);
   renderChars();
 
   function bindBtn(el, down, up) {
@@ -2322,11 +2339,12 @@
   }
   let tabWanted = 'bag';
   function showTab(t) {
-    $('bagBody').classList.toggle('hidden', t !== 'bag'); $('setBody').classList.toggle('hidden', t !== 'set');
-    $('tabBag').classList.toggle('on', t === 'bag'); $('tabSet').classList.toggle('on', t === 'set');
+    $('bagBody').classList.toggle('hidden', t !== 'bag'); $('setBody').classList.toggle('hidden', t !== 'set'); $('chrBody').classList.toggle('hidden', t !== 'chr');
+    $('tabBag').classList.toggle('on', t === 'bag'); $('tabSet').classList.toggle('on', t === 'set'); $('tabChr').classList.toggle('on', t === 'chr');
   }
   $('tabBag').addEventListener('click', () => { tabWanted = 'bag'; showTab('bag'); });
   $('tabSet').addEventListener('click', () => { tabWanted = 'set'; showTab('set'); });
+  $('tabChr').addEventListener('click', () => { tabWanted = 'chr'; showTab('chr'); });
   function openBag() {
     if (state === 'playing') { input.sprint = false; input.attack = false; input.jump = false; for (const k in keys) keys[k] = false; }
     bagOpen = true; showTab(tabWanted); renderBag(); bagEl.classList.remove('hidden'); }
@@ -2340,7 +2358,7 @@
   bagEl.addEventListener('pointerdown', (e) => { e.stopPropagation(); if (e.target === bagEl) closeBag(); });
   bagBody.addEventListener('click', (e) => { const b = e.target.closest && e.target.closest('[data-ex]'); if (b && !b.disabled) { const ex = b.getAttribute('data-ex'); if (ex === 'resume') closeBag(); else doExchange(ex); } });
 
-  if (rotBtn) rotBtn.addEventListener('click', () => { enterImmersive(); });
+  if (rotBtn) rotBtn.addEventListener('click', () => { GameAudio.init(); enterImmersive(); if (state === 'menu') startGame(); });
   let autoFsTried = false;
   function autoFs() { if (autoFsTried || isFs()) return; autoFsTried = true; enterImmersive(); }
   document.addEventListener('fullscreenchange', () => { try { resize(); } catch (e) { /* abaikan */ } });
@@ -3180,12 +3198,19 @@
 
         for (let i = ch.coins.length - 1; i >= 0; i--) {
           const c = ch.coins[i];
-          c.mesh.rotation.y += dt * 4;
+          if (c.by === undefined) { c.by = c.mesh.position.y; c.ph = Math.random() * 6.28; }
+          const bob = Math.sin(clock * 2.6 + c.ph) * 0.16;
+          c.mesh.position.y = c.by + bob;                                  // melayang naik-turun
+          c.mesh.rotation.y += dt * 3.2;                                   // berputar
+          const csh = c.mesh.userData.sh;
+          if (csh) { csh.position.y = -(c.mesh.position.y - heightAt(c.x, c.z)) + 0.07; const q = 1 - bob * 0.9; csh.scale.set(q, 1, q); }
+          if (Math.random() < dt * 0.1 && (c.x - player.x) ** 2 + (c.z - player.z) ** 2 < 300) starBurst(c.x, c.mesh.position.y + 0.3, c.z, 1, 'gain');   // kilau
           const dx = c.x - player.x, dz = c.z - player.z;
           if (dx * dx + dz * dz < (1.5 * sc) * (1.5 * sc) && player.y < 1.8) {
             taken.add(c.id);
             ch.group.remove(c.mesh);
             scene.add(c.mesh);                                   // koin terbang ke arah dino
+            if (c.mesh.userData.sh) c.mesh.userData.sh.visible = false;
             flyCoins.push({ mesh: c.mesh, t: 0, x0: c.x, y0: c.mesh.position.y, z0: c.z });
             ch.coins.splice(i, 1);
             runCoins++;
@@ -3509,6 +3534,7 @@
     updateSwimRings(dt);
     updateMinimap(dt);
     updateFlyCoins(dt);
+    mCoin.emissiveIntensity = 0.85 + 0.45 * Math.sin(clock * 3.2);         // koin berkilau berdenyut
     updateDrops(dt);
     if (lowSpilled && player.hp > 45) lowSpilled = false;       // pulih -> kantong yang baru bisa tumpah semua lagi
 

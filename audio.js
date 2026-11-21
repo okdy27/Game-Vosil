@@ -43,6 +43,9 @@ const GameAudio = (() => {
     setBtn(sfxBtn, prefs.sfx, '🔊 Efek: ON', '🔊 Efek: OFF');
   }
 
+  setBtn(musicBtn, prefs.music, '🎵 Musik: ON', '🎵 Musik: OFF');
+  setBtn(sfxBtn, prefs.sfx, '🔊 Efek: ON', '🔊 Efek: OFF');
+
   function init() {
     try {
       if (!actx) {
@@ -599,41 +602,69 @@ const GameAudio = (() => {
   // Dimuat & didekode ke mesin suara game (bukan elemen <audio>) -> tidak muncul sebagai pemutar media di HP, loop tanpa jeda.
   // Gagal semua -> musik prosedural bawaan tetap dipakai.
   const music = (() => {
-    let state = 'idle', gain = null, src = null, duckT = null;
+    let state = 'idle', gain = null, src = null, duckT = null, fbT = null, wantPlay = false;
     let BGM_G = 0.6;                                     // dihitung ulang dari kenyaringan (RMS) file agar selalu 'pengisi latar'
     const CANDS = ['bgm.ogg', 'bgm.webm', 'bgm.m4a', 'bgm.mp3'];
     const decode = (ab) => new Promise((res, rej) => { try { const p = actx.decodeAudioData(ab, res, rej); if (p && p.then) p.then(res, rej); } catch (e) { rej(e); } });
-    function tryFile(i) {
-      if (i >= CANDS.length) { state = 'none'; return; }
-      fetch(CANDS[i]).then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error('404')))).then(decode).then((buf) => {
-        if (state !== 'loading') return;
-        let sum = 0, n = 0;                               // samakan kenyaringan musik ke target tetap, berapa pun mastering file Anda
-        const cd = buf.getChannelData(0);
-        for (let k = 0; k < cd.length; k += 4) { sum += cd[k] * cd[k]; n++; }
-        const rms = Math.sqrt(sum / Math.max(1, n)) || 0.1;
-        BGM_G = Math.max(0.1, Math.min(2.5, 0.07 / rms));
-        const hp = actx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 70; hp.Q.value = 0.5;   // buang sub-bass untuk speaker HP
-        gain = actx.createGain(); gain.gain.value = 0;
-        duckG = actx.createGain(); duckG.gain.value = 1;
-        src = actx.createBufferSource(); src.buffer = buf; src.loop = true;
-        src.connect(hp); hp.connect(gain); gain.connect(duckG); duckG.connect(musicBus);
-        src.start(0);
-        state = 'file';
-        procMusic.stop();
-        gain.gain.setTargetAtTime(BGM_G, actx.currentTime, 1.2);
-        duckT = setInterval(() => {                       // saat dikeroyok musik sedikit mengecil agar efek tempur terdengar
-          const dg = Math.max(0, Math.min(1, dangerFn() || 0));
-          gain.gain.setTargetAtTime(BGM_G * (1 - 0.25 * dg), actx.currentTime, 0.4);
-        }, 120);
-      }).catch(() => tryFile(i + 1));
+    // Unduh file lebih awal (sebelum ketukan pertama) supaya siap secepat mungkin; tidak butuh AudioContext untuk mengunduh.
+    let pre = null;
+    function prefetch() {
+      if (pre || typeof fetch !== 'function') return;
+      pre = (function next(i) {
+        if (i >= CANDS.length) return Promise.resolve(null);
+        return fetch(CANDS[i]).then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error('404')))).then((ab) => ({ i, ab })).catch(() => next(i + 1));
+      })(0);
+    }
+    prefetch();
+    function useProc() {                                  // cadangan: musik bawaan hanya jika file memang tidak ada / gagal
+      if (state === 'file') return;
+      state = 'proc';
+      if (wantPlay) procMusic.start();
+    }
+    function playBuf(buf) {
+      const hp = actx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 70; hp.Q.value = 0.5;   // buang sub-bass untuk speaker HP
+      let sum = 0, n = 0;                                 // samakan kenyaringan musik ke target tetap, berapa pun mastering file
+      const cd = buf.getChannelData(0);
+      for (let k = 0; k < cd.length; k += 4) { sum += cd[k] * cd[k]; n++; }
+      BGM_G = Math.max(0.1, Math.min(2.5, 0.07 / (Math.sqrt(sum / Math.max(1, n)) || 0.1)));
+      gain = actx.createGain(); gain.gain.value = 0;
+      duckG = actx.createGain(); duckG.gain.value = 1;
+      src = actx.createBufferSource(); src.buffer = buf; src.loop = true;
+      src.connect(hp); hp.connect(gain); gain.connect(duckG); duckG.connect(musicBus);
+      src.start(0);
+      state = 'file';
+      procMusic.stop();                                   // jika musik cadangan sempat jalan karena file lambat
+      gain.gain.setTargetAtTime(wantPlay ? BGM_G : 0, actx.currentTime, 1.0);
+      duckT = setInterval(() => {                         // saat dikeroyok musik sedikit mengecil agar efek tempur terdengar
+        if (!wantPlay) return;
+        const dg = Math.max(0, Math.min(1, dangerFn() || 0));
+        gain.gain.setTargetAtTime(BGM_G * (1 - 0.25 * dg), actx.currentTime, 0.4);
+      }, 120);
+    }
+    function load() {
+      state = 'loading';
+      fbT = setTimeout(() => { if (state === 'loading' && wantPlay) procMusic.start(); }, 7000);    // file terlalu lama: baru pakai musik cadangan
+      prefetch();
+      const tryFrom = (i, got) => {
+        const p = got && got.i === i ? Promise.resolve(got.ab) : (i < CANDS.length ? fetch(CANDS[i]).then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error('404')))) : Promise.reject(new Error('none')));
+        p.then((ab) => decode(ab)).then((buf) => { clearTimeout(fbT); playBuf(buf); })
+          .catch(() => { if (i + 1 < CANDS.length) tryFrom(i + 1, null); else { clearTimeout(fbT); useProc(); } });
+      };
+      pre.then((got) => { if (!got) { clearTimeout(fbT); useProc(); } else tryFrom(got.i, got); });
     }
     return {
       start() {
+        wantPlay = true;
         if (state === 'file') { gain.gain.setTargetAtTime(BGM_G, actx.currentTime, 0.8); return; }
-        procMusic.start();                    // langsung ada suara; diganti file begitu siap
-        if (state === 'idle' && actx && musicBus && typeof fetch === 'function') { state = 'loading'; tryFile(0); }
+        if (state === 'proc') { procMusic.start(); return; }
+        if (state === 'idle' && actx && musicBus && typeof fetch === 'function') load();
+        else if (state === 'idle') { state = 'proc'; procMusic.start(); }
+        // state 'loading': diam dulu sampai file siap (tidak memutar musik lain di awal)
       },
-      stop() { if (state === 'file') gain.gain.setTargetAtTime(0, actx.currentTime, 0.6); else procMusic.stop(); }
+      stop() {
+        wantPlay = false;
+        if (state === 'file') gain.gain.setTargetAtTime(0, actx.currentTime, 0.6); else procMusic.stop();
+      }
     };
   })();
 

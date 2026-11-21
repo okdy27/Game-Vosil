@@ -2300,6 +2300,7 @@
     hemi.intensity = 0.3 + 0.42 * k;
     sunLight.intensity = 0.12 + 0.95 * k;
     isNight = k < 0.4;
+    try { GameAudio.nightAmbience(isNight && state === 'playing'); } catch (e) { /* abaikan */ }
   }
 
   // ---------- Mulai / selesai ----------
@@ -3884,6 +3885,7 @@
     clock += dt;
 
     if (state === 'playing' && !isPortrait() && !paused) update(dt);
+    if (state !== 'playing') { try { GameAudio.nightAmbience(false); } catch (e) { /* abaikan */ } }
     else if (state === 'menu') { player.yaw = Math.sin(clock * 0.5) * 0.6 + Math.PI; }
     animate(dt);
     updateCamera(dt);

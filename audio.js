@@ -708,12 +708,44 @@ const GameAudio = (() => {
     });
   })();
 
+  // ---- suasana malam: file audio/malam.ogg (manifest key "malam") dimainkan acak selama malam ----
+  const night = { on: false, next: 0, cur: null, n: 0 };
+  function nightAmbience(on) {
+    if (!actx || !sfxBus) return;
+    const t = actx.currentTime;
+    if (on && prefs.sfx) {
+      if (!night.on) { night.on = true; night.n++; night.next = t + 5 + Math.random() * 10; }   // pertama kali: 5-15 dtk setelah malam tiba
+      if (t < night.next || night.cur) return;
+      const e = sampleBufs.malam; if (!e) return;
+      try {
+        const src = actx.createBufferSource(); src.buffer = e.buf;
+        src.playbackRate.value = 0.93 + Math.random() * 0.13;
+        const far = Math.random() < 0.4;                                   // sebagian terdengar jauh (lebih redup & pelan)
+        const lp = actx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = far ? 1800 : 6000;
+        const hp = actx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 100;
+        const g = actx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(Math.min(0.5, (far ? 0.16 : 0.26) * e.g), t + 1.2);
+        src.connect(hp); hp.connect(lp); lp.connect(g);
+        if (actx.createStereoPanner) { const sp = actx.createStereoPanner(); sp.pan.value = (Math.random() * 2 - 1) * 0.8; g.connect(sp); sp.connect(sfxBus); } else g.connect(sfxBus);
+        src.start(t);
+        const dur = e.buf.duration / src.playbackRate.value;
+        night.cur = { g, src };
+        src.onended = () => { night.cur = null; };
+        const q = Math.random();                                           // jeda acak: kadang rapat, kadang lama
+        night.next = t + dur + (q < 0.25 ? 18 + Math.random() * 14 : q < 0.8 ? 40 + Math.random() * 40 : 90 + Math.random() * 70);
+      } catch (err) { night.cur = null; }
+    } else if (night.on) {
+      night.on = false;
+      if (night.cur) { try { night.cur.g.gain.cancelScheduledValues(t); night.cur.g.gain.setValueAtTime(night.cur.g.gain.value, t); night.cur.g.gain.linearRampToValueAtTime(0.0001, t + 1.5); night.cur.src.stop(t + 1.6); } catch (e) { /* abaikan */ } }
+    }
+  }
+
   document.addEventListener('visibilitychange', () => {
     try { if (!actx) return; if (document.hidden) actx.suspend(); else actx.resume(); } catch (e) { /* abaikan */ }
   });
 
   return {
     init,
+    nightAmbience,
     sfx,
     music,
     prefs,

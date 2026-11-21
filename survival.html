@@ -201,6 +201,10 @@
       display: flex;
       gap: 8px;
     }
+    #topBtns { flex-direction: column; align-items: flex-end; gap: 6px; }
+    .srow { border: 0; border-radius: 8px; padding: 9px 12px; text-align: left; font-size: 14px; font-weight: 700;
+      background: rgba(255,255,255,.08); color: #fff; cursor: pointer; touch-action: manipulation; }
+    .srow.off { opacity: .5; }
     .ibtn {
       width: 38px; height: 38px;
       border: 0;
@@ -414,6 +418,16 @@
     .bBtn.wide { width: 100%; padding: 9px; margin-top: 6px; font-size: 13px; }
     #bagNote { margin: 8px 0 0; font-size: 11px; color: #a1887f; line-height: 1.35; }
 
+
+    .pillBtn { border: 2px solid rgba(255,255,255,.35); border-radius: 18px; padding: 7px 13px; background: rgba(0,0,0,.4); color: #fff;
+      font-weight: 800; font-size: 13px; cursor: pointer; touch-action: manipulation; text-shadow: 0 1px 3px rgba(0,0,0,.7); }
+    #bagHead .tab { border: 0; border-radius: 9px; padding: 7px 12px; font-weight: 800; font-size: clamp(12px, 3.4vh, 14px); background: #4e342e; color: #bcaaa4; cursor: pointer; touch-action: manipulation; }
+    #bagHead .tab.on { background: #ffb300; color: #3e2723; }
+    #setBody { padding: 10px 12px 14px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+    #setBody.hidden { display: none; }
+    #setBody .ibtn { width: 100%; height: auto; border-radius: 10px; padding: 12px 14px; justify-content: flex-start; font-size: 15px; font-weight: 700; background: rgba(255,255,255,.1); color: #f5e9dc; text-align: left; }
+    #setBody .ibtn.off { opacity: .55; }
+
     /* ---------- Minta putar layar ---------- */
     #rotate {
       position: fixed; inset: 0; z-index: 20;
@@ -474,11 +488,8 @@
   <div id="fx"></div>
 
   <div id="topBtns">
-    <button id="musicBtn" class="ibtn" type="button" data-on="🎵" data-off="🎵" aria-label="Musik">🎵</button>
-    <button id="sfxBtn" class="ibtn" type="button" data-on="🔊" data-off="🔊" aria-label="Efek suara">🔊</button>
-    <button id="bagTop" class="ibtn" type="button" aria-label="Tas">🎒</button>
-    <button id="qBtn" class="ibtn" type="button" aria-label="Kualitas grafis">◪</button>
-    <button id="fsBtn" class="ibtn" type="button" aria-label="Layar penuh">⛶</button>
+    <button id="bagTop" class="pillBtn" type="button" aria-label="Tukar dan seting">⚙ Tukar &amp; Seting</button>
+  </div>
   </div>
 
   <div id="camZone"></div>
@@ -527,8 +538,15 @@
   </div>
 
   <div id="bag" class="hidden"><div id="bagBox">
-    <div id="bagHead"><h3>🎒 Tas</h3><span class="sum" id="bagSum"></span><button id="bagX" type="button" aria-label="Tutup">✕</button></div>
+    <div id="bagHead"><button class="tab on" id="tabBag" type="button">🎒 Tukar</button><button class="tab" id="tabSet" type="button">⚙ Seting</button><span class="sum" id="bagSum"></span><button id="bagX" type="button" aria-label="Tutup">✕</button></div>
     <div id="bagBody"></div>
+    <div id="setBody" class="hidden">
+      <button id="musicBtn" class="ibtn" type="button" data-on="🎵 Musik: ON" data-off="🎵 Musik: OFF">🎵 Musik</button>
+      <button id="sfxBtn" class="ibtn" type="button" data-on="🔊 Efek suara: ON" data-off="🔊 Efek suara: OFF">🔊 Efek suara</button>
+      <button id="qBtn" class="ibtn" type="button">◪ Kualitas grafis</button>
+      <button id="fsBtn" class="ibtn" type="button">⛶ Layar penuh</button>
+      <p id="bagNote">Kualitas grafis: Rendah = paling ringan, Tinggi = paling bagus. Perubahan langsung berlaku.</p>
+    </div>
   </div></div>
 
   <div id="rotate">

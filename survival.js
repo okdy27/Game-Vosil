@@ -2184,7 +2184,7 @@
   }
   const qBtn = $('qBtn');
   if (qBtn) {
-    const lbl = () => { qBtn.textContent = ({ low: '▫', mid: '◪', high: '◼' })[save.q] || '◪'; };
+    const lbl = () => { qBtn.textContent = '◪ Kualitas grafis: ' + (QUAL[save.q] ? QUAL[save.q].name : 'Sedang'); };
     qBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       const order = ['low', 'mid', 'high'];
@@ -2252,14 +2252,21 @@
     renderBag(); refreshPanels();
     GameAudio.sfx.coin();
   }
+  let tabWanted = 'bag';
+  function showTab(t) {
+    $('bagBody').classList.toggle('hidden', t !== 'bag'); $('setBody').classList.toggle('hidden', t !== 'set');
+    $('tabBag').classList.toggle('on', t === 'bag'); $('tabSet').classList.toggle('on', t === 'set');
+  }
+  $('tabBag').addEventListener('click', () => { tabWanted = 'bag'; showTab('bag'); });
+  $('tabSet').addEventListener('click', () => { tabWanted = 'set'; showTab('set'); });
   function openBag() {
     if (state === 'playing') { input.sprint = false; input.attack = false; input.jump = false; for (const k in keys) keys[k] = false; }
-    bagOpen = true; renderBag(); bagEl.classList.remove('hidden'); }
+    bagOpen = true; showTab(tabWanted); renderBag(); bagEl.classList.remove('hidden'); }
   function closeBag() { bagOpen = false; bagEl.classList.add('hidden'); }
   ['bagBtn', 'bagBtn2', 'bagTop'].forEach((id) => {
     const b = $(id); if (!b) return;
     b.addEventListener('pointerdown', (e) => e.stopPropagation());
-    b.addEventListener('click', (e) => { e.stopPropagation(); GameAudio.init(); openBag(); });
+    b.addEventListener('click', (e) => { e.stopPropagation(); GameAudio.init(); if (id !== 'bagTop') tabWanted = 'bag'; openBag(); });
   });
   $('bagX').addEventListener('click', closeBag);
   bagEl.addEventListener('pointerdown', (e) => { e.stopPropagation(); if (e.target === bagEl) closeBag(); });

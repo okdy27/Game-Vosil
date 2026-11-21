@@ -746,6 +746,7 @@ const GameAudio = (() => {
   return {
     init,
     nightAmbience,
+    refreshLabels() { try { applyPrefs(); } catch (e) { /* abaikan */ } },
     sfx,
     music,
     prefs,

@@ -19,6 +19,7 @@
 
   const $ = (id) => document.getElementById(id);
 
+  const t = (k, v) => L.t(k, v);
   function showFatal(msg) {
     const box = $('fatal'), txt = $('fatalMsg');
     if (txt) txt.textContent = msg;
@@ -26,7 +27,7 @@
   }
 
   if (typeof THREE === 'undefined') {
-    showFatal('Three.js gagal dimuat. Pastikan internet aktif, atau unduh three.min.js (versi r128) dan taruh di folder yang sama dengan survival.html.');
+    showFatal(t('fatal_three'));
     return;
   }
 
@@ -119,7 +120,7 @@
     try {                                   // coba lagi dengan pengaturan paling ringan
       renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'low-power' });
     } catch (e2) {
-      showFatal('WebGL tidak bisa dijalankan di browser ini. Buka lewat Chrome atau Safari langsung (bukan dari dalam WhatsApp/Instagram/Telegram), matikan mode hemat baterai, lalu buka webgl-test.html untuk diagnosis.');
+      showFatal(t('fatal_webgl'));
       return;
     }
   }
@@ -226,10 +227,10 @@
 
   // ---------- Bioma ----------
   const BIOMES = {
-    plain: { id: 'plain', name: 'Padang Rumput', color: 0x7bbf52, patch: 0x6dae47, tree: 1, cycad: 0.5, rock: 1, bush: 1.1, pond: 0.2, cactus: 0, coin: 1.1 },
-    forest: { id: 'forest', name: 'Hutan Lebat', color: 0x4a9440, patch: 0x3e8537, tree: 4, cycad: 1.2, rock: 0.8, bush: 1.3, pond: 0.3, cactus: 0, coin: 1.0 },
-    desert: { id: 'desert', name: 'Gurun Berbatu', color: 0xd9b46a, patch: 0xc9a25a, tree: 0, cycad: 0, rock: 3, bush: 0.35, pond: 0.08, cactus: 2.2, coin: 1.7 },
-    swamp: { id: 'swamp', name: 'Rawa Berkabut', color: 0x5d7a3a, patch: 0x516b32, tree: 2, cycad: 2, rock: 0.8, bush: 0.9, pond: 0.55, cactus: 0, coin: 1.4 }
+    plain: { id: 'plain', get name() { return t('biome.plain'); }, color: 0x7bbf52, patch: 0x6dae47, tree: 1, cycad: 0.5, rock: 1, bush: 1.1, pond: 0.2, cactus: 0, coin: 1.1 },
+    forest: { id: 'forest', get name() { return t('biome.forest'); }, color: 0x4a9440, patch: 0x3e8537, tree: 4, cycad: 1.2, rock: 0.8, bush: 1.3, pond: 0.3, cactus: 0, coin: 1.0 },
+    desert: { id: 'desert', get name() { return t('biome.desert'); }, color: 0xd9b46a, patch: 0xc9a25a, tree: 0, cycad: 0, rock: 3, bush: 0.35, pond: 0.08, cactus: 2.2, coin: 1.7 },
+    swamp: { id: 'swamp', get name() { return t('biome.swamp'); }, color: 0x5d7a3a, patch: 0x516b32, tree: 2, cycad: 2, rock: 0.8, bush: 0.9, pond: 0.55, cactus: 0, coin: 1.4 }
   };
   for (const b of Object.values(BIOMES)) {
     b.mat = new THREE.MeshLambertMaterial({ color: b.color });
@@ -511,6 +512,7 @@
     mid: { pr: 1.25, ol: true, fx: 1, view: 2, fog: 1, dens: 1, preds: 1, name: 'Sedang' },
     high: { pr: 1.75, ol: true, fx: 1.6, view: 2, fog: 1, dens: 1, preds: 1, name: 'Tinggi' },
   };
+  const qName = (k) => t('q_' + (QUAL[k] ? k : 'mid'));
   let fxMul = 1, fogMul = 1, densMul = 1, predMul = 1;
   function applyQuality() {
     const q = QUAL[save.q] || QUAL.mid;
@@ -1711,11 +1713,11 @@
   };
   // dino yang bisa dimainkan: kelebihan dan kekurangan masing-masing
   const PLAYABLES = {
-    vosil: { name: 'Vosil', info: 'Seimbang untuk segala keadaan', scale: 1.1, pal: PAL_PLAYER, speed: 1, bite: 1, armor: 1, stam: 1, thirst: 1 },
-    velo: { name: 'Velociraptor', info: 'Sangat cepat, tapi gigitan lemah dan mudah terluka', scale: 0.95, variant: 'velo', pal: PTYPES.velo.pal, speed: 1.2, bite: 0.75, armor: 1.2, stam: 1, thirst: 1 },
-    carno: { name: 'Carnotaurus', info: 'Gigitan kuat dan tangguh, tapi agak lambat', scale: 1.25, variant: 'carno', pal: PTYPES.carno.pal, speed: 0.95, bite: 1.4, armor: 0.9, stam: 1.1, thirst: 1 },
-    spino: { name: 'Spinosaurus', info: 'Sangat tangguh dan tahan haus, tapi lambat', scale: 1.4, variant: 'spino', pal: PTYPES.spino.pal, speed: 0.88, bite: 1.3, armor: 0.75, stam: 1.15, thirst: 0.5 },
-    parasaur: { name: 'Parasaurolophus', info: 'Tenaga besar untuk lari jauh, tapi gigitan lemah', scale: 1.25, variant: 'parasaur', pal: PTYPES.parasaur.pal, speed: 1.05, bite: 0.6, armor: 1.1, stam: 0.5, thirst: 1 }
+    vosil: { name: 'Vosil', get info() { return t('info.vosil'); }, scale: 1.1, pal: PAL_PLAYER, speed: 1, bite: 1, armor: 1, stam: 1, thirst: 1 },
+    velo: { name: 'Velociraptor', get info() { return t('info.velo'); }, scale: 0.95, variant: 'velo', pal: PTYPES.velo.pal, speed: 1.2, bite: 0.75, armor: 1.2, stam: 1, thirst: 1 },
+    carno: { name: 'Carnotaurus', get info() { return t('info.carno'); }, scale: 1.25, variant: 'carno', pal: PTYPES.carno.pal, speed: 0.95, bite: 1.4, armor: 0.9, stam: 1.1, thirst: 1 },
+    spino: { name: 'Spinosaurus', get info() { return t('info.spino'); }, scale: 1.4, variant: 'spino', pal: PTYPES.spino.pal, speed: 0.88, bite: 1.3, armor: 0.75, stam: 1.15, thirst: 0.5 },
+    parasaur: { name: 'Parasaurolophus', get info() { return t('info.parasaur'); }, scale: 1.25, variant: 'parasaur', pal: PTYPES.parasaur.pal, speed: 1.05, bite: 0.6, armor: 1.1, stam: 0.5, thirst: 1 }
   };
   let curChar = PLAYABLES[save.char] || PLAYABLES.vosil;
   const buildHero = () => makeCreature(Object.assign({ scale: curChar.scale, variant: curChar.variant }, curChar.pal));
@@ -1740,11 +1742,11 @@
   }
   function levelUp() {
     player.hp = Math.min(100, player.hp + 35);
-    toast('⬆ LEVEL ' + player.level + '! Dino makin besar dan kuat', 2.8);
+    toast(t('lvl_toast', { n: player.level }), 2.8);
     GameAudio.sfx.record();
     burst(26, player.x, 1.4 * scaleNow / 1.1, player.z);
     shake = Math.max(shake, 0.25);
-    showDmg(player.x, (player.gy || 0) + 3.2 * scaleNow / 1.1, player.z, 'LEVEL ' + player.level + '!', 'gain', 1.5);
+    showDmg(player.x, (player.gy || 0) + 3.2 * scaleNow / 1.1, player.z, t('lvl_pop', { n: player.level }), 'gain', 1.5);
     try { if (lvFlash && lvFlash.classList) { lvFlash.classList.remove('on'); void lvFlash.offsetWidth; lvFlash.classList.add('on'); } } catch (e) { /* abaikan */ }
   }
   const heroShadow = makeDynShadow();
@@ -1958,7 +1960,7 @@
     camX = player.x; camZ = player.z; camGy = player.gnd;
     hurtT = 0.15; shake = Math.max(shake, 0.4);
     GameAudio.sfx.splash();
-    toast('🕳️ Jatuh ke jurang! Kamu tidak mati, kembali ke tepi', 2.6);
+    toast(t('fall_chasm'), 2.6);
   }
   function useDoor() {
     player.x = 2.5; player.z = 2.5;
@@ -1968,7 +1970,7 @@
     camX = player.x; camZ = player.z; camGy = player.gnd;
     starBurst(player.x, player.gnd + 1.4, player.z, 14, 'gain');
     GameAudio.sfx.power();
-    toast('🚪 Kamu kembali ke titik awal membawa harta!', 2.6);
+    toast(t('door_back'), 2.6);
   }
   let doorCd = 0;
   function updateZones(dt) {
@@ -1979,7 +1981,7 @@
       if (!Zn) continue;
       const d = Math.hypot(player.x - Zn.cx, player.z - Zn.cz);
       if (d < 100 && !zoneObjs.has(Zn.id)) zoneObjs.set(Zn.id, buildZoneObjs(Zn));
-      if (d < 85 && !zoneSeen.has(Zn.id)) { zoneSeen.add(Zn.id); toast('🪨 Area Tantangan Lompat! Tips: LARI lalu LOMPAT = lompatan jauh', 4); }
+      if (d < 85 && !zoneSeen.has(Zn.id)) { zoneSeen.add(Zn.id); toast(t('zone_tip'), 4); }
     }
     for (const [id, O] of Array.from(zoneObjs)) {
       if (Math.hypot(player.x - O.Zn.cx, player.z - O.Zn.cz) > 135) { disposeZoneObjs(O); zoneObjs.delete(id); continue; }
@@ -1991,7 +1993,7 @@
           starBurst(c.x, O.Zn.isl + 1.0, c.z, 14, 'gain');
           showDmg(c.x, O.Zn.isl + 2.0, c.z, '+25 🪙', 'gain', 1.3);
           GameAudio.sfx.power();
-          toast('🎁 Peti harta! +25 koin', 1.8);
+          toast(t('chest'), 1.8);
         }
         const tgt = c.open ? 1 : 0;
         c.t += (tgt - c.t) * Math.min(1, dt * 6);
@@ -2326,7 +2328,7 @@
     save.runs++;
     refreshPanels();
     updateHud();
-    toast('Cari air dan buah. Hati-hati predator!', 3);
+    toast(t('start_hint'), 3);
     GameAudio.sfx.start();
     GameAudio.music.start();
   }
@@ -2351,7 +2353,7 @@
     $('overKills').textContent = kills;
     if ($('overLevel')) $('overLevel').textContent = player.level;
     $('overCoins').textContent = runCoins;
-    $('overBest').textContent = newBest && days > 0 ? 'Rekor baru!' : 'Rekor: ' + save.bestDays + ' hari';
+    $('overBest').textContent = newBest && days > 0 ? t('rec_new') : t('rec_line', { n: save.bestDays });
     $('overTotal').textContent = save.coins;
     refreshPanels();
 
@@ -2454,7 +2456,7 @@
     save.char = id;
     writeSave();
     if (state !== 'playing') applyChar(id);                    // saat bermain: berlaku di permainan berikutnya
-    else toast('🦖 ' + c.name + ' dipakai di permainan berikutnya', 2.2);
+    else toast(t('char_next', { n: c.name }), 2.2);
     renderChars();
     GameAudio.sfx.coin();
   }
@@ -2553,7 +2555,7 @@
   function toggleFs() {
     if (isFs()) { exitImmersive(); return; }
     const ok = enterImmersive();
-    if (!ok) toast(isIOS ? 'iPhone: ketuk Bagikan → Tambahkan ke Layar Utama untuk layar penuh' : 'Browser ini tidak mendukung layar penuh', 3.5);
+    if (!ok) toast(isIOS ? t('fs_ios') : t('fs_none'), 3.5);
   }
   if (fsBtn) {
     fsBtn.addEventListener('click', (e) => { e.stopPropagation(); toggleFs(); });
@@ -2561,14 +2563,15 @@
   }
   const qBtn = $('qBtn');
   if (qBtn) {
-    const lbl = () => { qBtn.textContent = '◪ Kualitas grafis: ' + (QUAL[save.q] ? QUAL[save.q].name : 'Sedang'); };
+    const lbl = () => { qBtn.textContent = t('quality_lbl', { q: qName(save.q) }); };
+    L.onChange(lbl);
     qBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       const order = ['low', 'mid', 'high'];
       save.q = order[(order.indexOf(save.q) + 1) % 3];
       writeSave(); applyQuality(); lbl();
       try { for (const ch of Array.from(chunks.values())) unloadChunk(ch); buildQueue.length = 0; if (state === 'playing') ensureChunks(true); else pcx = null; } catch (e) { /* abaikan */ }
-      toast('Kualitas grafis: ' + QUAL[save.q].name, 1.6);
+      toast(t('q_toast', { q: qName(save.q) }), 1.6);
     });
     qBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
     lbl();
@@ -2588,6 +2591,7 @@
     if (posNum(c.ptPerVosil)) EXCH.ptPerVosil = c.ptPerVosil;
     if (c.trofi && typeof c.trofi === 'object') Object.keys(c.trofi).forEach((k) => { if (typeof c.trofi[k] === 'number' && c.trofi[k] >= 0 && isFinite(c.trofi[k])) EXCH.tro[k] = c.trofi[k]; });
     if (typeof c.catatan === 'string') EXCH.note = c.catatan.slice(0, 200);
+    ['en', 'es'].forEach((l) => { if (typeof c['catatan_' + l] === 'string') EXCH['note_' + l] = c['catatan_' + l].slice(0, 200); });
     if (typeof c.diperbarui === 'string') EXCH.updated = c.diperbarui.slice(0, 40);
     if (bagOpen) renderBag();
   }
@@ -2596,6 +2600,7 @@
   }
   const bagEl = $('bag'), bagBody = $('bagBody'), bagSum = $('bagSum');
   function bagTroValue() { let v = 0; for (const k in save.tro) v += (save.tro[k] || 0) * (EXCH.tro[k] || 0); return v; }
+  const exNote = () => (L.lang === 'id' ? EXCH.note : (EXCH['note_' + L.lang] || EXCH.note_en || ''));   // catatan kebijakan: pakai versi bahasa pemain
   function renderBag() {
     const coinPts = Math.floor(save.coins / EXCH.coinPerPt);
     let rows = '';
@@ -2603,20 +2608,20 @@
       const d = PTYPES[k], hunt = !d.timid && !d.neutral, n = save.tro[k] || 0, life = save.kv[k] || 0;
       if (!hunt && !life) return;
       const val = EXCH.tro[k] || 0;
-      rows += '<div class="bRow"><span class="nm">🦖 ' + d.name + '<small>' + (hunt ? 'Trofi: ' + n + ' · bernilai ' + val + ' poin/ekor · ' : 'Hewan buruan · ') + 'total dikalahkan ' + life + '</small></span>' +
-        (hunt ? '<button class="bBtn" data-ex="' + k + '"' + (n ? '' : ' disabled') + '>Tukar +' + n * val + '</button>' : '<span class="vl">—</span>') + '</div>';
+      rows += '<div class="bRow"><span class="nm">🦖 ' + d.name + '<small>' + (hunt ? t('b_trophy', { n, v: val }) : t('b_prey')) + t('b_killed', { n: life }) + '</small></span>' +
+        (hunt ? '<button class="bBtn" data-ex="' + k + '"' + (n ? '' : ' disabled') + '>' + t('b_trade_n', { n: n * val }) + '</button>' : '<span class="vl">—</span>') + '</div>';
     });
-    if (!rows) rows = '<div class="bRow"><span class="nm">Belum ada. Kalahkan dinosaurus untuk mendapat trofi.</span></div>';
+    if (!rows) rows = '<div class="bRow"><span class="nm">' + t('b_none') + '</span></div>';
     const tv = bagTroValue(), est = (save.pts / EXCH.ptPerVosil).toFixed(3);
-    bagSum.textContent = '🪙 ' + save.coins + '  ·  ⭐ ' + save.pts + ' poin';
+    bagSum.textContent = t('b_sum', { c: save.coins, p: save.pts });
     bagBody.innerHTML =
-      '<h4>Koin</h4><div class="bRow"><span class="nm">🪙 ' + save.coins + ' koin<small>' + EXCH.coinPerPt + ' koin = 1 poin tukar</small></span>' +
-      '<button class="bBtn" data-ex="coin"' + (coinPts ? '' : ' disabled') + '>Tukar +' + coinPts + ' poin</button></div>' +
-      '<h4>Trofi dinosaurus</h4>' + rows +
-      '<button class="bBtn wide" data-ex="all"' + (tv || coinPts ? '' : ' disabled') + '>Tukar semua aset (+' + (tv + coinPts) + ' poin)</button>' +
-      '<h4>Poin tukar → Token Vosil</h4><div class="bRow"><span class="nm">⭐ ' + save.pts + ' poin tukar<small>' + EXCH.ptPerVosil + ' poin = 1 VOSIL · estimasi ' + est + ' VOSIL</small></span>' +
-      '<button class="bBtn" disabled>Klaim (segera)</button></div>' +
-      (EXCH.note ? '<p id="bagNote" style="color:#ffcc80">📢 ' + esc(EXCH.note) + (EXCH.updated ? ' (' + esc(EXCH.updated) + ')' : '') + '</p>' : '') + (state === 'playing' ? '<button class="bBtn wide" data-ex="resume" style="background:#66bb6a">▶ Lanjut bermain (game dijeda)</button>' : '') + '<p id="bagNote">Nilai tukar dapat berubah sewaktu-waktu sesuai kebijakan. Poin tukar tersimpan di perangkat ini. Klaim token akan aktif di tahap wallet World Chain dan diverifikasi server sebelum dikirim.</p>';
+      '<h4>' + t('h_coin') + '</h4><div class="bRow"><span class="nm">' + t('b_coin_row', { n: save.coins }) + '<small>' + t('b_coin_rate', { r: EXCH.coinPerPt }) + '</small></span>' +
+      '<button class="bBtn" data-ex="coin"' + (coinPts ? '' : ' disabled') + '>' + t('b_trade_pts', { n: coinPts }) + '</button></div>' +
+      '<h4>' + t('h_trophy') + '</h4>' + rows +
+      '<button class="bBtn wide" data-ex="all"' + (tv || coinPts ? '' : ' disabled') + '>' + t('b_trade_all', { n: tv + coinPts }) + '</button>' +
+      '<h4>' + t('h_token') + '</h4><div class="bRow"><span class="nm">' + t('b_pts_row', { n: save.pts }) + '<small>' + t('b_pts_rate', { r: EXCH.ptPerVosil, e: est }) + '</small></span>' +
+      '<button class="bBtn" disabled>' + t('b_claim_soon') + '</button></div>' +
+      (exNote() ? '<p id="bagNote" style="color:#ffcc80">📢 ' + esc(exNote()) + (EXCH.updated ? ' (' + esc(EXCH.updated) + ')' : '') + '</p>' : '') + (state === 'playing' ? '<button class="bBtn wide" data-ex="resume" style="background:#66bb6a">' + t('b_resume') + '</button>' : '') + '<p id="bagNote">' + t('b_note') + '</p>';
   }
   function doExchange(what) {
     let add = 0;
@@ -2662,7 +2667,7 @@
   let quitArm = -1e9;
   function quitToMenu() {
     if (state === 'playing') {
-      die('Keluar ke menu');
+      die(t('r_quit'));
       state = 'menu'; overAt = 0;
     }
     closeBag(); refreshPanels();
@@ -2671,8 +2676,8 @@
   if (quitBtn) {
     quitBtn.addEventListener('click', () => {
       if (state !== 'playing') { quitToMenu(); return; }
-      if (performance.now() - quitArm < 3000) { quitArm = 0; quitBtn.textContent = '🦖 Buka halaman pilih karakter'; quitToMenu(); }
-      else { quitArm = performance.now(); quitBtn.textContent = 'Yakin? Permainan ini berakhir. Ketuk lagi'; }
+      if (performance.now() - quitArm < 3000) { quitArm = 0; quitBtn.textContent = t('quit_open'); quitToMenu(); }
+      else { quitArm = performance.now(); quitBtn.textContent = t('quit_sure'); }
     });
   }
   function openBag() {
@@ -2693,10 +2698,22 @@
   function autoFs() { if (autoFsTried || isFs()) return; autoFsTried = true; enterImmersive(); }
   document.addEventListener('fullscreenchange', () => { try { resize(); } catch (e) { /* abaikan */ } });
   document.addEventListener('webkitfullscreenchange', () => { try { resize(); } catch (e) { /* abaikan */ } });
-  try {
-    const rn = $('rotNote');
-    if (rn && isIOS) rn.textContent = 'iPhone belum mengizinkan putar otomatis. Putar HP secara manual, atau pakai Safari → Bagikan → Tambahkan ke Layar Utama untuk layar penuh.';
-  } catch (e) { /* abaikan */ }
+  // ---------- Bahasa (Indonesia / English / Español; otomatis mengikuti bahasa HP) ----------
+  const langBtn = $('langBtn');
+  if (langBtn) {
+    langBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
+    langBtn.addEventListener('click', (e) => { e.stopPropagation(); const o = L.order; L.setPref(o[(o.indexOf(L.pref) + 1) % o.length]); GameAudio.sfx.coin(); });
+  }
+  L.onChange(() => {
+    try {
+      if (langBtn) langBtn.textContent = t('lang_lbl', { l: L.label() });
+      const rn = $('rotNote'); if (rn && isIOS) rn.textContent = t('rot_ios');
+      quitArm = -1e9;
+      renderChars(); refreshPanels();
+      if (bagOpen) renderBag(); else { bagSum.textContent = t('b_sum', { c: save.coins, p: save.pts }); }
+    } catch (e) { /* abaikan */ }
+  });
+  L.apply();
 
   // ---------- Aksi ----------
   function damagePlayer(amount, reason, fromX, fromZ) {
@@ -2717,7 +2734,7 @@
     if (player.hp <= 0) { player.hp = 0; die(reason); return true; }
     const pc = pouch();
     if (pc > 0) {
-      if (!lowSpilled && player.hp <= 100 * SPILL_LOW_HP) { lowSpilled = true; spillCoins(pc, false); toast('😱 HP kritis! Semua koin di kantong tumpah', 2.4); }   // sisa kantong tumpah semua
+      if (!lowSpilled && player.hp <= 100 * SPILL_LOW_HP) { lowSpilled = true; spillCoins(pc, false); toast(t('hp_crit'), 2.4); }   // sisa kantong tumpah semua
       else if (!lowSpilled) spillCoins(Math.max(1, Math.ceil(pc * SPILL_HIT)), true);                                                                   // terkena serangan: tumpah perlahan
     }
     return true;
@@ -2736,13 +2753,13 @@
     if (p.state === 'wander') p.state = p.def.timid ? 'flee' : 'chase';     // yang netral jadi marah, yang penakut kabur
     else if (p.state === 'windup' && p.def.scale < 1.4 && !p.def.giant) {    // musuh kecil terganggu: serangannya batal
       p.state = 'stun'; p.t = 0.5; p.cd = Math.max(p.cd, 0.6);
-      showDmg(p.x, heightAt(p.x, p.z) + 2.4 * p.def.scale, p.z, 'TERGANGGU', 'xp', 1);
+      showDmg(p.x, heightAt(p.x, p.z) + 2.4 * p.def.scale, p.z, t('upset'), 'xp', 1);
     }
     burst(8, p.x, 1.0 * p.def.scale, p.z);
     starBurst(p.x, heightAt(p.x, p.z) + 1.3 * p.def.scale, p.z, big ? 9 : 5, big ? 'gain' : 'hit');
     if (p.hp > 0 && !p.enraged && !p.def.timid && !p.def.neutral && p.hp <= p.maxHp * 0.3) {   // hampir kalah: mengamuk
       p.enraged = true;
-      toast('💢 ' + p.def.name + ' mengamuk!', 1.8);
+      toast(t('enraged', { n: p.def.name }), 1.8);
       cry(p.type, 'call', p.x, p.z, 1.4);
     }
     if (p.hp > 0 && clock - (p.cryT || -9) > 0.6) { p.cryT = clock; cry(p.type, 'hurt', p.x, p.z, 1); }
@@ -2768,7 +2785,7 @@
     showDmg(p.x + 0.6, heightAt(p.x, p.z) + 1.6 * p.def.scale, p.z, '+' + xp + ' XP', 'xp', 1);
     GameAudio.sfx.smash();
     GameAudio.sfx.eat();
-    toast((p.def.reward ? '+' + p.def.reward + ' koin · ' : '') + 'daging +' + p.def.food + ' lapar', 2.2);
+    toast((p.def.reward ? t('meat_coins', { n: p.def.reward }) : '') + t('meat', { n: p.def.food }), 2.2);
   }
 
   // ---------- Renang: riak di permukaan air & pose dayung ----------
@@ -2883,9 +2900,9 @@
     player.invuln = Math.max(player.invuln, 0.7);
     shake = Math.max(shake, 0.7);
     GameAudio.sfx.dino(save.char === 'vosil' ? 'carno' : save.char, 'call', 1.6);
-    showDmg(player.x, (player.gy || 0) + player.y + 3.0 * scaleNow / 1.1, player.z, 'RAUNGAN!', 'crit', 1.3);
+    showDmg(player.x, (player.gy || 0) + player.y + 3.0 * scaleNow / 1.1, player.z, t('roar_pop'), 'crit', 1.3);
     starBurst(player.x, (player.gy || 0) + player.y + 1.6 * scaleNow / 1.1, player.z, 10, 'gain');
-    if (hit === 0) toast('Raungan... tidak ada musuh dekat', 1.4);
+    if (hit === 0) toast(t('roar_none'), 1.4);
   }
   function updateRoar(dt) {
     roarCd = Math.max(0, roarCd - dt);
@@ -2909,10 +2926,10 @@
       btnRoar.classList.toggle('cd', !ready);
       btnRoar.classList.toggle('urgent', ready && swarm >= 3);
       const sp = btnRoar.querySelector('span');
-      const txt = ready ? 'RAUNG' : Math.ceil(roarCd) + ' dtk';
+      const txt = ready ? t('sk_roar') : Math.ceil(roarCd) + ' ' + t('unit_sec');
       if (sp && sp.textContent !== txt) sp.textContent = txt;
     }
-    if (swarm >= 3 && roarCd <= 0 && roarHint <= 0) { toast('Dikeroyok! Tekan RAUNG 📢', 2.2); roarHint = 14; }
+    if (swarm >= 3 && roarCd <= 0 && roarHint <= 0) { toast(t('swarm_hint', { b: t('sk_roar') }), 2.2); roarHint = 14; }
   }
 
   function startAttack() {
@@ -3025,7 +3042,7 @@
     const day = Math.floor(runTime / DAY_LEN);
     const n = (day >= 2 || player.level >= 4) ? 7 : 5;
     horde = { t: 0, warn: 2.8, n, spawned: 0, members: [], pulse: -1 };
-    toast('🐾 Semak-semak bergetar... SESUATU MENDEKAT!', 2.8);
+    toast(t('bush'), 2.8);
     GameAudio.sfx.horde();
     shake = Math.max(shake, 0.3);
   }
@@ -3063,14 +3080,14 @@
       if (pu !== horde.pulse) { horde.pulse = pu; shake = Math.max(shake, 0.18 + pu * 0.04); }
       return;
     }
-    if (horde.spawned === 0) { toast('🔥 KAWANAN MENYERBU! ' + horde.n + ' musuh! Tekan RAUNG 📢', 3); shake = Math.max(shake, 0.9); }
+    if (horde.spawned === 0) { toast(t('horde', { n: horde.n, b: t('sk_roar') }), 3); shake = Math.max(shake, 0.9); }
     while (horde.spawned < horde.n && horde.t >= horde.warn + horde.spawned * 0.2) { spawnHordeMember(horde.spawned); horde.spawned++; }
     if (horde.spawned < horde.n) return;
     const alive = horde.members.filter((p) => !p.dead && preds.includes(p));
     if (!alive.length) {
       const bonus = horde.n * 12;
       gainXp(bonus); runCoins += horde.n * 2; save.coins += horde.n * 2; writeSave();
-      toast('🏆 Kawanan dikalahkan! +' + bonus + ' XP, +' + horde.n * 4 + ' koin', 3);
+      toast(t('horde_won', { x: bonus, c: horde.n * 4 }), 3);
       GameAudio.sfx.record();
       horde = null; hordeCd = rand(100, 160);
     } else if (alive.every((p) => Math.hypot(p.x - player.x, p.z - player.z) > 60)) {
@@ -3173,10 +3190,10 @@
       perfectDodge(p);
       return;
     }
-    damagePlayer(p.def.dmg * p.dmgMul, 'Dimangsa ' + p.def.name, p.x, p.z);
+    damagePlayer(p.def.dmg * p.dmgMul, t('r_eaten', { n: p.def.name }), p.x, p.z);
   }
   function perfectDodge(p) {
-    showDmg(player.x, (player.gy || 0) + player.y + 3.0 * scaleNow / 1.1, player.z, 'HINDAR!', 'crit', 1.3);
+    showDmg(player.x, (player.gy || 0) + player.y + 3.0 * scaleNow / 1.1, player.z, t('dodge'), 'crit', 1.3);
     GameAudio.sfx.land();
     player.stamina = Math.min(100, player.stamina + 35);
     player.counterT = 2.2;                                 // gigitan berikutnya jadi balasan keras
@@ -3266,7 +3283,7 @@
         }
         if ((def.timid || def.neutral) && d < 26 && !save.seen[p.type]) {
           save.seen[p.type] = true; writeSave();
-          toast('📖 Spesies baru: ' + def.name + ' (' + Object.keys(save.seen).length + '/' + Object.keys(PTYPES).length + ')', 2.4);
+          toast(t('new_species', { n: def.name, a: Object.keys(save.seen).length, b: Object.keys(PTYPES).length }), 2.4);
         }
         if (def.timid) {
           if (d < def.fleeDist) p.state = 'flee';
@@ -3276,7 +3293,7 @@
             p.roared = true; cry(p.type, 'call', p.x, p.z, 1.3);
             const fresh = !save.seen[p.type];
             if (fresh) { save.seen[p.type] = true; writeSave(); }
-            toast('⚠ ' + def.name + ' mengejar!' + (fresh ? ' 📖 spesies baru' : ''), fresh ? 2.4 : 1.6);
+            toast(t('chasing', { n: def.name }) + (fresh ? t('fresh_sp') : ''), fresh ? 2.4 : 1.6);
           }
         }
       } else if (p.state === 'flee') {
@@ -3362,7 +3379,7 @@
   function update(dt) {
     runTime += dt;
     applyDayNight();
-    { const dNow = Math.floor(runTime / DAY_LEN); if (dNow > lvDay) { lvDay = dNow; if (dNow > 0) { gainXp(30); toast('☀ Hari ke-' + (dNow + 1) + '! +30 XP', 2); } } }
+    { const dNow = Math.floor(runTime / DAY_LEN); if (dNow > lvDay) { lvDay = dNow; if (dNow > 0) { gainXp(30); toast(t('day_toast', { n: dNow + 1 }), 2); } } }
     if (keys.camL) camYaw += 1.9 * dt;
     if (keys.camR) camYaw -= 1.9 * dt;
 
@@ -3400,7 +3417,7 @@
       GameAudio.sfx.splash();
       starBurst(player.x, WL + 0.4, player.z, 8, 'water');
       spawnSwimRing(player.x, player.z, 1.6);
-      if (swimming && swimToastCd <= 0) { toast('🏊 Berenang! Dinosaurus darat tidak bisa mengikuti', 2.4); swimToastCd = 25; }
+      if (swimming && swimToastCd <= 0) { toast(t('swim'), 2.4); swimToastCd = 25; }
     }
     swimToastCd -= dt;
     if (swimming) {
@@ -3428,7 +3445,7 @@
         player.stamina = Math.max(0, player.stamina - 34 * dt);
         if (player.stamina <= 0.5) climbLocked = true;
         if (climbLocked) { slide = true; slopeMul = 0; }
-        if (climbToastCd <= 0) { toast('🧗 Tebing curam! Memanjat menguras tenaga', 2); climbToastCd = 9; }
+        if (climbToastCd <= 0) { toast(t('climb'), 2); climbToastCd = 9; }
       }
     }
     climbToastCd -= dt;
@@ -3511,7 +3528,7 @@
     if (player.hunger <= 0 || player.thirst <= 0) {
       player.hp -= STARVE_DMG * dt;
       hurtT = Math.max(hurtT, 0.05);
-      if (player.hp <= 0) { player.hp = 0; die(player.thirst <= 0 ? 'Mati kehausan' : 'Mati kelaparan'); return; }
+      if (player.hp <= 0) { player.hp = 0; die(player.thirst <= 0 ? t('r_thirst') : t('r_hunger')); return; }
     } else if (player.lastDmg > 4 && player.hunger > 40 && player.thirst > 40 && player.hp < 100) {
       player.hp = Math.min(100, player.hp + REGEN * dt);
     }
@@ -3522,7 +3539,7 @@
       player.thirst = Math.min(100, player.thirst + WATER_RATE * dt);
       drinkCd -= dt;
       if (drinkCd <= 0 && player.thirst < 100) { drinkCd = 0.5; GameAudio.sfx.drink(); }
-      if (!lastWet && player.thirst < 90) toast('Minum air 💧', 1.2);
+      if (!lastWet && player.thirst < 90) toast(t('drink'), 1.2);
     }
     lastWet = wet;
 
@@ -3550,7 +3567,7 @@
             eatenAt.set(bu.id, runTime);
             player.hunger = Math.min(100, player.hunger + FRUIT_HUNGER);
             GameAudio.sfx.eat();
-            toast('Buah 🍒 +' + FRUIT_HUNGER + ' lapar', 1.2);
+            toast(t('fruit', { n: FRUIT_HUNGER }), 1.2);
             gainXp(2);
           }
         }
@@ -3593,7 +3610,7 @@
             powerLeft = POWER_TIME;
             shake = Math.max(shake, 0.3);
             GameAudio.sfx.power();
-            toast('🥚 MODE KUAT! Gigitan 3x lebih sakit, kebal serangan', 2.4);
+            toast(t('power'), 2.4);
             gainXp(12);
           }
         }

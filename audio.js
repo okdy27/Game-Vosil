@@ -179,6 +179,26 @@ const GameAudio = (() => {
       if (v < 0.03) return;
       let dest = sfxBus;
       try { if (pan && actx.createStereoPanner) { const sp = actx.createStereoPanner(); sp.pan.value = Math.max(-1, Math.min(1, pan)); sp.connect(sfxBus); dest = sp; } } catch (e) { dest = sfxBus; }
+      // file sampel (audio/manifest.json): foot_walk, foot_walk_2.. / foot_run, foot_run_2.. -> acak varian, nada sedikit diubah
+      {
+        const names = []; const base = 'foot_' + (run ? 'run' : 'walk');
+        if (sampleBufs[base]) names.push(base);
+        for (let i = 2; i <= 8; i++) if (sampleBufs[base + '_' + i]) names.push(base + '_' + i);
+        if (names.length) {
+          let nm = names[Math.floor(Math.random() * names.length)];
+          if (names.length > 1 && nm === lastFootSample) nm = names[(names.indexOf(nm) + 1) % names.length];
+          lastFootSample = nm;
+          try {
+            const e = sampleBufs[nm], src = actx.createBufferSource(); src.buffer = e.buf;
+            src.playbackRate.value = (0.94 + Math.random() * 0.12) * Math.max(0.8, Math.min(1.15, 1.1 - sz * 0.12));   // dino besar = lebih berat
+            const hpf = actx.createBiquadFilter(); hpf.type = 'highpass'; hpf.frequency.value = 110; hpf.Q.value = 0.5;
+            const g = actx.createGain(); g.gain.value = Math.min(1.2, v * 0.75 * e.g);
+            src.connect(hpf); hpf.connect(g); g.connect(dest); src.start(t);
+            if (wet) noise(dest, t, 0.18, 0.2 * v, 'bandpass', 1500);
+            return;
+          } catch (err) { /* jatuh ke sintesis */ }
+        }
+      }
       const f0 = Math.max(105, 165 - sz * 28) * (0.94 + Math.random() * 0.12);   // tidak di bawah ~100 Hz: speaker HP tidak bisa
       tone(dest, f0, t, run ? 0.13 : 0.1, 'sine', 0.55 * v, f0 * 0.7);               // hentakan
       noise(dest, t, run ? 0.1 : 0.07, 0.4 * v, 'bandpass', (run ? 950 : 650) * (0.9 + Math.random() * 0.2));  // gesekan tanah / kerikil
@@ -351,7 +371,7 @@ const GameAudio = (() => {
     } catch (err) { return false; }
   }
 
-  let lastVoiceAt = -9;
+  let lastVoiceAt = -9, lastFootSample = '';
   function voiceFor(species, kind, vol, pan) {
     if (!actx || !voiceBus || !noiseBuf || !prefs.sfx) return;
     const V = VOICES[species] || VOICES.raptor, K = KIND[kind] || KIND.call;

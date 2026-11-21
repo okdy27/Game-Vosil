@@ -32,9 +32,9 @@
 
   // ---------- Pengaturan ----------
   const CH = 30;                    // ukuran satu potongan dunia (meter)
-  const VIEW = 2;                   // radius potongan yang dimuat (5 x 5 potongan)
+  let VIEW = 2;                   // radius potongan yang dimuat (5 x 5 potongan)
   const DAY_LEN = 160;              // detik per hari
-  const WALK = 5.5, SPRINT = 9.5;   // kecepatan (m/detik)
+  const WALK = 6.8, SPRINT = 10.2;   // kecepatan (m/detik)
   const JUMP_V = 8.5, GRAVITY = 24;
   const HUNGER_RATE = 0.35;         // turun per detik (habis dalam ~4,7 menit)
   const THIRST_RATE = 0.5;          // turun per detik (habis dalam ~3,3 menit)
@@ -506,15 +506,17 @@
     } catch (e) { /* tanpa garis tepi */ }
   }
   const QUAL = {
-    low: { pr: 1, ol: false, fx: 0.5, name: 'Rendah' },
-    mid: { pr: 1.25, ol: true, fx: 1, name: 'Sedang' },
-    high: { pr: 1.75, ol: true, fx: 1.6, name: 'Tinggi' },
+    // Rendah: untuk HP RAM 4 GB (resolusi lebih kecil, tanpa outline, area dimuat 3x3, kabut dekat, dekorasi & dino lebih sedikit)
+    low: { pr: 0.8, ol: false, fx: 0.35, view: 1, fog: 0.45, dens: 0.55, preds: 0.6, name: 'Rendah' },
+    mid: { pr: 1.25, ol: true, fx: 1, view: 2, fog: 1, dens: 1, preds: 1, name: 'Sedang' },
+    high: { pr: 1.75, ol: true, fx: 1.6, view: 2, fog: 1, dens: 1, preds: 1, name: 'Tinggi' },
   };
-  let fxMul = 1;
+  let fxMul = 1, fogMul = 1, densMul = 1, predMul = 1;
   function applyQuality() {
     const q = QUAL[save.q] || QUAL.mid;
-    fxMul = q.fx;
+    fxMul = q.fx; fogMul = q.fog; densMul = q.dens; predMul = q.preds; VIEW = q.view;
     mOutline.visible = q.ol;
+    try { applyDayNight(); } catch (e) { /* belum siap */ }
     try { renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, q.pr)); resize(); } catch (e) { /* abaikan */ }
   }
   // bayangan dinamis (dino): elips yang memanjang searah bayangan, ditaruh di tanah
@@ -786,6 +788,7 @@
     const rng = mulberry(hash(cx, cz, worldSeed + 99));
     const R = (a, b) => a + rng() * (b - a);
     const cnt = (base) => Math.floor(base + rng());
+    const cntD = (base) => Math.floor(base * densMul + rng());   // dekorasi: jumlah ikut kualitas grafis (koin tidak)
     const ox = cx * CH, oz = cz * CH;
     const biome = biomeAt(ox + CH / 2, oz + CH / 2);
     const home = (cx === 0 || cx === -1) && (cz === 0 || cz === -1);   // empat potongan di sekitar titik awal
@@ -902,7 +905,7 @@
       }
     }
 
-    for (let i = 0, n = cnt(biome.tree); i < n; i++) {
+    for (let i = 0, n = cntD(biome.tree); i < n; i++) {
       const pos = tryPlace(1.4); if (!pos) continue;
       const rr = rng();
       const kind = biome.id === 'forest' ? (rr < 0.5 ? 'pine' : 'broad')
@@ -914,7 +917,7 @@
       ch.colliders.push({ x: pos.x, z: pos.z, r: (kind === 'dead' ? 0.4 : 0.55) * s });
       sh(pos.x, pos.z, (kind === 'pine' ? 0.9 : kind === 'dead' ? 0.4 : 1.1) * s, (kind === 'pine' ? 3.6 : kind === 'dead' ? 2.4 : 3.2) * s);
     }
-    for (let i = 0, n = cnt(biome.cycad); i < n; i++) {
+    for (let i = 0, n = cntD(biome.cycad); i < n; i++) {
       const pos = tryPlace(1.2); if (!pos) continue;
       const s = R(0.9, 1.5), t = makeCycad(s);
       t.position.set(pos.x, heightAt(pos.x, pos.z), pos.z);
@@ -922,7 +925,7 @@
       ch.colliders.push({ x: pos.x, z: pos.z, r: 0.45 * s });
       sh(pos.x, pos.z, 0.8 * s, 1.2 * s);
     }
-    for (let i = 0, n = cnt(biome.cactus); i < n; i++) {
+    for (let i = 0, n = cntD(biome.cactus); i < n; i++) {
       const pos = tryPlace(1.2); if (!pos) continue;
       const s = R(0.9, 1.5), t = makeCactus(s);
       t.position.set(pos.x, heightAt(pos.x, pos.z), pos.z);
@@ -930,7 +933,7 @@
       ch.colliders.push({ x: pos.x, z: pos.z, r: 0.5 * s });
       sh(pos.x, pos.z, 0.35 * s, 2.0 * s);
     }
-    for (let i = 0, n = cnt(biome.rock); i < n; i++) {
+    for (let i = 0, n = cntD(biome.rock); i < n; i++) {
       const pos = tryPlace(1.3); if (!pos) continue;
       const s = R(0.8, 1.7), t = makeRock(s, biome.id === 'desert');
       t.position.set(pos.x, heightAt(pos.x, pos.z), pos.z);
@@ -940,7 +943,7 @@
     }
 
     // semak buah
-    const bushN = home ? Math.max(2, cnt(biome.bush)) : cnt(biome.bush);
+    const bushN = home ? Math.max(2, cntD(biome.bush)) : cntD(biome.bush);
     for (let i = 0; i < bushN; i++) {
       const pos = tryPlace(1.4); if (!pos) continue;
       const b = makeBush();
@@ -955,7 +958,7 @@
     }
 
     // rumput liar
-    for (let i = 0, n = cnt(biome.id === 'desert' ? 1 : 2.2); i < n; i++) {
+    for (let i = 0, n = cntD(biome.id === 'desert' ? 1 : 2.2); i < n; i++) {
       const pos = tryPlace(0.6); if (!pos) continue;
       const s = R(0.8, 1.6), tf = new THREE.Mesh(tuftGeo, mTuft[biome.id]);
       tf.position.set(pos.x, heightAt(pos.x, pos.z) + 0.4 * s, pos.z);
@@ -1862,7 +1865,21 @@
 
   // ---------- Area Tantangan: objek (batu pijakan, peti, pintu) yang dimuat saat pemain mendekat ----------
   const zoneObjs = new Map();                                     // id zona -> { group, chests, door, coins, geos }
-  const mPillar = std(0x8d8a80), mPillarCap = std(0x6aa84a), mChestBody = std(0x7b4a1e), mChestGold = std(0xffc107, { emissive: 0x6b4a00 });
+  const mPillar = new THREE.MeshLambertMaterial({ vertexColors: true });
+  // gradasi batu: gelap di dasar -> terang di puncak, lapisan strata halus, bidang atas paling terang
+  function stoneShade(geo, hgt, seed) {
+    const pos = geo.attributes.position, nor = geo.attributes.normal, cols = new Float32Array(pos.count * 3), c = new THREE.Color();
+    for (let i = 0; i < pos.count; i++) {
+      const t = clamp(pos.getY(i) / hgt + 0.5, 0, 1);
+      const band = Math.floor(t * 7), bn = (Math.sin(band * 12.9898 + seed) * 43758.5453) % 1;
+      let l = 0.34 + t * 0.30 + (bn - Math.floor(bn) - 0.5) * 0.07;
+      if (nor.getY(i) > 0.9) l = 0.78;
+      const wx = pos.getX(i), wz = pos.getZ(i), g = Math.sin(wx * 2.3 + wz * 1.7 + seed) * 0.025;
+      c.setRGB(l + g + 0.01, l + g, l + g - 0.03); cols[i * 3] = c.r; cols[i * 3 + 1] = c.g; cols[i * 3 + 2] = c.b;
+    }
+    geo.setAttribute('color', new THREE.BufferAttribute(cols, 3));
+  }
+  const mPillarOld = std(0x8d8a80), mChestBody = std(0x7b4a1e), mChestGold = std(0xffc107, { emissive: 0x6b4a00 });
   const chestBodyGeo = new THREE.BoxGeometry(1.1, 0.65, 0.75), chestLidGeo = new THREE.BoxGeometry(1.12, 0.3, 0.78), chestBandGeo = new THREE.BoxGeometry(0.16, 0.7, 0.8);
   const doorPostGeo = new THREE.BoxGeometry(0.7, 3.4, 0.7), doorTopGeo = new THREE.BoxGeometry(3.6, 0.7, 0.8), doorDiscGeo = new THREE.CircleGeometry(1.3, 28);
   const mDoorDisc = new THREE.MeshBasicMaterial({ color: 0x7fe9ff, transparent: true, opacity: 0.6, side: THREE.DoubleSide, depthWrite: false });
@@ -1882,10 +1899,9 @@
     // batu pijakan: tiang batu dari dasar jurang sampai puncak
     Zn.pillars.forEach((p) => {
       const hgt = p.top - Zn.floor + 0.6;
-      const geo = new THREE.CylinderGeometry(p.r, p.r + 0.55, hgt, 12); geos.push(geo);
+      const geo = new THREE.CylinderGeometry(p.r, p.r + 0.55, hgt, 12, 7); geos.push(geo);
+      stoneShade(geo, hgt, p.x * 7.13 + p.z * 3.7);
       const col = new THREE.Mesh(geo, mPillar); col.position.set(p.x, Zn.floor + hgt / 2 - 0.6, p.z); group.add(col);
-      const capGeo = new THREE.CylinderGeometry(p.r + 0.05, p.r + 0.05, 0.22, 12); geos.push(capGeo);
-      const cap = new THREE.Mesh(capGeo, mPillarCap); cap.position.set(p.x, p.top - 0.11, p.z); group.add(cap);
     });
     // monumen logo di tengah pulau
     const mon = makeMonument(); mon.position.set(Zn.cx, Zn.isl, Zn.cz); mon.rotation.y = Zn.a0 + Math.PI / 2; group.add(mon);
@@ -1901,8 +1917,8 @@
     {
       const ang = Zn.a0 + 3.1416 + 0.9, dx = Zn.cx + Math.cos(ang) * 9.4, dz = Zn.cz + Math.sin(ang) * 9.4;
       const g = new THREE.Group();
-      for (const sx of [-1.45, 1.45]) { const p = new THREE.Mesh(doorPostGeo, mPillar); p.position.set(sx, 1.7, 0); g.add(p); }
-      const top = new THREE.Mesh(doorTopGeo, mPillar); top.position.y = 3.55; g.add(top);
+      for (const sx of [-1.45, 1.45]) { const p = new THREE.Mesh(doorPostGeo, mPillarOld); p.position.set(sx, 1.7, 0); g.add(p); }
+      const top = new THREE.Mesh(doorTopGeo, mPillarOld); top.position.y = 3.55; g.add(top);
       const disc = new THREE.Mesh(doorDiscGeo, mDoorDisc); disc.position.y = 1.75; disc.scale.set(1.0, 1.25, 1); g.add(disc);
       g.position.set(dx, Zn.isl, dz); g.rotation.y = -ang - Math.PI / 2;
       group.add(g);
@@ -2275,8 +2291,8 @@
     const rgb = [0, 1, 2].map((i) => lerp(lerp(SKY_NIGHT[i], SKY_DAY[i], k), SKY_DUSK[i], dusk));
     scene.background.setRGB(rgb[0], rgb[1], rgb[2]);
     scene.fog.color.setRGB(rgb[0], rgb[1], rgb[2]);
-    scene.fog.near = lerp(14, 26, k);              // malam: pandangan lebih pendek = lebih tegang
-    scene.fog.far = lerp(50, 68, k);               // lebih pendek dari area yang dimuat (60 m) supaya tepi dunia tersamar
+    scene.fog.near = lerp(14, 26, k) * fogMul;              // malam: pandangan lebih pendek = lebih tegang
+    scene.fog.far = lerp(50, 68, k) * fogMul;               // lebih pendek dari area yang dimuat (60 m) supaya tepi dunia tersamar
     mPond.color.setRGB(lerp(0.06, 0.25, k), lerp(0.16, 0.66, k), lerp(0.3, 0.88, k));   // air gelap saat malam
     mDeep.opacity = lerp(0.7, 0.55, k);
     mGlint.opacity = 0.12 + 0.4 * k;
@@ -2550,6 +2566,7 @@
       const order = ['low', 'mid', 'high'];
       save.q = order[(order.indexOf(save.q) + 1) % 3];
       writeSave(); applyQuality(); lbl();
+      try { for (const ch of Array.from(chunks.values())) unloadChunk(ch); buildQueue.length = 0; if (state === 'playing') ensureChunks(true); else pcx = null; } catch (e) { /* abaikan */ }
       toast('Kualitas grafis: ' + QUAL[save.q].name, 1.6);
     });
     qBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
@@ -3193,7 +3210,7 @@
   function updatePredators(dt) {
     chased = false;
     const day = Math.floor(runTime / DAY_LEN);
-    const maxCount = (isNight ? 4 : 2) + Math.min(2, Math.floor(day / 2));
+    const maxCount = Math.max(2, Math.round(((isNight ? 4 : 2) + Math.min(2, Math.floor(day / 2))) * predMul));
     spawnCd -= dt;
     const alive = preds.filter((p) => !p.dead && !p.def.neutral && !p.def.timid).length;
     if (spawnCd <= 0 && alive < maxCount) {
@@ -3208,7 +3225,7 @@
     // hewan lain (herbivora) menjaga dunia terasa hidup
     animalCd -= dt;
     const animals = preds.filter((p) => !p.dead && (p.def.neutral || p.def.timid)).length;
-    if (animalCd <= 0 && animals < 5) {
+    if (animalCd <= 0 && animals < Math.round(5 * predMul)) {
       animalCd = rand(3, 6);
       spawnPredator(pickAnimalType());
     }
@@ -3456,7 +3473,7 @@
     if (input.jump) {
       input.jump = false;
       if (player.y === 0 && player.vy === 0 && !swimming) {
-        const runJump = sprinting && Math.hypot(player.vx, player.vz) > 6.5;        // lari lalu lompat = lompatan tinggi dan jauh
+        const runJump = sprinting && Math.hypot(player.vx, player.vz) > 8.2;        // lari lalu lompat = lompatan tinggi dan jauh
         player.vy = JUMP_V * (runJump ? 1.18 : 1.08);
         player.airBoost = runJump ? 1.35 : 1;
         if (runJump) player.stamina = Math.max(0, player.stamina - 8);
@@ -3789,7 +3806,7 @@
         const si = Math.floor(p.phase / Math.PI);
         if (si !== p.stepIdx) {
           p.stepIdx = si;
-          if (p.speedNow > 0.8 && !deepP) {
+          if (state === 'playing' && p.speedNow > 0.8 && !deepP) {
             const fdx = p.x - player.x, fdz = p.z - player.z, fd = Math.hypot(fdx, fdz);
             const fr = p.def.giant ? 60 : 38, fv = clamp(1 - fd / fr, 0, 1) * (p.def.giant ? 1.3 : 0.8);
             if (fv > 0.05) GameAudio.sfx.foot(p.speedNow > 7 ? 'run' : 'walk', fv, fd > 3 ? clamp(((fdx * Math.cos(camYaw) - fdz * Math.sin(camYaw)) / fd) * 0.9, -0.9, 0.9) : 0, p.def.scale, false);

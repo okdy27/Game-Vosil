@@ -50,7 +50,7 @@ const GameAudio = (() => {
         // rantai keluaran: high-pass (speaker HP tidak bisa < ~90 Hz, sub-bass hanya membuat pecah)
         // -> kompresor halus -> limiter keras (mencegah clipping / suara sember di speaker)
         const master = actx.createGain();
-        master.gain.value = 0.7;
+        master.gain.value = 1.0;
         const hp = actx.createBiquadFilter();
         hp.type = 'highpass'; hp.frequency.value = 85; hp.Q.value = 0.5;
         const comp = actx.createDynamicsCompressor();
@@ -59,10 +59,10 @@ const GameAudio = (() => {
         } catch (e) { /* nilai bawaan */ }
         const lim = actx.createDynamicsCompressor();
         try {
-          lim.threshold.value = -8; lim.knee.value = 0; lim.ratio.value = 20; lim.attack.value = 0.001; lim.release.value = 0.1;
+          lim.threshold.value = -3; lim.knee.value = 0; lim.ratio.value = 20; lim.attack.value = 0.001; lim.release.value = 0.1;
         } catch (e) { /* nilai bawaan */ }
         const trim = actx.createGain();                     // sisakan ruang ~3 dB di bawah batas keras speaker
-        trim.gain.value = 0.7;
+        trim.gain.value = 0.9;
         master.connect(hp); hp.connect(comp); comp.connect(lim); lim.connect(trim); trim.connect(actx.destination);
         musicBus = actx.createGain();
         musicBus.connect(master);
@@ -593,7 +593,7 @@ const GameAudio = (() => {
         const cd = buf.getChannelData(0);
         for (let k = 0; k < cd.length; k += 4) { sum += cd[k] * cd[k]; n++; }
         const rms = Math.sqrt(sum / Math.max(1, n)) || 0.1;
-        BGM_G = Math.max(0.1, Math.min(2.5, 0.045 / rms));
+        BGM_G = Math.max(0.1, Math.min(2.5, 0.07 / rms));
         const hp = actx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 70; hp.Q.value = 0.5;   // buang sub-bass untuk speaker HP
         gain = actx.createGain(); gain.gain.value = 0;
         duckG = actx.createGain(); duckG.gain.value = 1;

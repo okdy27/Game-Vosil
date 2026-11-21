@@ -11,6 +11,10 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="apple-touch-icon" href="apple-touch-icon.png">
   <link rel="icon" type="image/png" href="icon-192.png">
+  <meta property="og:title" content="Vosil Survival">
+  <meta property="og:description" content="Game survival dinosaurus Token Vosil di World Chain">
+  <meta property="og:image" content="https://okdy27.github.io/Game-Vosil/vosil-logo-512.png">
+  <meta name="twitter:card" content="summary">
   <style>
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
     html, body {
@@ -431,6 +435,15 @@
     #setBody .ibtn { width: 100%; height: auto; border-radius: 10px; padding: 12px 14px; justify-content: flex-start; font-size: 15px; font-weight: 700; background: rgba(255,255,255,.1); color: #f5e9dc; text-align: left; }
     #setBody .ibtn.off { opacity: .55; }
 
+
+    /* ---------- Splash logo Vosil: muncul lalu memudar ke dalam permainan ---------- */
+    #splash { position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center; background: #0e1f1b;
+      pointer-events: none; animation: splashBg 3.6s ease-in forwards; }
+    #splash img { width: min(46vh, 60vw); height: auto; border-radius: 50%; animation: splashLogo 3.6s ease-in-out forwards; }
+    @keyframes splashBg { 0%, 55% { opacity: 1; visibility: visible; } 100% { opacity: 0; visibility: hidden; } }
+    @keyframes splashLogo { 0% { opacity: 0; transform: scale(.82); } 22% { opacity: 1; transform: scale(1); } 58% { opacity: 1; transform: scale(1.03); } 100% { opacity: 0; transform: scale(1.35); } }
+    .menuLogo { width: clamp(44px, 14vh, 84px); height: auto; border-radius: 50%; margin-bottom: 4px; box-shadow: 0 0 16px rgba(255,255,255,.18); }
+
     /* ---------- Minta putar layar ---------- */
     #rotate {
       position: fixed; inset: 0; z-index: 20;
@@ -509,6 +522,7 @@
   </div>
 
   <div id="menu" class="panel">
+    <img class="menuLogo" src="vosil-logo-256.png" alt="Vosil">
     <h1>VOSIL SURVIVAL</h1>
     <p class="lead">Jelajahi lembah prasejarah, bertahan hidup, kumpulkan koin</p>
     <div id="charRow"></div>
@@ -543,7 +557,7 @@
   <div id="bag" class="hidden"><div id="bagBox">
     <div id="bagHead"><button class="tab on" id="tabBag" type="button">🎒 Tukar</button><button class="tab" id="tabChr" type="button">🦖 Karakter</button><button class="tab" id="tabSet" type="button">⚙ Seting</button><span class="sum" id="bagSum"></span><button id="bagX" type="button" aria-label="Tutup">✕</button></div>
     <div id="bagBody"></div>
-    <div id="chrBody" class="hidden"><div id="charRow2"></div><p id="charInfo2"></p><p id="bagNote">Karakter baru dipakai mulai permainan berikutnya (mati atau mulai ulang). Nilai kekuatan tiap dino berbeda.</p></div>
+    <div id="chrBody" class="hidden"><div id="charRow2"></div><p id="charInfo2"></p><p id="bagNote">Karakter baru dipakai mulai permainan berikutnya. Untuk melihat pratinjau dino dan memilih dari halaman utama:</p><button id="quitMenuBtn" class="bBtn wide" type="button">🦖 Buka halaman pilih karakter</button></div>
     <div id="setBody" class="hidden">
       <button id="musicBtn" class="ibtn" type="button" data-on="🎵 Musik: ON" data-off="🎵 Musik: OFF">🎵 Musik</button>
       <button id="sfxBtn" class="ibtn" type="button" data-on="🔊 Efek suara: ON" data-off="🔊 Efek suara: OFF">🔊 Efek suara</button>
@@ -553,11 +567,13 @@
     </div>
   </div></div>
 
+  <div id="splash"><img src="vosil-logo-512.png" alt="Vosil"></div>
+
   <div id="rotate">
     <b>📱</b>
     <div>Vosil Survival dimainkan horizontal</div>
-    <button id="rotBtn" type="button">▶ MAIN SEKARANG</button>
-    <small id="rotNote">Satu ketukan: layar penuh, horizontal, dan langsung mulai. Jika layar tidak berputar sendiri, putar HP secara manual.</small>
+    <button id="rotBtn" type="button">⛶ MASUK GAME (layar penuh)</button>
+    <small id="rotNote">Ketuk untuk layar penuh horizontal, lalu pilih dino dan mulai. Jika layar tidak berputar sendiri, putar HP secara manual.</small>
   </div>
   <div id="lvFlash"></div>
   <div id="fatal"><div><div id="fatalMsg"></div><p style="margin-top:14px"><a href="webgl-test.html" style="color:#ffd54f">Tes WebGL untuk mencari penyebabnya</a></p></div></div>

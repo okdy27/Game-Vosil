@@ -647,12 +647,41 @@
     g.add(berries);
     return { group: g, berries };
   }
-  const coinShGeo = new THREE.CircleGeometry(0.5, 14); coinShGeo.rotateX(-Math.PI / 2);
-  const mCoinSh = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.28, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+  const coinShGeo = new THREE.CircleGeometry(0.42, 16); coinShGeo.rotateX(-Math.PI / 2);
+  const mCoinSh = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.3, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 });
+  // bayangan koin: piringan di tanah yang dimiringkan mengikuti lereng (tidak setengah tertanam)
+  function tiltShadow(m, x, z, lift) {
+    const d = 0.6, h0 = heightAt(x, z);
+    const sx = (heightAt(x + d, z) - heightAt(x - d, z)) / (2 * d), sz = (heightAt(x, z + d) - heightAt(x, z - d)) / (2 * d);
+    m.position.set(x, Math.max(h0, WL) + lift, z);
+    m.rotation.set(-Math.atan(sz), 0, Math.atan(sx));
+  }
+  function makeCoinShadow(x, z) {
+    const m = new THREE.Mesh(coinShGeo, mCoinSh);
+    m.renderOrder = 2;
+    tiltShadow(m, x, z, 0.14);
+    return m;
+  }
+  // Monumen Vosil: papan batu dengan logo token (media promosi, tersebar langka di dunia)
+  let logoTex = null;
+  try { if (THREE.TextureLoader) { logoTex = new THREE.TextureLoader().load('vosil-logo-256.png'); } } catch (e) { logoTex = null; }
+  const monSlabGeo = new THREE.BoxGeometry(2.3, 3.1, 0.55), monBaseGeo = new THREE.BoxGeometry(2.8, 0.35, 0.95), monPlaqueGeo = new THREE.PlaneGeometry(1.75, 1.75);
+  const mMonStone = std(0x8d8f8a), mMonBase = std(0x6f716c);
+  const mMonLogo = new THREE.MeshBasicMaterial(logoTex ? { map: logoTex } : { color: 0x0e1f1b });
+  function makeMonument() {
+    const g = new THREE.Group();
+    const base = new THREE.Mesh(monBaseGeo, mMonBase); base.position.y = 0.17; g.add(base);
+    const slab = new THREE.Mesh(monSlabGeo, mMonStone); slab.position.y = 1.9; g.add(slab);
+    for (const sgn of [1, -1]) {
+      const p = new THREE.Mesh(monPlaqueGeo, mMonLogo);
+      p.position.set(0, 1.95, sgn * 0.285); if (sgn < 0) p.rotation.y = Math.PI;
+      g.add(p);
+    }
+    return g;
+  }
   function makeCoin() {
     const g = new THREE.Group();
-    const sh = new THREE.Mesh(coinShGeo, mCoinSh); sh.position.y = -0.85; sh.renderOrder = 2; sh.userData.coinSh = true;   // bayangan di tanah
-    g.add(sh); g.userData.sh = sh;
+
     g.add(new THREE.Mesh(coinGeo, mCoin));
     g.add(new THREE.Mesh(coinInGeo, mCoinIn));
     return g;
@@ -877,7 +906,21 @@
         m.position.set(x, heightAt(x, z) + 0.9, z);
         m.userData.keep = true;
         group.add(m);
-        ch.coins.push({ id, x, z, mesh: m });
+        const csh = makeCoinShadow(x, z); csh.userData.keep = true; group.add(csh);
+        ch.coins.push({ id, x, z, mesh: m, sh: csh });
+      }
+    }
+
+    // monumen logo Vosil: satu dekat titik awal, selebihnya jarang
+    if ((cx === 0 && cz === 0) || rng() < 0.07) {
+      const pos = tryPlace(2.8);
+      if (pos) {
+        const mon = makeMonument();
+        mon.position.set(pos.x, heightAt(pos.x, pos.z), pos.z);
+        mon.rotation.y = rng() * Math.PI * 2;
+        group.add(mon);
+        ch.colliders.push({ x: pos.x, z: pos.z, r: 1.35 });
+        sh(pos.x, pos.z, 1.2, 1.6);
       }
     }
 
@@ -1691,7 +1734,8 @@
     const y0 = (player.gy || 0) + player.y + 1.4 * scaleNow / 1.1;
     m.position.set(player.x, y0, player.z);
     scene.add(m);
-    drops.push({ mesh: m, x: player.x, y: y0, z: player.z, vx: Math.cos(ang) * sp, vy: rand(5, 8.5), vz: Math.sin(ang) * sp, val, t: 0, rest: false });
+    const dsh = new THREE.Mesh(coinShGeo, mCoinSh); dsh.renderOrder = 2; scene.add(dsh);
+    drops.push({ sh: dsh, mesh: m, x: player.x, y: y0, z: player.z, vx: Math.cos(ang) * sp, vy: rand(5, 8.5), vz: Math.sin(ang) * sp, val, t: 0, rest: false });
     starBurst(player.x, y0, player.z, 2, 'gain');
     GameAudio.sfx.coin();
   }
@@ -1712,20 +1756,20 @@
         }
         d.mesh.position.set(d.x, d.y, d.z);
       } else d.mesh.position.y = Math.max(heightAt(d.x, d.z), WL) + 0.7 + Math.sin(clock * 4 + i) * 0.1;
-      { const dsh = d.mesh.userData.sh; if (dsh) dsh.position.y = -(d.mesh.position.y - Math.max(heightAt(d.x, d.z), WL)) + 0.07; }
+      if (d.sh) { if (!d.tilted && d.rest) { tiltShadow(d.sh, d.x, d.z, 0.14); d.tilted = true; } else if (!d.tilted) d.sh.position.set(d.x, Math.max(heightAt(d.x, d.z), WL) + 0.14, d.z); const q = clamp(1 - (d.mesh.position.y - Math.max(heightAt(d.x, d.z), WL)) * 0.25, 0.4, 1); d.sh.scale.set(q, 1, q); }
       d.mesh.visible = d.t < DROP_LIFE - 6 || Math.sin(d.t * 22) > -0.2;       // berkedip sebelum lenyap
       const dx = d.x - player.x, dz = d.z - player.z;
       if (d.t > 0.45 && dx * dx + dz * dz < (1.7 * sc) * (1.7 * sc) && player.y < 1.8) {
         runCoins += d.val; save.coins += d.val;
         flyCoins.push({ mesh: d.mesh, t: 0, x0: d.x, y0: d.mesh.position.y, z0: d.z });
-        d.mesh.visible = true; if (d.mesh.userData.sh) d.mesh.userData.sh.visible = false;
+        d.mesh.visible = true; if (d.sh) scene.remove(d.sh);
         showDmg(d.x, d.mesh.position.y + 0.5, d.z, '+' + d.val, 'gain', 0.9);
         GameAudio.sfx.coin();
         drops.splice(i, 1);
-      } else if (d.t > DROP_LIFE) { scene.remove(d.mesh); drops.splice(i, 1); }
+      } else if (d.t > DROP_LIFE) { scene.remove(d.mesh); if (d.sh) scene.remove(d.sh); drops.splice(i, 1); }
     }
   }
-  function clearDrops() { for (const d of drops) scene.remove(d.mesh); drops.length = 0; spillQ.length = 0; lowSpilled = false; }
+  function clearDrops() { for (const d of drops) { scene.remove(d.mesh); if (d.sh) scene.remove(d.sh); } drops.length = 0; spillQ.length = 0; lowSpilled = false; }
 
   // ---------- Angka kerusakan melayang ----------
   const fxLayer = $('fx');
@@ -2345,6 +2389,23 @@
   $('tabBag').addEventListener('click', () => { tabWanted = 'bag'; showTab('bag'); });
   $('tabSet').addEventListener('click', () => { tabWanted = 'set'; showTab('set'); });
   $('tabChr').addEventListener('click', () => { tabWanted = 'chr'; showTab('chr'); });
+  // kembali ke halaman pemilih karakter (menu dengan pratinjau dino); koin yang terkumpul tetap tersimpan
+  let quitArm = 0;
+  function quitToMenu() {
+    if (state === 'playing') {
+      die('Keluar ke menu');
+      state = 'menu'; overAt = 0;
+    }
+    closeBag(); refreshPanels();
+  }
+  const quitBtn = $('quitMenuBtn');
+  if (quitBtn) {
+    quitBtn.addEventListener('click', () => {
+      if (state !== 'playing') { quitToMenu(); return; }
+      if (performance.now() - quitArm < 3000) { quitArm = 0; quitBtn.textContent = '🦖 Buka halaman pilih karakter'; quitToMenu(); }
+      else { quitArm = performance.now(); quitBtn.textContent = 'Yakin? Permainan ini berakhir. Ketuk lagi'; }
+    });
+  }
   function openBag() {
     if (state === 'playing') { input.sprint = false; input.attack = false; input.jump = false; for (const k in keys) keys[k] = false; }
     bagOpen = true; showTab(tabWanted); renderBag(); bagEl.classList.remove('hidden'); }
@@ -2358,7 +2419,7 @@
   bagEl.addEventListener('pointerdown', (e) => { e.stopPropagation(); if (e.target === bagEl) closeBag(); });
   bagBody.addEventListener('click', (e) => { const b = e.target.closest && e.target.closest('[data-ex]'); if (b && !b.disabled) { const ex = b.getAttribute('data-ex'); if (ex === 'resume') closeBag(); else doExchange(ex); } });
 
-  if (rotBtn) rotBtn.addEventListener('click', () => { GameAudio.init(); enterImmersive(); if (state === 'menu') startGame(); });
+  if (rotBtn) rotBtn.addEventListener('click', () => { GameAudio.init(); enterImmersive(); });
   let autoFsTried = false;
   function autoFs() { if (autoFsTried || isFs()) return; autoFsTried = true; enterImmersive(); }
   document.addEventListener('fullscreenchange', () => { try { resize(); } catch (e) { /* abaikan */ } });
@@ -3202,15 +3263,14 @@
           const bob = Math.sin(clock * 2.6 + c.ph) * 0.16;
           c.mesh.position.y = c.by + bob;                                  // melayang naik-turun
           c.mesh.rotation.y += dt * 3.2;                                   // berputar
-          const csh = c.mesh.userData.sh;
-          if (csh) { csh.position.y = -(c.mesh.position.y - heightAt(c.x, c.z)) + 0.07; const q = 1 - bob * 0.9; csh.scale.set(q, 1, q); }
+          if (c.sh) { const q = 1 - bob * 0.9; c.sh.scale.set(q, 1, q); }
           if (Math.random() < dt * 0.1 && (c.x - player.x) ** 2 + (c.z - player.z) ** 2 < 300) starBurst(c.x, c.mesh.position.y + 0.3, c.z, 1, 'gain');   // kilau
           const dx = c.x - player.x, dz = c.z - player.z;
           if (dx * dx + dz * dz < (1.5 * sc) * (1.5 * sc) && player.y < 1.8) {
             taken.add(c.id);
             ch.group.remove(c.mesh);
             scene.add(c.mesh);                                   // koin terbang ke arah dino
-            if (c.mesh.userData.sh) c.mesh.userData.sh.visible = false;
+            if (c.sh) ch.group.remove(c.sh);
             flyCoins.push({ mesh: c.mesh, t: 0, x0: c.x, y0: c.mesh.position.y, z0: c.z });
             ch.coins.splice(i, 1);
             runCoins++;

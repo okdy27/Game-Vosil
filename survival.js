@@ -2389,8 +2389,27 @@
   $('tabBag').addEventListener('click', () => { tabWanted = 'bag'; showTab('bag'); });
   $('tabSet').addEventListener('click', () => { tabWanted = 'set'; showTab('set'); });
   $('tabChr').addEventListener('click', () => { tabWanted = 'chr'; showTab('chr'); });
+  // Layar sentuh: jari kedua (mis. saat analog sedang ditahan) tidak memicu 'click' di sebagian browser -> klik disusulkan dari pointerup
+  {
+    const SEL = '#bag button, #topBtns button';
+    let downEl = null, synthEl = null, synthT = 0, inSynth = false;
+    const find = (e) => (e.target && e.target.closest ? e.target.closest(SEL) : null);
+    document.addEventListener('pointerdown', (e) => { downEl = find(e); }, true);
+    document.addEventListener('pointerup', (e) => {
+      if (e.pointerType !== 'touch' || e.isPrimary) return;
+      const b = find(e);
+      if (!b || b !== downEl || b.disabled) return;
+      synthEl = b; synthT = performance.now(); inSynth = true;
+      try { b.click(); } finally { inSynth = false; }
+    }, true);
+    document.addEventListener('click', (e) => {
+      if (inSynth) return;
+      const b = find(e);
+      if (b && b === synthEl && performance.now() - synthT < 450) { e.stopImmediatePropagation(); e.preventDefault(); }   // cegah klik ganda
+    }, true);
+  }
   // kembali ke halaman pemilih karakter (menu dengan pratinjau dino); koin yang terkumpul tetap tersimpan
-  let quitArm = 0;
+  let quitArm = -1e9;
   function quitToMenu() {
     if (state === 'playing') {
       die('Keluar ke menu');

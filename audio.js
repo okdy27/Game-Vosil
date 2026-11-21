@@ -192,7 +192,7 @@ const GameAudio = (() => {
             const e = sampleBufs[nm], src = actx.createBufferSource(); src.buffer = e.buf;
             src.playbackRate.value = (0.94 + Math.random() * 0.12) * Math.max(0.8, Math.min(1.15, 1.1 - sz * 0.12));   // dino besar = lebih berat
             const hpf = actx.createBiquadFilter(); hpf.type = 'highpass'; hpf.frequency.value = 110; hpf.Q.value = 0.5;
-            const g = actx.createGain(); g.gain.value = Math.min(1.2, v * 0.75 * e.g);
+            const g = actx.createGain(); g.gain.value = Math.min(0.5, v * 0.28 * e.g);   // sampel dinormalkan ke puncak 0.8, jadi harus jauh lebih pelan dari suara dino
             src.connect(hpf); hpf.connect(g); g.connect(dest); src.start(t);
             if (wet) noise(dest, t, 0.18, 0.2 * v, 'bandpass', 1500);
             return;

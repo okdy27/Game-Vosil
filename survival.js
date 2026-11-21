@@ -301,16 +301,18 @@
     const floor = Math.min(h0 - 14, WL - 3);
     const a0 = first ? Math.atan2(-cz, -cx) : rng() * 6.2832;         // pintu masuk menghadap titik awal
     const dir = rng() < 0.5 ? 1 : -1;
-    const offs = [0.4, 0.9, 0.3, 1.0, 0.5, 1.1, 0.8], rEnd = 15.8, n = offs.length;
+    // lompatan awal dibuat mudah (batu besar, jarak dekat, beda tinggi kecil); lompatan terakhir ke pulau harus presisi
+    const offs = [0.2, 0.5, 0.3, 0.6, 0.4, 0.7, 0.5], rads = [2.7, 2.7, 2.5, 2.4, 2.2, 2.0, 1.7], gaps = [1.5, 1.6, 1.8, 2.0, 2.2, 2.4];
+    const rEnd = 14.0, n = offs.length;
     const pillars = [];
     let r = 29.2, a = a0;
     for (let i = 0; i < n; i++) {
       if (i > 0) {
-        const rn = 29.2 + (rEnd - 29.2) * i / (n - 1), sp = 6.6 + rng() * 0.6;
+        const rn = 29.2 + (rEnd - 29.2) * i / (n - 1), sp = rads[i - 1] + rads[i] + gaps[i - 1];
         const c = Math.max(-1, Math.min(1, (r * r + rn * rn - sp * sp) / (2 * r * rn)));
         a += dir * Math.acos(c); r = rn;
       }
-      pillars.push({ x: cx + Math.cos(a) * r, z: cz + Math.sin(a) * r, r: 2.1, top: h0 + offs[i] });
+      pillars.push({ x: cx + Math.cos(a) * r, z: cz + Math.sin(a) * r, r: rads[i], top: h0 + offs[i] });
     }
     return { id: ix + ':' + iz, cx, cz, h0, floor, isl: h0 + 1.2, a0, pillars, entry: { x: cx + Math.cos(a0) * 38, z: cz + Math.sin(a0) * 38 } };
   }
@@ -1897,7 +1899,7 @@
     }
     // pintu kembali ke titik awal
     {
-      const ang = Zn.a0 + 3.1416 + 0.9, dx = Zn.cx + Math.cos(ang) * 8.2, dz = Zn.cz + Math.sin(ang) * 8.2;
+      const ang = Zn.a0 + 3.1416 + 0.9, dx = Zn.cx + Math.cos(ang) * 9.4, dz = Zn.cz + Math.sin(ang) * 9.4;
       const g = new THREE.Group();
       for (const sx of [-1.45, 1.45]) { const p = new THREE.Mesh(doorPostGeo, mPillar); p.position.set(sx, 1.7, 0); g.add(p); }
       const top = new THREE.Mesh(doorTopGeo, mPillar); top.position.y = 3.55; g.add(top);
@@ -1919,7 +1921,8 @@
       const q = Zn.pillars[i + 1];
       if (q) addCoin(Zn.id + ':g' + i, (p.x + q.x) / 2, Math.max(p.top, q.top) + 2.0, (p.z + q.z) / 2);
     });
-    for (let i = 0; i < 14; i++) { const a = i / 14 * 6.2832; addCoin(Zn.id + ':r' + i, Zn.cx + Math.cos(a) * 8.6, Zn.isl + 0.9, Zn.cz + Math.sin(a) * 8.6); }
+    const doorA = Zn.a0 + 3.1416 + 0.9;
+    for (let i = 0; i < 14; i++) { const a = i / 14 * 6.2832; if (Math.abs(Math.atan2(Math.sin(a - doorA), Math.cos(a - doorA))) < 0.5) continue; addCoin(Zn.id + ':r' + i, Zn.cx + Math.cos(a) * 8.6, Zn.isl + 0.9, Zn.cz + Math.sin(a) * 8.6); }
     for (let i = 0; i < 6; i++) { const a = i / 6 * 6.2832; addCoin(Zn.id + ':s' + i, Zn.cx + Math.cos(a) * 3.8, Zn.isl + 0.9, Zn.cz + Math.sin(a) * 3.8); }
     return O;
   }
@@ -1982,7 +1985,7 @@
       if (O.door) {
         O.door.disc.rotation.z += dt * 1.6;
         O.door.disc.material.opacity = 0.5 + 0.15 * Math.sin(clock * 3);
-        if (doorCd <= 0 && Math.hypot(player.x - O.door.x, player.z - O.door.z) < 1.7 && player.y < 1.5) { doorCd = 2; useDoor(); }
+        if (doorCd <= 0 && Math.hypot(player.x - O.door.x, player.z - O.door.z) < 1.5 && player.y < 1.5) { doorCd = 2; useDoor(); }
       }
     }
     doorCd -= dt;

@@ -62,12 +62,16 @@
   function loadSave() {
     try {
       const s = JSON.parse(localStorage.getItem(SAVE_KEY));
-      if (s && typeof s.coins === 'number') return Object.assign({ bestDays: 0, kills: 0, runs: 0, seen: {}, char: 'vosil', q: 'mid' }, s);
+      if (s && typeof s.coins === 'number') return Object.assign({ bestDays: 0, kills: 0, runs: 0, seen: {}, kv: {}, tro: {}, pts: 0, ptsTotal: 0, char: 'vosil', q: 'mid' }, s);
     } catch (e) { /* abaikan */ }
-    return { coins: 0, bestDays: 0, kills: 0, runs: 0, seen: {}, char: 'vosil', q: 'mid' };
+    return { coins: 0, bestDays: 0, kills: 0, runs: 0, seen: {}, kv: {}, tro: {}, pts: 0, ptsTotal: 0, char: 'vosil', q: 'mid' };
   }
   const save = loadSave();
   if (!save.seen || typeof save.seen !== 'object') save.seen = {};
+  if (!save.kv || typeof save.kv !== 'object') save.kv = {};
+  if (!save.tro || typeof save.tro !== 'object') save.tro = {};
+  if (typeof save.pts !== 'number') save.pts = 0;
+  if (typeof save.ptsTotal !== 'number') save.ptsTotal = 0;
   function writeSave() {
     try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) { /* abaikan */ }
   }
@@ -1626,7 +1630,7 @@
   let preds = [], spawnCd = 4, animalCd = 2, chased = false, isNight = false, lastBiome = null;
   let biteVoiceT = -9;
   let swimming = false, swimBlend = 0, swimToastCd = 0, strokeT = 0, ringT = 0;
-  let lastStepIdx = 0, climbLocked = false, climbToastCd = 0, biomeCd = 0, drinkCd = 0, toastT = 0, saveT = 0, hurtT = 0, shake = 0;
+  let bagOpen = false, lastStepIdx = 0, climbLocked = false, climbToastCd = 0, biomeCd = 0, drinkCd = 0, toastT = 0, saveT = 0, hurtT = 0, shake = 0;
   let camGy = 0, lvDay = 0;
   let camYaw = 0, camPitch = 0.71, camLift = 0;
   let camX = 0, camZ = 0, camLead = { x: 0, z: 0 }, lastWet = false, shown = {};
@@ -2119,6 +2123,7 @@
 
   window.addEventListener('keydown', (e) => {
     const k = e.key.toLowerCase();
+    if (bagOpen) { if (k === 'escape') closeBag(); return; }
     const map = { arrowleft: 'left', a: 'left', arrowright: 'right', d: 'right', arrowup: 'up', w: 'up', arrowdown: 'down', s: 'down', shift: 'shift', q: 'camL', e: 'camR' };
     if (map[k]) keys[map[k]] = true;
     if (['arrowleft', 'arrowright', 'arrowup', 'arrowdown', ' ', 'enter'].includes(k)) e.preventDefault();
@@ -2192,6 +2197,72 @@
   }
   if (!QUAL[save.q]) save.q = 'mid';
   applyQuality();
+
+  // ---------- Tas: aset terkumpul + penukaran poin (token Vosil menyusul di tahap wallet) ----------
+  // Alur: Koin & Trofi dino --(tukar)--> Poin Tukar --(klaim, tahap wallet/server)--> Token Vosil
+  const EXCH = { coinPerPt: 10, tro: { raptor: 2, velo: 2, carno: 6, rex: 10, spino: 12 }, ptPerVosil: 1000, note: '', updated: '' };   // nilai bawaan
+  // Kebijakan penukaran bisa diubah kapan saja TANPA ubah kode: edit config.json di repo lalu Commit + Sync (dibaca ulang setiap game dibuka).
+  const esc = (v) => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  const posNum = (v) => typeof v === 'number' && isFinite(v) && v > 0;
+  function applyConfig(c) {
+    if (!c || typeof c !== 'object') return;
+    if (posNum(c.coinPerPt)) EXCH.coinPerPt = c.coinPerPt;
+    if (posNum(c.ptPerVosil)) EXCH.ptPerVosil = c.ptPerVosil;
+    if (c.trofi && typeof c.trofi === 'object') Object.keys(c.trofi).forEach((k) => { if (typeof c.trofi[k] === 'number' && c.trofi[k] >= 0 && isFinite(c.trofi[k])) EXCH.tro[k] = c.trofi[k]; });
+    if (typeof c.catatan === 'string') EXCH.note = c.catatan.slice(0, 200);
+    if (typeof c.diperbarui === 'string') EXCH.updated = c.diperbarui.slice(0, 40);
+    if (bagOpen) renderBag();
+  }
+  if (typeof fetch === 'function') {
+    try { fetch('config.json?t=' + Date.now(), { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).then(applyConfig).catch(() => { /* pakai nilai bawaan */ }); } catch (e) { /* abaikan */ }
+  }
+  const bagEl = $('bag'), bagBody = $('bagBody'), bagSum = $('bagSum');
+  function bagTroValue() { let v = 0; for (const k in save.tro) v += (save.tro[k] || 0) * (EXCH.tro[k] || 0); return v; }
+  function renderBag() {
+    const coinPts = Math.floor(save.coins / EXCH.coinPerPt);
+    let rows = '';
+    Object.keys(PTYPES).forEach((k) => {
+      const d = PTYPES[k], hunt = !d.timid && !d.neutral, n = save.tro[k] || 0, life = save.kv[k] || 0;
+      if (!hunt && !life) return;
+      const val = EXCH.tro[k] || 0;
+      rows += '<div class="bRow"><span class="nm">🦖 ' + d.name + '<small>' + (hunt ? 'Trofi: ' + n + ' · bernilai ' + val + ' poin/ekor · ' : 'Hewan buruan · ') + 'total dikalahkan ' + life + '</small></span>' +
+        (hunt ? '<button class="bBtn" data-ex="' + k + '"' + (n ? '' : ' disabled') + '>Tukar +' + n * val + '</button>' : '<span class="vl">—</span>') + '</div>';
+    });
+    if (!rows) rows = '<div class="bRow"><span class="nm">Belum ada. Kalahkan dinosaurus untuk mendapat trofi.</span></div>';
+    const tv = bagTroValue(), est = (save.pts / EXCH.ptPerVosil).toFixed(3);
+    bagSum.textContent = '🪙 ' + save.coins + '  ·  ⭐ ' + save.pts + ' poin';
+    bagBody.innerHTML =
+      '<h4>Koin</h4><div class="bRow"><span class="nm">🪙 ' + save.coins + ' koin<small>' + EXCH.coinPerPt + ' koin = 1 poin tukar</small></span>' +
+      '<button class="bBtn" data-ex="coin"' + (coinPts ? '' : ' disabled') + '>Tukar +' + coinPts + ' poin</button></div>' +
+      '<h4>Trofi dinosaurus</h4>' + rows +
+      '<button class="bBtn wide" data-ex="all"' + (tv || coinPts ? '' : ' disabled') + '>Tukar semua aset (+' + (tv + coinPts) + ' poin)</button>' +
+      '<h4>Poin tukar → Token Vosil</h4><div class="bRow"><span class="nm">⭐ ' + save.pts + ' poin tukar<small>' + EXCH.ptPerVosil + ' poin = 1 VOSIL · estimasi ' + est + ' VOSIL</small></span>' +
+      '<button class="bBtn" disabled>Klaim (segera)</button></div>' +
+      (EXCH.note ? '<p id="bagNote" style="color:#ffcc80">📢 ' + esc(EXCH.note) + (EXCH.updated ? ' (' + esc(EXCH.updated) + ')' : '') + '</p>' : '') + '<p id="bagNote">Nilai tukar dapat berubah sewaktu-waktu sesuai kebijakan. Poin tukar tersimpan di perangkat ini. Klaim token akan aktif di tahap wallet World Chain dan diverifikasi server sebelum dikirim.</p>';
+  }
+  function doExchange(what) {
+    let add = 0;
+    if (what === 'coin' || what === 'all') { const c = Math.floor(save.coins / EXCH.coinPerPt); save.coins -= c * EXCH.coinPerPt; add += c; }
+    if (what === 'all') { add += bagTroValue(); save.tro = {}; }
+    else if (what !== 'coin' && save.tro[what]) { add += save.tro[what] * (EXCH.tro[what] || 0); save.tro[what] = 0; }
+    if (add <= 0) return;
+    save.pts += add; save.ptsTotal += add;
+    writeSave();
+    try { window.dispatchEvent(new CustomEvent('bag:exchange', { detail: { points: add, balance: save.pts } })); } catch (e) { /* abaikan */ }
+    renderBag(); refreshPanels();
+    GameAudio.sfx.coin();
+  }
+  function openBag() { bagOpen = true; renderBag(); bagEl.classList.remove('hidden'); }
+  function closeBag() { bagOpen = false; bagEl.classList.add('hidden'); }
+  ['bagBtn', 'bagBtn2'].forEach((id) => {
+    const b = $(id); if (!b) return;
+    b.addEventListener('pointerdown', (e) => e.stopPropagation());
+    b.addEventListener('click', (e) => { e.stopPropagation(); GameAudio.init(); openBag(); });
+  });
+  $('bagX').addEventListener('click', closeBag);
+  bagEl.addEventListener('pointerdown', (e) => { e.stopPropagation(); if (e.target === bagEl) closeBag(); });
+  bagBody.addEventListener('click', (e) => { const b = e.target.closest && e.target.closest('[data-ex]'); if (b && !b.disabled) doExchange(b.getAttribute('data-ex')); });
+
   if (rotBtn) rotBtn.addEventListener('click', () => { enterImmersive(); });
   let autoFsTried = false;
   function autoFs() { if (autoFsTried || isFs()) return; autoFsTried = true; enterImmersive(); }
@@ -2253,6 +2324,8 @@
     p.dead = true;
     p.deadT = 0;
     if (!p.def.timid && !p.def.neutral) kills++;                 // hanya predator yang dihitung
+    save.kv[p.type] = (save.kv[p.type] || 0) + 1;                // statistik seumur hidup
+    if (!p.def.timid && !p.def.neutral) save.tro[p.type] = (save.tro[p.type] || 0) + 1;   // trofi predator = aset yang bisa ditukar
     runCoins += p.def.reward;
     save.coins += p.def.reward;
     player.hunger = Math.min(100, player.hunger + p.def.food);

@@ -1,0 +1,13 @@
+{
+ "diperbarui": "2026-11-21",
+ "catatan": "",
+ "coinPerPt": 10,
+ "ptPerVosil": 1000,
+ "trofi": {
+  "raptor": 2,
+  "velo": 2,
+  "carno": 6,
+  "rex": 10,
+  "spino": 12
+ }
+}

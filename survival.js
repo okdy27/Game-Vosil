@@ -1936,7 +1936,7 @@
     player.yaw = Math.atan2(-(Zn.cx - player.x), -(Zn.cz - player.z));
     player.invuln = Math.max(player.invuln, 1.2);
     player.stamina = Math.min(player.stamina, 45);
-    camX = player.x; camZ = player.z;
+    camX = player.x; camZ = player.z; camGy = player.gnd;
     hurtT = 0.15; shake = Math.max(shake, 0.4);
     GameAudio.sfx.splash();
     toast('🕳️ Jatuh ke jurang! Kamu tidak mati, kembali ke tepi', 2.6);
@@ -1946,7 +1946,7 @@
     player.vx = player.vz = 0; player.y = 0; player.vy = 0;
     player.gnd = heightAt(player.x, player.z);
     player.invuln = Math.max(player.invuln, 1.0);
-    camX = player.x; camZ = player.z;
+    camX = player.x; camZ = player.z; camGy = player.gnd;
     starBurst(player.x, player.gnd + 1.4, player.z, 14, 'gain');
     GameAudio.sfx.power();
     toast('🚪 Kamu kembali ke titik awal membawa harta!', 2.6);
@@ -1960,7 +1960,7 @@
       if (!Zn) continue;
       const d = Math.hypot(player.x - Zn.cx, player.z - Zn.cz);
       if (d < 100 && !zoneObjs.has(Zn.id)) zoneObjs.set(Zn.id, buildZoneObjs(Zn));
-      if (d < 85 && !zoneSeen.has(Zn.id)) { zoneSeen.add(Zn.id); toast('🪨 Area Tantangan Lompat! Lompati batu menuju pulau harta', 3.2); }
+      if (d < 85 && !zoneSeen.has(Zn.id)) { zoneSeen.add(Zn.id); toast('🪨 Area Tantangan Lompat! Tips: LARI lalu LOMPAT = lompatan jauh', 4); }
     }
     for (const [id, O] of Array.from(zoneObjs)) {
       if (Math.hypot(player.x - O.Zn.cx, player.z - O.Zn.cz) > 135) { disposeZoneObjs(O); zoneObjs.delete(id); continue; }
@@ -3412,7 +3412,7 @@
     }
     climbToastCd -= dt;
     if (lastWet && !swimming) slopeMul *= 0.7;          // mengarungi air dangkal
-    const target = (sprinting ? SPRINT : WALK) * mag * speedMul * slopeMul;
+    const target = (sprinting ? SPRINT : WALK) * mag * speedMul * slopeMul * (player.y > 0 ? (player.airBoost || 1) : 1);
     let tx = mag > 0 ? (ix / mag) * target : 0, tz = mag > 0 ? (iz / mag) * target : 0;
     if (slide) { tx = 0; tz = 0; }
     const k = Math.min(1, dt * 12);
@@ -3443,7 +3443,7 @@
       if (ny <= 0) { ny = 0; if (player.vy < 0) { player.vy = 0; puff(6, player.x, player.z, 0.5); GameAudio.sfx.land(); } }
       player.y = ny; player.gnd = newG;
       const Zf = zoneNear(player.x, player.z);
-      if (Zf && player.gnd + player.y < Zf.h0 - 6) respawnFromChasm(Zf);                                // jatuh ke jurang: tidak mati
+      if (Zf && player.gnd + player.y < Zf.floor + 3) respawnFromChasm(Zf);                                // jatuh ke jurang: tidak mati
     }
 
     const spd = Math.hypot(player.vx, player.vz);
@@ -3452,7 +3452,13 @@
     // lompat
     if (input.jump) {
       input.jump = false;
-      if (player.y === 0 && player.vy === 0 && !swimming) { player.vy = JUMP_V; GameAudio.sfx.jump(); }
+      if (player.y === 0 && player.vy === 0 && !swimming) {
+        const runJump = sprinting && Math.hypot(player.vx, player.vz) > 6.5;        // lari lalu lompat = lompatan tinggi dan jauh
+        player.vy = JUMP_V * (runJump ? 1.18 : 1.08);
+        player.airBoost = runJump ? 1.35 : 1;
+        if (runJump) player.stamina = Math.max(0, player.stamina - 8);
+        GameAudio.sfx.jump();
+      }
     }
     if (player.y > 0 || player.vy > 0) {
       player.vy -= GRAVITY * dt;
@@ -3829,7 +3835,9 @@
       sy = (Math.random() - 0.5) * shake * 0.5;
       shake = Math.max(0, shake - dt * 2.5);
     }
-    camGy += ((player.gy || 0) - camGy) * Math.min(1, dt * 4);
+    // kamera mengikuti tinggi dino sebenarnya (termasuk saat melompat / jatuh), bukan hanya tinggi tanah
+    const fy = (player.gy || 0) + (player.y || 0);
+    camGy += (fy - camGy) * Math.min(1, dt * ((player.y > 0.05 || player.vy) ? 10 : 4));
     if (state === 'menu') { camYaw = clock * 0.45; camPitch = 0.5; }     // menu: kamera memutari dino pilihan
     const R = 12.6 * grow, ce = Math.cos(camPitch), se = Math.sin(camPitch);
     const sy0 = Math.sin(camYaw), cy0 = Math.cos(camYaw);

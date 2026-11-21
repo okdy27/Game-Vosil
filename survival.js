@@ -40,6 +40,7 @@
   const THIRST_RATE = 0.5;          // turun per detik (habis dalam ~3,3 menit)
   const STARVE_DMG = 2.2;           // nyawa berkurang per detik jika lapar/haus habis
   const REGEN = 1.6;                // nyawa pulih per detik jika kenyang & tidak diserang
+  const COIN_DENSITY = 0.5, KILL_REWARD_MUL = 0.5;   // poin dibuat lebih langka: koin di tanah separuh, hadiah bunuh separuh
   const BUSH_REGROW = 90;           // detik sampai buah tumbuh lagi
   const POWER_TIME = 10;            // detik mode kuat
   const SAVE_KEY = 'vosil_survival_save_v1';
@@ -858,9 +859,9 @@
 
     // gugusan koin
     let ck = 0;
-    for (let i = 0, n = cnt(biome.coin); i < n; i++) {
+    for (let i = 0, n = cnt(biome.coin * COIN_DENSITY); i < n; i++) {
       const pos = tryPlace(4.2); if (!pos) continue;          // ruang cukup supaya koin tidak menempel pohon / batu
-      const count = 3 + Math.floor(rng() * 4);
+      const count = 2 + Math.floor(rng() * 3);
       const ang = rng() * Math.PI * 2;
       for (let k = 0; k < count; k++) {
         const id = key + ':c' + (ck++);
@@ -1007,6 +1008,7 @@
     pondCache.clear();
     for (const f of flyCoins) scene.remove(f.mesh);
     flyCoins.length = 0;
+    clearDrops();
   }
 
   function pushOut(e, rad) {                        // dorong keluar dari pohon, batu, dan kaktus
@@ -1655,6 +1657,71 @@
     }
   }
 
+
+  // ---------- Kantong koin: koin tumpah saat dino diserang ----------
+  // Koin hasil perjalanan ini ada di 'kantong'. Terkena serangan -> sebagian tumpah perlahan; HP <= 25% -> semuanya tumpah.
+  // Koin yang tumpah dan diambil kembali hanya bernilai 50%.
+  const SPILL_HIT = 0.12, SPILL_LOW_HP = 0.25, SPILL_BACK = 0.5, DROP_LIFE = 32;
+  const drops = [], spillQ = [];
+  let lowSpilled = false;
+  const pouch = () => Math.max(0, Math.min(runCoins, save.coins));
+  function spillCoins(lost, slow) {
+    lost = Math.floor(lost);
+    if (lost <= 0) return;
+    runCoins -= lost; save.coins -= lost;                  // hilang dari kantong saat itu juga
+    if (runCoins < 0) runCoins = 0;
+    const k = Math.max(1, Math.min(lost, slow ? 5 : 14));
+    let left = lost;
+    for (let i = 0; i < k; i++) {
+      const portion = i === k - 1 ? left : Math.floor(lost / k);
+      left -= portion;
+      spillQ.push({ at: clock + i * (slow ? 0.2 : 0.035), val: Math.max(1, Math.round(portion * SPILL_BACK)), n: portion });
+    }
+    showDmg(player.x, (player.gy || 0) + player.y + 3.3 * scaleNow / 1.1, player.z, '-' + lost + ' 🪙', 'hurt', 1.15);
+    writeSave();
+  }
+  function emitDrop(val) {
+    const m = makeCoin();
+    m.scale.setScalar(0.9);
+    const ang = Math.random() * Math.PI * 2, sp = rand(2.2, 5.2);
+    const y0 = (player.gy || 0) + player.y + 1.4 * scaleNow / 1.1;
+    m.position.set(player.x, y0, player.z);
+    scene.add(m);
+    drops.push({ mesh: m, x: player.x, y: y0, z: player.z, vx: Math.cos(ang) * sp, vy: rand(5, 8.5), vz: Math.sin(ang) * sp, val, t: 0, rest: false });
+    starBurst(player.x, y0, player.z, 2, 'gain');
+    GameAudio.sfx.coin();
+  }
+  function updateDrops(dt) {
+    for (let i = spillQ.length - 1; i >= 0; i--) if (clock >= spillQ[i].at) { emitDrop(spillQ[i].val); spillQ.splice(i, 1); }
+    const sc = scaleNow / 1.1;
+    for (let i = drops.length - 1; i >= 0; i--) {
+      const d = drops[i];
+      d.t += dt;
+      d.mesh.rotation.y += dt * (d.rest ? 3 : 14);
+      if (!d.rest) {
+        d.vy -= 24 * dt;
+        d.x += d.vx * dt; d.z += d.vz * dt; d.y += d.vy * dt;
+        const gnd = Math.max(heightAt(d.x, d.z), WL) + 0.7;
+        if (d.y <= gnd) {
+          d.y = gnd;
+          if (d.vy < -3.5) { d.vy = -d.vy * 0.4; d.vx *= 0.55; d.vz *= 0.55; } else { d.rest = true; d.vx = d.vz = d.vy = 0; }
+        }
+        d.mesh.position.set(d.x, d.y, d.z);
+      } else d.mesh.position.y = Math.max(heightAt(d.x, d.z), WL) + 0.7 + Math.sin(clock * 4 + i) * 0.1;
+      d.mesh.visible = d.t < DROP_LIFE - 6 || Math.sin(d.t * 22) > -0.2;       // berkedip sebelum lenyap
+      const dx = d.x - player.x, dz = d.z - player.z;
+      if (d.t > 0.45 && dx * dx + dz * dz < (1.7 * sc) * (1.7 * sc) && player.y < 1.8) {
+        runCoins += d.val; save.coins += d.val;
+        flyCoins.push({ mesh: d.mesh, t: 0, x0: d.x, y0: d.mesh.position.y, z0: d.z });
+        d.mesh.visible = true;
+        showDmg(d.x, d.mesh.position.y + 0.5, d.z, '+' + d.val, 'gain', 0.9);
+        GameAudio.sfx.coin();
+        drops.splice(i, 1);
+      } else if (d.t > DROP_LIFE) { scene.remove(d.mesh); drops.splice(i, 1); }
+    }
+  }
+  function clearDrops() { for (const d of drops) scene.remove(d.mesh); drops.length = 0; spillQ.length = 0; lowSpilled = false; }
+
   // ---------- Angka kerusakan melayang ----------
   const fxLayer = $('fx');
   const dmgPool = [];
@@ -2200,7 +2267,7 @@
 
   // ---------- Tas: aset terkumpul + penukaran poin (token Vosil menyusul di tahap wallet) ----------
   // Alur: Koin & Trofi dino --(tukar)--> Poin Tukar --(klaim, tahap wallet/server)--> Token Vosil
-  const EXCH = { coinPerPt: 10, tro: { raptor: 2, velo: 2, carno: 6, rex: 10, spino: 12 }, ptPerVosil: 1000, note: '', updated: '' };   // nilai bawaan
+  const EXCH = { coinPerPt: 20, tro: { raptor: 1, velo: 1, carno: 3, rex: 5, spino: 6 }, ptPerVosil: 1000, note: '', updated: '' };   // nilai bawaan
   // Kebijakan penukaran bisa diubah kapan saja TANPA ubah kode: edit config.json di repo lalu Commit + Sync (dibaca ulang setiap game dibuka).
   const esc = (v) => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
   const posNum = (v) => typeof v === 'number' && isFinite(v) && v > 0;
@@ -2247,6 +2314,7 @@
     else if (what !== 'coin' && save.tro[what]) { add += save.tro[what] * (EXCH.tro[what] || 0); save.tro[what] = 0; }
     if (add <= 0) return;
     save.pts += add; save.ptsTotal += add;
+    runCoins = Math.min(runCoins, Math.max(0, save.coins));     // koin yang sudah ditukar jadi poin = aman, tidak ikut tumpah
     writeSave();
     try { window.dispatchEvent(new CustomEvent('bag:exchange', { detail: { points: add, balance: save.pts } })); } catch (e) { /* abaikan */ }
     renderBag(); refreshPanels();
@@ -2298,7 +2366,12 @@
     shake = Math.max(shake, 0.6);
     GameAudio.sfx.hit();
     GameAudio.sfx.dino(save.char, 'hurt', 0.9);
-    if (player.hp <= 0) { player.hp = 0; die(reason); }
+    if (player.hp <= 0) { player.hp = 0; die(reason); return true; }
+    const pc = pouch();
+    if (pc > 0) {
+      if (!lowSpilled && player.hp <= 100 * SPILL_LOW_HP) { lowSpilled = true; spillCoins(pc, false); toast('😱 HP kritis! Semua koin di kantong tumpah', 2.4); }   // sisa kantong tumpah semua
+      else if (!lowSpilled) spillCoins(Math.max(1, Math.ceil(pc * SPILL_HIT)), true);                                                                   // terkena serangan: tumpah perlahan
+    }
     return true;
   }
 
@@ -2335,12 +2408,13 @@
     if (!p.def.timid && !p.def.neutral) kills++;                 // hanya predator yang dihitung
     save.kv[p.type] = (save.kv[p.type] || 0) + 1;                // statistik seumur hidup
     if (!p.def.timid && !p.def.neutral) save.tro[p.type] = (save.tro[p.type] || 0) + 1;   // trofi predator = aset yang bisa ditukar
-    runCoins += p.def.reward;
-    save.coins += p.def.reward;
+    const rw = Math.ceil(p.def.reward * KILL_REWARD_MUL);
+    runCoins += rw;
+    save.coins += rw;
     player.hunger = Math.min(100, player.hunger + p.def.food);
     burst(14, p.x, 1, p.z);
     starBurst(p.x, heightAt(p.x, p.z) + 1.3 * p.def.scale, p.z, 12, 'gain');
-    if (p.def.reward) showDmg(p.x, heightAt(p.x, p.z) + 2.2 * p.def.scale, p.z, '+' + p.def.reward + ' 🪙', 'gain', 1.1);
+    if (rw) showDmg(p.x, heightAt(p.x, p.z) + 2.2 * p.def.scale, p.z, '+' + rw + ' 🪙', 'gain', 1.1);
     const xp = (p.def.timid || p.def.neutral) ? Math.round(p.def.hp * 0.18) : Math.round(p.def.hp * 0.45 + p.def.reward * 2);
     gainXp(xp);
     showDmg(p.x + 0.6, heightAt(p.x, p.z) + 1.6 * p.def.scale, p.z, '+' + xp + ' XP', 'xp', 1);
@@ -2647,7 +2721,7 @@
     const alive = horde.members.filter((p) => !p.dead && preds.includes(p));
     if (!alive.length) {
       const bonus = horde.n * 12;
-      gainXp(bonus); runCoins += horde.n * 4; save.coins += horde.n * 4; writeSave();
+      gainXp(bonus); runCoins += horde.n * 2; save.coins += horde.n * 2; writeSave();
       toast('🏆 Kawanan dikalahkan! +' + bonus + ' XP, +' + horde.n * 4 + ' koin', 3);
       GameAudio.sfx.record();
       horde = null; hordeCd = rand(100, 160);
@@ -3435,6 +3509,8 @@
     updateSwimRings(dt);
     updateMinimap(dt);
     updateFlyCoins(dt);
+    updateDrops(dt);
+    if (lowSpilled && player.hp > 45) lowSpilled = false;       // pulih -> kantong yang baru bisa tumpah semua lagi
 
     if (toastT > 0) { toastT -= dt; if (toastT <= 0) toastEl.classList.remove('show'); }
     if (hurtT > 0) { hurtT -= dt; hurtEl.classList.add('on'); } else hurtEl.classList.remove('on');

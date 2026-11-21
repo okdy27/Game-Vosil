@@ -741,10 +741,12 @@
   let logoTex = null;
   try { if (THREE.TextureLoader) { logoTex = new THREE.TextureLoader().load('vosil-logo-256.png'); } } catch (e) { logoTex = null; }
   const monSlabGeo = new THREE.BoxGeometry(2.3, 3.1, 0.55), monBaseGeo = new THREE.BoxGeometry(2.8, 0.35, 0.95), monPlaqueGeo = new THREE.PlaneGeometry(1.75, 1.75);
+  const monFoundGeo = new THREE.BoxGeometry(2.6, 1.6, 0.8);
   const mMonStone = std(0x8d8f8a), mMonBase = std(0x6f716c);
   const mMonLogo = new THREE.MeshBasicMaterial(logoTex ? { map: logoTex } : { color: 0x0e1f1b });
   function makeMonument() {
     const g = new THREE.Group();
+    const fnd = new THREE.Mesh(monFoundGeo, mMonBase); fnd.position.y = -0.55; g.add(fnd);      // pondasi tertanam: tidak ada celah di lereng
     const base = new THREE.Mesh(monBaseGeo, mMonBase); base.position.y = 0.17; g.add(base);
     const slab = new THREE.Mesh(monSlabGeo, mMonStone); slab.position.y = 1.9; g.add(slab);
     for (const sgn of [1, -1]) {
@@ -991,15 +993,30 @@
 
     // monumen logo Vosil: satu dekat titik awal, selebihnya jarang
     if ((cx === 0 && cz === 0) || rng() < 0.07) {
-      const pos = tryPlace(2.8);
-      if (pos) {
+      // cari tempat yang benar-benar datar (tepi tebing / lereng bikin papan setengah mengambang)
+      let spot = null;
+      for (let i = 0; i < (cx === 0 && cz === 0 ? 60 : 18) && !spot; i++) {
+        const x = ox + 3 + rng() * (CH - 6), z = oz + 3 + rng() * (CH - 6), rot = rng() * Math.PI * 2;
+        if (zoneNear(x, z, -18)) continue;
+        if (!placed.every((p) => (p.x - x) * (p.x - x) + (p.z - z) * (p.z - z) > (p.r + 2.8) * (p.r + 2.8))) continue;
+        const cs = Math.cos(rot), sn = Math.sin(rot);
+        let lo = 1e9, hi = -1e9;
+        for (const [u, v] of [[0, 0], [1.5, 0.6], [-1.5, 0.6], [1.5, -0.6], [-1.5, -0.6], [2.6, 0], [-2.6, 0], [0, 2.6], [0, -2.6]]) {   // alas papan + sekelilingnya
+          const h = heightAt(x + u * cs - v * sn, z + u * sn + v * cs);
+          if (h < lo) lo = h; if (h > hi) hi = h;
+        }
+        if (lo < WL + 0.8 || hi - lo > 0.45) continue;
+        spot = { x, z, rot, y: lo };
+      }
+      if (spot) {
+        placed.push({ x: spot.x, z: spot.z, r: 2.8 });
         const mon = makeMonument();
-        mon.position.set(pos.x, heightAt(pos.x, pos.z), pos.z);
-        mon.rotation.y = rng() * Math.PI * 2;
+        mon.position.set(spot.x, spot.y, spot.z);        // berdiri di titik terendah alasnya, pondasi tertanam ke tanah
+        mon.rotation.y = spot.rot;
         mon.userData.keep = true;                      // jangan digabung (merge) -> tekstur logo hilang menjadi hitam
         group.add(mon);
-        ch.colliders.push({ x: pos.x, z: pos.z, r: 1.35 });
-        sh(pos.x, pos.z, 1.2, 1.6);
+        ch.colliders.push({ x: spot.x, z: spot.z, r: 1.35 });
+        sh(spot.x, spot.z, 1.2, 1.6);
       }
     }
 

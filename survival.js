@@ -1626,7 +1626,7 @@
   let preds = [], spawnCd = 4, animalCd = 2, chased = false, isNight = false, lastBiome = null;
   let biteVoiceT = -9;
   let swimming = false, swimBlend = 0, swimToastCd = 0, strokeT = 0, ringT = 0;
-  let climbLocked = false, climbToastCd = 0, biomeCd = 0, drinkCd = 0, toastT = 0, saveT = 0, hurtT = 0, shake = 0;
+  let lastStepIdx = 0, climbLocked = false, climbToastCd = 0, biomeCd = 0, drinkCd = 0, toastT = 0, saveT = 0, hurtT = 0, shake = 0;
   let camGy = 0, lvDay = 0;
   let camYaw = 0, camPitch = 0.71, camLift = 0;
   let camX = 0, camZ = 0, camLead = { x: 0, z: 0 }, lastWet = false, shown = {};
@@ -3216,6 +3216,13 @@
     phase += (spd * 1.5 + 1.2) * dt * (spd > 0.4 ? 1 : 0.3);
     const run = clamp(spd / 6, 0, 1.3);
     const air = player.y > 0.001;
+    {                                                     // langkah kaki pemain: jalan lebih ringan, lari lebih berat
+      const si = Math.floor(phase / Math.PI);
+      if (si !== lastStepIdx) {
+        lastStepIdx = si;
+        if (state === 'playing' && !air && swimBlend < 0.3 && spd > 0.8) GameAudio.sfx.foot(spd > WALK * 1.25 ? 'run' : 'walk', 0.9, 0, scaleNow, lastWet);
+      }
+    }
     swimBlend = approach(swimBlend, swimming ? 1 : 0, 6);
     const groundY = heightAt(player.x, player.z);
     const gy = swimBlend > 0.01 ? lerp(groundY, WL - 0.78 * (scaleNow / 1.1) + Math.sin(clock * 2.4) * 0.06, swimBlend) : groundY;
@@ -3254,6 +3261,17 @@
       }
       c.root.rotation.y = p.yaw;
       p.phase += (p.speedNow * 1.5 + 0.8) * dt;
+      {
+        const si = Math.floor(p.phase / Math.PI);
+        if (si !== p.stepIdx) {
+          p.stepIdx = si;
+          if (p.speedNow > 0.8 && !deepP) {
+            const fdx = p.x - player.x, fdz = p.z - player.z, fd = Math.hypot(fdx, fdz);
+            const fr = p.def.giant ? 60 : 38, fv = clamp(1 - fd / fr, 0, 1) * (p.def.giant ? 1.3 : 0.8);
+            if (fv > 0.05) GameAudio.sfx.foot(p.speedNow > 7 ? 'run' : 'walk', fv, fd > 3 ? clamp(((fdx * Math.cos(camYaw) - fdz * Math.sin(camYaw)) / fd) * 0.9, -0.9, 0.9) : 0, p.def.scale, false);
+          }
+        }
+      }
       let atk = -1;
       const wp = p.state === 'windup' ? clamp(1 - p.t / p.t0, 0, 1) : 0;
       if (p.state === 'strike') atk = clamp(p.st / p.dur, 0, 1);                      // menerkam: kepala menyodok, rahang membuka

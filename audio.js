@@ -63,7 +63,8 @@ const GameAudio = (() => {
         } catch (e) { /* nilai bawaan */ }
         const trim = actx.createGain();                     // sisakan ruang ~3 dB di bawah batas keras speaker
         trim.gain.value = 0.9;
-        master.connect(hp); hp.connect(comp); comp.connect(lim); lim.connect(trim); trim.connect(actx.destination);
+        const pre = actx.createGain(); pre.gain.value = 2.0;            // makeup gain: dorong sinyal ke limiter -> jauh lebih nyaring di volume HP rendah, puncak tetap dikunci
+        master.connect(hp); hp.connect(comp); comp.connect(pre); pre.connect(lim); lim.connect(trim); trim.connect(actx.destination);
         musicBus = actx.createGain();
         musicBus.connect(master);
         sfxBus = actx.createGain();
@@ -133,6 +134,7 @@ const GameAudio = (() => {
   }
 
   // ----- Efek suara -----
+  let footAt = 0, footN = 0;
   const sfxOk = () => !!(actx && sfxBus && noiseBuf && prefs.sfx);
   let coinCombo = 0, lastCoinAt = 0;
 
@@ -163,6 +165,22 @@ const GameAudio = (() => {
       const t = actx.currentTime;
       tone(sfxBus, 95, t, 0.08, 'sine', 0.1, 55);
       noise(sfxBus, t, 0.05, 0.05, 'lowpass', 350);
+    },
+    // langkah kaki dino: kind = walk | run; size = skala tubuh; wet = di air dangkal
+    foot(kind, vol, pan, size, wet) {
+      if (!sfxOk()) return;
+      const t = actx.currentTime;
+      if (t - footAt > 0.12) { footAt = t; footN = 0; }
+      if (++footN > 3) return;                                // maks 3 langkah per 120 ms (kawanan tidak menumpuk)
+      const run = kind === 'run', sz = size || 1, v = Math.min(1, vol == null ? 1 : vol) * (run ? 1 : 0.65);
+      if (v < 0.03) return;
+      let dest = sfxBus;
+      try { if (pan && actx.createStereoPanner) { const sp = actx.createStereoPanner(); sp.pan.value = Math.max(-1, Math.min(1, pan)); sp.connect(sfxBus); dest = sp; } } catch (e) { dest = sfxBus; }
+      const f0 = Math.max(105, 165 - sz * 28) * (0.94 + Math.random() * 0.12);   // tidak di bawah ~100 Hz: speaker HP tidak bisa
+      tone(dest, f0, t, run ? 0.13 : 0.1, 'sine', 0.55 * v, f0 * 0.7);               // hentakan
+      noise(dest, t, run ? 0.1 : 0.07, 0.4 * v, 'bandpass', (run ? 950 : 650) * (0.9 + Math.random() * 0.2));  // gesekan tanah / kerikil
+      if (run) noise(dest, t + 0.02, 0.05, 0.18 * v, 'highpass', 2600);                // derak saat berlari
+      if (wet) noise(dest, t, 0.18, 0.3 * v, 'bandpass', 1500);                         // cipratan
     },
     coin() {
       if (!sfxOk()) return;
@@ -624,7 +642,7 @@ const GameAudio = (() => {
     let burstAt = 0, burstN = 0;
     const lastAt = {};
     Object.keys(sfx).forEach((k) => {
-      if (k === 'dino' || typeof sfx[k] !== 'function') return;
+      if (k === 'dino' || k === 'foot' || typeof sfx[k] !== 'function') return;
       const fn = sfx[k];
       sfx[k] = function () {
         const now = actx ? actx.currentTime : 0;

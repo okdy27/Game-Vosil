@@ -288,7 +288,7 @@ const GameAudio = (() => {
   function duckMusic(dur) {
     if (!duckG || !actx) return;
     const t = actx.currentTime, g = duckG.gain;
-    try { g.cancelScheduledValues(t); g.setTargetAtTime(0.35, t, 0.04); g.setTargetAtTime(1, t + Math.min(2.5, dur) + 0.05, 0.5); } catch (e) { /* abaikan */ }
+    try { g.cancelScheduledValues(t); g.setTargetAtTime(0.12, t, 0.03); g.setTargetAtTime(1, t + Math.min(2.5, dur) + 0.3, 0.7); } catch (e) { /* abaikan */ }
   }
   const voiceEnds = [], sigAt = {};
   // ----- Suara dinosaurus dari FILE (opsional): letakkan di folder audio/ + audio/manifest.json -----
@@ -321,7 +321,7 @@ const GameAudio = (() => {
     try {
       const src = actx.createBufferSource(); src.buffer = e.buf;
       const hpf = actx.createBiquadFilter(); hpf.type = 'highpass'; hpf.frequency.value = 110; hpf.Q.value = 0.5;   // buang sub-bass untuk speaker HP
-      const out = actx.createGain(); out.gain.value = Math.min(1.2, v * 2.2) * e.g;
+      const out = actx.createGain(); out.gain.value = Math.min(1.2, v * 2.2) * e.g * 2;
       src.connect(hpf); hpf.connect(out);
       if (pan && actx.createStereoPanner) { const sp = actx.createStereoPanner(); sp.pan.value = Math.max(-1, Math.min(1, pan)); out.connect(sp); sp.connect(voiceBus); } else out.connect(voiceBus);
       src.start(now);
@@ -582,13 +582,18 @@ const GameAudio = (() => {
   // Gagal semua -> musik prosedural bawaan tetap dipakai.
   const music = (() => {
     let state = 'idle', gain = null, src = null, duckT = null;
-    const BGM_G = 0.42;                                  // musik file jauh lebih keras dari sintesis -> diturunkan
+    let BGM_G = 0.6;                                     // dihitung ulang dari kenyaringan (RMS) file agar selalu 'pengisi latar'
     const CANDS = ['bgm.ogg', 'bgm.webm', 'bgm.m4a', 'bgm.mp3'];
     const decode = (ab) => new Promise((res, rej) => { try { const p = actx.decodeAudioData(ab, res, rej); if (p && p.then) p.then(res, rej); } catch (e) { rej(e); } });
     function tryFile(i) {
       if (i >= CANDS.length) { state = 'none'; return; }
       fetch(CANDS[i]).then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error('404')))).then(decode).then((buf) => {
         if (state !== 'loading') return;
+        let sum = 0, n = 0;                               // samakan kenyaringan musik ke target tetap, berapa pun mastering file Anda
+        const cd = buf.getChannelData(0);
+        for (let k = 0; k < cd.length; k += 4) { sum += cd[k] * cd[k]; n++; }
+        const rms = Math.sqrt(sum / Math.max(1, n)) || 0.1;
+        BGM_G = Math.max(0.1, Math.min(2.5, 0.045 / rms));
         const hp = actx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 70; hp.Q.value = 0.5;   // buang sub-bass untuk speaker HP
         gain = actx.createGain(); gain.gain.value = 0;
         duckG = actx.createGain(); duckG.gain.value = 1;
@@ -600,7 +605,7 @@ const GameAudio = (() => {
         gain.gain.setTargetAtTime(BGM_G, actx.currentTime, 1.2);
         duckT = setInterval(() => {                       // saat dikeroyok musik sedikit mengecil agar efek tempur terdengar
           const dg = Math.max(0, Math.min(1, dangerFn() || 0));
-          gain.gain.setTargetAtTime(BGM_G - 0.12 * dg, actx.currentTime, 0.4);
+          gain.gain.setTargetAtTime(BGM_G * (1 - 0.25 * dg), actx.currentTime, 0.4);
         }, 120);
       }).catch(() => tryFile(i + 1));
     }

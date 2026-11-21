@@ -283,6 +283,13 @@ const GameAudio = (() => {
     hurt:   { d: 0.38, p: 1.3, v: 0.9, end: 0.7 },
     die:    { d: 1.3, p: 0.85, v: 1, end: 0.45 }
   };
+  let duckG = null;
+  // musik file mengecil sebentar tiap ada suara dino -> suara dino jelas, musik tetap menyatu (sidechain sederhana)
+  function duckMusic(dur) {
+    if (!duckG || !actx) return;
+    const t = actx.currentTime, g = duckG.gain;
+    try { g.cancelScheduledValues(t); g.setTargetAtTime(0.35, t, 0.04); g.setTargetAtTime(1, t + Math.min(2.5, dur) + 0.05, 0.5); } catch (e) { /* abaikan */ }
+  }
   const voiceEnds = [], sigAt = {};
   // ----- Suara dinosaurus dari FILE (opsional): letakkan di folder audio/ + audio/manifest.json -----
   // manifest: { "rex_attack": "rex_attack.ogg", "rex": "rex.ogg", ... }  (kunci "spesies_jenis" lebih diutamakan daripada "spesies")
@@ -314,7 +321,7 @@ const GameAudio = (() => {
     try {
       const src = actx.createBufferSource(); src.buffer = e.buf;
       const hpf = actx.createBiquadFilter(); hpf.type = 'highpass'; hpf.frequency.value = 110; hpf.Q.value = 0.5;   // buang sub-bass untuk speaker HP
-      const out = actx.createGain(); out.gain.value = Math.min(1, v * 1.6) * e.g;
+      const out = actx.createGain(); out.gain.value = Math.min(1.2, v * 2.2) * e.g;
       src.connect(hpf); hpf.connect(out);
       if (pan && actx.createStereoPanner) { const sp = actx.createStereoPanner(); sp.pan.value = Math.max(-1, Math.min(1, pan)); out.connect(sp); sp.connect(voiceBus); } else out.connect(voiceBus);
       src.start(now);
@@ -337,6 +344,7 @@ const GameAudio = (() => {
     lastVoiceAt = now; sigAt[sig] = now;
     const v = Math.min(1.2, vol == null ? 1 : vol) * V.vol * K.v * 0.5;
     if (v < 0.01) return;
+    duckMusic(V.dur * K.d);
     if (playSample(species, kind, v, pan, now)) return;     // file suara buatan pengguna (audio/manifest.json) bila ada
     const t = now, d = V.dur * K.d;
     voiceEnds.push(t + d + 0.1); voiceEnds.sort((a, b) => a - b);
@@ -574,6 +582,7 @@ const GameAudio = (() => {
   // Gagal semua -> musik prosedural bawaan tetap dipakai.
   const music = (() => {
     let state = 'idle', gain = null, src = null, duckT = null;
+    const BGM_G = 0.42;                                  // musik file jauh lebih keras dari sintesis -> diturunkan
     const CANDS = ['bgm.ogg', 'bgm.webm', 'bgm.m4a', 'bgm.mp3'];
     const decode = (ab) => new Promise((res, rej) => { try { const p = actx.decodeAudioData(ab, res, rej); if (p && p.then) p.then(res, rej); } catch (e) { rej(e); } });
     function tryFile(i) {
@@ -582,21 +591,22 @@ const GameAudio = (() => {
         if (state !== 'loading') return;
         const hp = actx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 70; hp.Q.value = 0.5;   // buang sub-bass untuk speaker HP
         gain = actx.createGain(); gain.gain.value = 0;
+        duckG = actx.createGain(); duckG.gain.value = 1;
         src = actx.createBufferSource(); src.buffer = buf; src.loop = true;
-        src.connect(hp); hp.connect(gain); gain.connect(musicBus);
+        src.connect(hp); hp.connect(gain); gain.connect(duckG); duckG.connect(musicBus);
         src.start(0);
         state = 'file';
         procMusic.stop();
-        gain.gain.setTargetAtTime(0.9, actx.currentTime, 1.2);
+        gain.gain.setTargetAtTime(BGM_G, actx.currentTime, 1.2);
         duckT = setInterval(() => {                       // saat dikeroyok musik sedikit mengecil agar efek tempur terdengar
           const dg = Math.max(0, Math.min(1, dangerFn() || 0));
-          gain.gain.setTargetAtTime(0.9 - 0.3 * dg, actx.currentTime, 0.4);
+          gain.gain.setTargetAtTime(BGM_G - 0.12 * dg, actx.currentTime, 0.4);
         }, 120);
       }).catch(() => tryFile(i + 1));
     }
     return {
       start() {
-        if (state === 'file') { gain.gain.setTargetAtTime(0.9, actx.currentTime, 0.8); return; }
+        if (state === 'file') { gain.gain.setTargetAtTime(BGM_G, actx.currentTime, 0.8); return; }
         procMusic.start();                    // langsung ada suara; diganti file begitu siap
         if (state === 'idle' && actx && musicBus && typeof fetch === 'function') { state = 'loading'; tryFile(0); }
       },

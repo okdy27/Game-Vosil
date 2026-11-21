@@ -280,9 +280,75 @@
       }
       if (!rough) p = { x, z, r, base: b0 - 0.3 };
     }
+    if (p && zoneNear(p.x, p.z, 12)) p = null;                  // tidak ada kolam di area tantangan
     pondCache.set(key, p);
     return p;
   }
+
+  // ---------- Area Tantangan Lompat: jurang + batu pijakan + pulau harta ----------
+  // Zona berbentuk lingkaran: tepi rata -> jurang (tidak mati, hanya dikembalikan ke tepi) -> pulau harta di tengah.
+  // Hanya bisa dicapai dengan melompati deretan batu pijakan (spiral). Di pulau ada peti, koin, dan pintu kembali ke titik awal.
+  const ZC = 340, ZR = 62, Z_RIM = 34, Z_ISL = 11.5;
+  const zoneCache = new Map();
+  function buildZone(ix, iz) {
+    const rng = mulberry(hash(ix, iz, worldSeed + 777));
+    const first = ix === 0 && iz === 0;                              // satu zona selalu ada ~90 m dari titik awal
+    if (!first && rng() > 0.4) return null;
+    let cx, cz;
+    if (first) { const a = rng() * 6.2832, d = 85 + rng() * 15; cx = Math.cos(a) * d; cz = Math.sin(a) * d; }
+    else { cx = ix * ZC + (rng() - 0.5) * 200; cz = iz * ZC + (rng() - 0.5) * 200; }
+    const h0 = Math.max(rawHeight(cx, cz), WL + 6);
+    const floor = Math.min(h0 - 14, WL - 3);
+    const a0 = first ? Math.atan2(-cz, -cx) : rng() * 6.2832;         // pintu masuk menghadap titik awal
+    const dir = rng() < 0.5 ? 1 : -1;
+    const offs = [0.4, 0.9, 0.3, 1.0, 0.5, 1.1, 0.8], rEnd = 15.8, n = offs.length;
+    const pillars = [];
+    let r = 29.2, a = a0;
+    for (let i = 0; i < n; i++) {
+      if (i > 0) {
+        const rn = 29.2 + (rEnd - 29.2) * i / (n - 1), sp = 6.6 + rng() * 0.6;
+        const c = Math.max(-1, Math.min(1, (r * r + rn * rn - sp * sp) / (2 * r * rn)));
+        a += dir * Math.acos(c); r = rn;
+      }
+      pillars.push({ x: cx + Math.cos(a) * r, z: cz + Math.sin(a) * r, r: 2.1, top: h0 + offs[i] });
+    }
+    return { id: ix + ':' + iz, cx, cz, h0, floor, isl: h0 + 1.2, a0, pillars, entry: { x: cx + Math.cos(a0) * 38, z: cz + Math.sin(a0) * 38 } };
+  }
+  let zonesOff = false;                                           // (dipakai tes otomatis)
+  function zoneCell(ix, iz) {
+    if (zonesOff) return null;
+    const key = ix + ',' + iz;
+    if (zoneCache.has(key)) return zoneCache.get(key);
+    const z = buildZone(ix, iz);
+    zoneCache.set(key, z);
+    return z;
+  }
+  let zcIx = 1e9, zcIz = 1e9, zcVal = null;                        // cache sel terakhir (heightAt dipanggil ribuan kali per frame)
+  function zoneReset() { zoneCache.clear(); zcIx = 1e9; zcVal = null; }
+  function zoneNear(x, z, margin) {
+    const zix = Math.floor((x + ZC / 2) / ZC), ziz = Math.floor((z + ZC / 2) / ZC);
+    if (zix !== zcIx || ziz !== zcIz) { zcIx = zix; zcIz = ziz; zcVal = zoneCell(zix, ziz); }
+    const Zn = zcVal;
+    if (!Zn) return null;
+    const dx = x - Zn.cx, dz = z - Zn.cz, rr = ZR + (margin || 0);
+    return dx * dx + dz * dz < rr * rr ? Zn : null;
+  }
+  function zoneHeight(Zn, d) {
+    const mask = smooth(Z_ISL - 1, Z_ISL + 1, d) * (1 - smooth(Z_RIM - 2.5, Z_RIM, d));
+    return lerp(d < 22 ? Zn.isl : Zn.h0, Zn.floor, mask);
+  }
+  const inChasm = (x, z) => { const Zn = zoneNear(x, z); if (!Zn) return false; const d = Math.hypot(x - Zn.cx, z - Zn.cz); return d > Z_ISL - 1.5 && d < Z_RIM - 0.5; };
+  // tinggi pijakan: tanah, atau puncak batu pijakan bila kaki cukup tinggi (bisa berdiri di atas batu)
+  function supportAt(x, z, feet) {
+    let g = heightAt(x, z);
+    const Zn = zoneNear(x, z);
+    if (Zn) for (const p of Zn.pillars) {
+      const dx = x - p.x, dz = z - p.z;
+      if (dx * dx + dz * dz < p.r * p.r && feet >= p.top - 0.45 && p.top > g) g = p.top;
+    }
+    return g;
+  }
+
   function heightAt(x, z) {
     let h = rawHeight(x, z);
     const rt = riverT(x, z);
@@ -293,6 +359,8 @@
       h = lerp(h, p.base, 1 - smooth(p.r + 1, p.r + 6, d));
       h -= 0.5 * (1 - smooth(p.r - 0.5, p.r + 1.5, d));
     }
+    const Zn = zoneNear(x, z);
+    if (Zn) { const d = Math.hypot(x - Zn.cx, z - Zn.cz); h = lerp(h, zoneHeight(Zn, d), 1 - smooth(40, ZR, d)); }
     return h;
   }
   const mGround = new THREE.MeshLambertMaterial({ vertexColors: true });
@@ -459,6 +527,7 @@
       return m;
     } catch (e) { return new THREE.Mesh(shadowDisc, mShadow); }
   }
+  let shadowFlat = null;                               // bayangan di atas batu pijakan: rata, tidak mengikuti dasar jurang
   function placeShadow(mesh, x, z, gy, r, h) {
     const L = h * 0.35, u = mesh.userData.unit;
     if (!u) {
@@ -471,7 +540,7 @@
     for (let i = 0, n = u.length / 2; i < n; i++) {
       const uu = u[i * 2] * a, vv = -u[i * 2 + 1] * r;
       const wx = cx + uu * SUN_DX - vv * SUN_DZ, wz = cz + uu * SUN_DZ + vv * SUN_DX;
-      pa[i * 3] = wx; pa[i * 3 + 1] = heightAt(wx, wz) + 0.1; pa[i * 3 + 2] = wz;
+      pa[i * 3] = wx; pa[i * 3 + 1] = (shadowFlat !== null ? shadowFlat : heightAt(wx, wz)) + 0.1; pa[i * 3 + 2] = wz;
     }
     mesh.geometry.attributes.position.needsUpdate = true;
   }
@@ -706,6 +775,7 @@
   const chunks = new Map();
   const buildQueue = [];
   let pcx = null, pcz = null;
+  const zoneTaken = new Set(), zoneSeen = new Set();     // harta area tantangan yang sudah diambil / zona yang sudah ditemukan (per permainan)
   const taken = new Set();            // koin & telur yang sudah diambil (dalam satu permainan)
   const eatenAt = new Map();          // semak yang buahnya sudah dimakan -> waktu dimakan
 
@@ -747,6 +817,7 @@
       for (let i = 0; i < 10; i++) {
         const x = ox + 1.5 + rng() * (CH - 3), z = oz + 1.5 + rng() * (CH - 3);
         if (heightAt(x, z) < WL + 0.5) continue;
+        if (zoneNear(x, z, -18)) continue;                       // jangan menaruh pohon/batu di area tantangan
         if (placed.every((p) => (p.x - x) * (p.x - x) + (p.z - z) * (p.z - z) > (p.r + r) * (p.r + r))) {
           placed.push({ x, z, r });
           return { x, z };
@@ -1053,9 +1124,10 @@
     pcx = null; pcz = null;
     taken.clear();
     eatenAt.clear();
-    pondCache.clear();
+    pondCache.clear(); zoneReset();
     for (const f of flyCoins) scene.remove(f.mesh);
     flyCoins.length = 0;
+    clearZoneObjs();
     clearDrops();
   }
 
@@ -1746,6 +1818,19 @@
     for (let i = drops.length - 1; i >= 0; i--) {
       const d = drops[i];
       d.t += dt;
+      if (d.fixed) {                                                    // koin harta area tantangan: diam melayang, tidak lenyap
+        d.mesh.rotation.y += dt * 3;
+        d.mesh.position.y = d.by + Math.sin(clock * 2.6 + d.ph) * 0.16;
+        const fx = d.x - player.x, fz = d.z - player.z;
+        if (fx * fx + fz * fz < (1.7 * sc) * (1.7 * sc) && Math.abs((player.gnd + player.y + 0.9 * sc) - d.y) < 2.3) {
+          runCoins += d.val; save.coins += d.val; zoneTaken.add(d.zkey);
+          flyCoins.push({ mesh: d.mesh, t: 0, x0: d.x, y0: d.mesh.position.y, z0: d.z });
+          showDmg(d.x, d.mesh.position.y + 0.5, d.z, '+' + d.val, 'gain', 0.9);
+          GameAudio.sfx.coin();
+          drops.splice(i, 1);
+        }
+        continue;
+      }
       d.mesh.rotation.y += dt * (d.rest ? 3 : 14);
       if (!d.rest) {
         d.vy -= 24 * dt;
@@ -1771,6 +1856,137 @@
     }
   }
   function clearDrops() { for (const d of drops) { scene.remove(d.mesh); if (d.sh) scene.remove(d.sh); } drops.length = 0; spillQ.length = 0; lowSpilled = false; }
+
+
+  // ---------- Area Tantangan: objek (batu pijakan, peti, pintu) yang dimuat saat pemain mendekat ----------
+  const zoneObjs = new Map();                                     // id zona -> { group, chests, door, coins, geos }
+  const mPillar = std(0x8d8a80), mPillarCap = std(0x6aa84a), mChestBody = std(0x7b4a1e), mChestGold = std(0xffc107, { emissive: 0x6b4a00 });
+  const chestBodyGeo = new THREE.BoxGeometry(1.1, 0.65, 0.75), chestLidGeo = new THREE.BoxGeometry(1.12, 0.3, 0.78), chestBandGeo = new THREE.BoxGeometry(0.16, 0.7, 0.8);
+  const doorPostGeo = new THREE.BoxGeometry(0.7, 3.4, 0.7), doorTopGeo = new THREE.BoxGeometry(3.6, 0.7, 0.8), doorDiscGeo = new THREE.CircleGeometry(1.3, 28);
+  const mDoorDisc = new THREE.MeshBasicMaterial({ color: 0x7fe9ff, transparent: true, opacity: 0.6, side: THREE.DoubleSide, depthWrite: false });
+  function makeChest() {
+    const g = new THREE.Group();
+    const body = new THREE.Mesh(chestBodyGeo, mChestBody); body.position.y = 0.33; g.add(body);
+    const band = new THREE.Mesh(chestBandGeo, mChestGold); band.position.y = 0.34; g.add(band);
+    const lid = new THREE.Group(); lid.position.set(0, 0.66, -0.37);                // engsel di belakang
+    const lm = new THREE.Mesh(chestLidGeo, mChestBody); lm.position.set(0, 0.15, 0.37); lid.add(lm);
+    const lb = new THREE.Mesh(chestBandGeo, mChestGold); lb.scale.set(1, 0.45, 1); lb.position.set(0, 0.2, 0.37); lid.add(lb);
+    g.add(lid); g.userData.lid = lid;
+    return g;
+  }
+  function buildZoneObjs(Zn) {
+    const geos = [], group = new THREE.Group(), O = { Zn, group, chests: [], coins: [], geos, door: null };
+    group.userData.keep = true;
+    // batu pijakan: tiang batu dari dasar jurang sampai puncak
+    Zn.pillars.forEach((p) => {
+      const hgt = p.top - Zn.floor + 0.6;
+      const geo = new THREE.CylinderGeometry(p.r, p.r + 0.55, hgt, 12); geos.push(geo);
+      const col = new THREE.Mesh(geo, mPillar); col.position.set(p.x, Zn.floor + hgt / 2 - 0.6, p.z); group.add(col);
+      const capGeo = new THREE.CylinderGeometry(p.r + 0.05, p.r + 0.05, 0.22, 12); geos.push(capGeo);
+      const cap = new THREE.Mesh(capGeo, mPillarCap); cap.position.set(p.x, p.top - 0.11, p.z); group.add(cap);
+    });
+    // monumen logo di tengah pulau
+    const mon = makeMonument(); mon.position.set(Zn.cx, Zn.isl, Zn.cz); mon.rotation.y = Zn.a0 + Math.PI / 2; group.add(mon);
+    // peti harta
+    for (let i = 0; i < 3; i++) {
+      const ang = Zn.a0 + 0.6 + i * 2.0944, cxp = Zn.cx + Math.cos(ang) * 6.3, czp = Zn.cz + Math.sin(ang) * 6.3;
+      const ch = makeChest(); ch.position.set(cxp, Zn.isl, czp); ch.rotation.y = -ang + Math.PI / 2; group.add(ch);
+      const key = Zn.id + ':chest' + i, open = zoneTaken.has(key);
+      if (open) ch.userData.lid.rotation.x = -1.25;
+      O.chests.push({ key, x: cxp, z: czp, mesh: ch, open, t: open ? 1 : 0 });
+    }
+    // pintu kembali ke titik awal
+    {
+      const ang = Zn.a0 + 3.1416 + 0.9, dx = Zn.cx + Math.cos(ang) * 8.2, dz = Zn.cz + Math.sin(ang) * 8.2;
+      const g = new THREE.Group();
+      for (const sx of [-1.45, 1.45]) { const p = new THREE.Mesh(doorPostGeo, mPillar); p.position.set(sx, 1.7, 0); g.add(p); }
+      const top = new THREE.Mesh(doorTopGeo, mPillar); top.position.y = 3.55; g.add(top);
+      const disc = new THREE.Mesh(doorDiscGeo, mDoorDisc); disc.position.y = 1.75; disc.scale.set(1.0, 1.25, 1); g.add(disc);
+      g.position.set(dx, Zn.isl, dz); g.rotation.y = -ang - Math.PI / 2;
+      group.add(g);
+      O.door = { x: dx, z: dz, mesh: g, disc };
+    }
+    scene.add(group);
+    // koin: di atas tiap batu, di antara batu (menuntun lompatan), dan di pulau
+    const addCoin = (key, x, y, z) => {
+      if (zoneTaken.has(key)) return;
+      const m = makeCoin(); m.scale.setScalar(0.95); m.position.set(x, y, z); scene.add(m);
+      const d = { mesh: m, x, y, z, vx: 0, vy: 0, vz: 0, val: 1, t: 0, rest: true, fixed: true, zkey: key, by: y, ph: Math.random() * 6.28 };
+      drops.push(d); O.coins.push(d);
+    };
+    Zn.pillars.forEach((p, i) => {
+      addCoin(Zn.id + ':p' + i, p.x, p.top + 1.1, p.z);
+      const q = Zn.pillars[i + 1];
+      if (q) addCoin(Zn.id + ':g' + i, (p.x + q.x) / 2, Math.max(p.top, q.top) + 2.0, (p.z + q.z) / 2);
+    });
+    for (let i = 0; i < 14; i++) { const a = i / 14 * 6.2832; addCoin(Zn.id + ':r' + i, Zn.cx + Math.cos(a) * 8.6, Zn.isl + 0.9, Zn.cz + Math.sin(a) * 8.6); }
+    for (let i = 0; i < 6; i++) { const a = i / 6 * 6.2832; addCoin(Zn.id + ':s' + i, Zn.cx + Math.cos(a) * 3.8, Zn.isl + 0.9, Zn.cz + Math.sin(a) * 3.8); }
+    return O;
+  }
+  function disposeZoneObjs(O) {
+    scene.remove(O.group);
+    for (const g of O.geos) g.dispose();
+    for (const d of O.coins) { scene.remove(d.mesh); const i = drops.indexOf(d); if (i >= 0) drops.splice(i, 1); }
+  }
+  function clearZoneObjs() { for (const O of zoneObjs.values()) disposeZoneObjs(O); zoneObjs.clear(); }
+  function respawnFromChasm(Zn) {
+    player.x = Zn.entry.x; player.z = Zn.entry.z;
+    player.vx = player.vz = 0; player.y = 0; player.vy = 0;
+    player.gnd = heightAt(player.x, player.z);
+    player.yaw = Math.atan2(-(Zn.cx - player.x), -(Zn.cz - player.z));
+    player.invuln = Math.max(player.invuln, 1.2);
+    player.stamina = Math.min(player.stamina, 45);
+    camX = player.x; camZ = player.z;
+    hurtT = 0.15; shake = Math.max(shake, 0.4);
+    GameAudio.sfx.splash();
+    toast('🕳️ Jatuh ke jurang! Kamu tidak mati, kembali ke tepi', 2.6);
+  }
+  function useDoor() {
+    player.x = 2.5; player.z = 2.5;
+    player.vx = player.vz = 0; player.y = 0; player.vy = 0;
+    player.gnd = heightAt(player.x, player.z);
+    player.invuln = Math.max(player.invuln, 1.0);
+    camX = player.x; camZ = player.z;
+    starBurst(player.x, player.gnd + 1.4, player.z, 14, 'gain');
+    GameAudio.sfx.power();
+    toast('🚪 Kamu kembali ke titik awal membawa harta!', 2.6);
+  }
+  let doorCd = 0;
+  function updateZones(dt) {
+    // muat / buang objek zona sesuai jarak
+    const ix = Math.floor((player.x + ZC / 2) / ZC), iz = Math.floor((player.z + ZC / 2) / ZC);
+    for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) {
+      const Zn = zoneCell(ix + a, iz + b);
+      if (!Zn) continue;
+      const d = Math.hypot(player.x - Zn.cx, player.z - Zn.cz);
+      if (d < 100 && !zoneObjs.has(Zn.id)) zoneObjs.set(Zn.id, buildZoneObjs(Zn));
+      if (d < 85 && !zoneSeen.has(Zn.id)) { zoneSeen.add(Zn.id); toast('🪨 Area Tantangan Lompat! Lompati batu menuju pulau harta', 3.2); }
+    }
+    for (const [id, O] of Array.from(zoneObjs)) {
+      if (Math.hypot(player.x - O.Zn.cx, player.z - O.Zn.cz) > 135) { disposeZoneObjs(O); zoneObjs.delete(id); continue; }
+      // peti: terbuka saat didekati
+      for (const c of O.chests) {
+        if (!c.open && Math.hypot(player.x - c.x, player.z - c.z) < 2.3 && player.y < 1.5) {
+          c.open = true; zoneTaken.add(c.key);
+          runCoins += 25; save.coins += 25; writeSave();
+          starBurst(c.x, O.Zn.isl + 1.0, c.z, 14, 'gain');
+          showDmg(c.x, O.Zn.isl + 2.0, c.z, '+25 🪙', 'gain', 1.3);
+          GameAudio.sfx.power();
+          toast('🎁 Peti harta! +25 koin', 1.8);
+        }
+        const tgt = c.open ? 1 : 0;
+        c.t += (tgt - c.t) * Math.min(1, dt * 6);
+        c.mesh.userData.lid.rotation.x = -1.25 * c.t;
+      }
+      // pintu: kilau berputar; menyentuhnya = kembali ke titik awal
+      if (O.door) {
+        O.door.disc.rotation.z += dt * 1.6;
+        O.door.disc.material.opacity = 0.5 + 0.15 * Math.sin(clock * 3);
+        if (doorCd <= 0 && Math.hypot(player.x - O.door.x, player.z - O.door.z) < 1.7 && player.y < 1.5) { doorCd = 2; useDoor(); }
+      }
+    }
+    doorCd -= dt;
+  }
 
   // ---------- Angka kerusakan melayang ----------
   const fxLayer = $('fx');
@@ -1956,6 +2172,18 @@
         const q = pt(pd.x, pd.z); if (q[2] > MM_R + 8) continue;
         ctx.beginPath(); ctx.arc(q[0], q[1], Math.max(2, (pd.r || 4) * k), 0, Math.PI * 2); ctx.fill();
       }
+      // area tantangan lompat: penanda berlian emas
+      {
+        const mix = Math.floor((player.x + ZC / 2) / ZC), miz = Math.floor((player.z + ZC / 2) / ZC);
+        ctx.fillStyle = '#ffeb3b'; ctx.strokeStyle = '#3e2723'; ctx.lineWidth = 1;
+        for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) {
+          const Zm = zoneCell(mix + a, miz + b); if (!Zm) continue;
+          const q = pt(Zm.cx, Zm.cz); const edge = q[2] > MM_R - 6;
+          let qx = q[0], qy = q[1];
+          if (edge) { const f = (MM_R - 6) / q[2]; qx = c + (qx - c) * f; qy = c + (qy - c) * f; }       // di luar jangkauan: ditempel di tepi
+          ctx.beginPath(); ctx.moveTo(qx, qy - 5); ctx.lineTo(qx + 4, qy); ctx.lineTo(qx, qy + 5); ctx.lineTo(qx - 4, qy); ctx.closePath(); ctx.fill(); ctx.stroke();
+        }
+      }
       // koin & telur
       let n = 0;
       ctx.fillStyle = '#ffd54f';
@@ -2062,7 +2290,7 @@
     for (const p of preds) removePred(p);
     preds = [];
     worldSeed = 1 + Math.floor(Math.random() * 1e6);
-    pondCache.clear();
+    pondCache.clear(); zoneReset(); zoneTaken.clear(); zoneSeen.clear();
     camGy = 0; camYaw = 0; camPitch = 0.71; camLift = 0;
     Object.assign(player, {
       x: 0, z: 0, y: 0, vy: 0, vx: 0, vz: 0, yaw: Math.PI,
@@ -2984,13 +3212,13 @@
 
     for (const p of preds) {                                          // dinosaurus darat tidak bisa masuk air dalam
       if (p.dead) continue;
-      if (!p.def.aqua && Math.abs(p.x - player.x) < 90 && Math.abs(p.z - player.z) < 90 && WL - heightAt(p.x, p.z) > 0.9) {
-        if (p.px !== undefined && WL - heightAt(p.px, p.pz) <= 0.9) { p.x = p.px; p.z = p.pz; p.shoreBlk = 0.25; }   // tertahan di tepi: diam, tidak bergetar
+      if (!p.def.aqua && Math.abs(p.x - player.x) < 90 && Math.abs(p.z - player.z) < 90 && (WL - heightAt(p.x, p.z) > 0.9 || inChasm(p.x, p.z))) {
+        if (p.px !== undefined && WL - heightAt(p.px, p.pz) <= 0.9 && !inChasm(p.px, p.pz)) { p.x = p.px; p.z = p.pz; p.shoreBlk = 0.25; }   // tertahan di tepi: diam, tidak bergetar
         else {                                                       // terjebak di air (muncul/terdorong): pindah ke daratan terdekat
           for (let k = 0; k < 14; k++) {
             const a2 = Math.random() * Math.PI * 2, d2 = 14 + k * 3;
             const nx = player.x + Math.cos(a2) * d2, nz = player.z + Math.sin(a2) * d2;
-            if (WL - heightAt(nx, nz) < 0.3) { p.x = nx; p.z = nz; break; }
+            if (WL - heightAt(nx, nz) < 0.3 && !zoneNear(nx, nz, 4)) { p.x = nx; p.z = nz; break; }
           }
           p.px = p.x; p.pz = p.z;
         }
@@ -3144,9 +3372,9 @@
     const weak = player.hunger <= 0 || player.thirst <= 0;
     const speedMul = (powerLeft > 0 ? 1.25 : 1) * (weak ? 0.85 : 1) * curChar.speed * speedLv();
     // berenang: air cukup dalam -> mode renang (lebih lambat, tanpa lompat, tenaga terkuras pelan)
-    const depth = WL - heightAt(player.x, player.z);
+    const depth = WL - (player.gnd !== undefined ? player.gnd : heightAt(player.x, player.z));
     const wasSwim = swimming;
-    if (!swimming && depth > 1.0) swimming = true; else if (swimming && depth < 0.7) swimming = false;
+    if (!swimming && depth > 1.0 && player.y < 0.3) swimming = true; else if (swimming && depth < 0.7) swimming = false;
     if (swimming !== wasSwim) {
       GameAudio.sfx.splash();
       starBurst(player.x, WL + 0.4, player.z, 8, 'water');
@@ -3171,7 +3399,7 @@
     let slopeMul = 1, slide = false;                    // tanjakan memperlambat, turunan sedikit mempercepat
     if (mag > 0.1) {
       const gx = ix / mag, gz = iz / mag;
-      const dh = heightAt(player.x + gx, player.z + gz) - heightAt(player.x, player.z);
+      const dh = heightAt(player.x + gx, player.z + gz) - (player.gnd !== undefined ? player.gnd : heightAt(player.x, player.z));
       slopeMul = Math.min(1.25, Math.max(0.55, 1 - dh * 0.8));
       if (player.stamina >= 25) climbLocked = false;
       if (dh > 0.85 && !swimming) {                     // tebing curam: memanjat menguras tenaga; tenaga habis = terkunci diam (tanpa getar)
@@ -3195,6 +3423,28 @@
       player.z += player.vz * dt;
     }
     pushOut(player, 0.55 * (scaleNow / 1.1));
+    {                                                    // pijakan: tanah atau puncak batu; batu pijakan bisa diinjak
+      const scp = scaleNow / 1.1;
+      const prevG = player.gnd !== undefined ? player.gnd : heightAt(player.x, player.z);
+      const Zp = zoneNear(player.x, player.z);
+      if (Zp) {
+        const f0 = prevG + player.y;
+        for (const p of Zp.pillars) {                    // dari bawah/samping, batu pijakan adalah dinding
+          const pdx = player.x - p.x, pdz = player.z - p.z, pd = Math.hypot(pdx, pdz) || 0.001, rr = p.r + 0.5 * scp;
+          if (pd < rr && f0 < p.top - 0.45) { player.x = p.x + pdx / pd * rr; player.z = p.z + pdz / pd * rr; }
+        }
+      }
+      const feet = prevG + player.y;
+      const newG = swimming ? heightAt(player.x, player.z) : supportAt(player.x, player.z, feet);
+      let ny;
+      if (player.y === 0 && player.vy === 0 && !swimming && prevG - newG > 0.7) ny = prevG - newG;      // melewati tepi: mulai jatuh
+      else if (player.y > 0 || player.vy !== 0) ny = feet - newG;                                       // di udara: tinggi dunia tetap
+      else ny = 0;
+      if (ny <= 0) { ny = 0; if (player.vy < 0) { player.vy = 0; puff(6, player.x, player.z, 0.5); GameAudio.sfx.land(); } }
+      player.y = ny; player.gnd = newG;
+      const Zf = zoneNear(player.x, player.z);
+      if (Zf && player.gnd + player.y < Zf.h0 - 6) respawnFromChasm(Zf);                                // jatuh ke jurang: tidak mati
+    }
 
     const spd = Math.hypot(player.vx, player.vz);
     if (spd > 0.4 && player.atkT < 0) player.yaw = lerpAngle(player.yaw, faceYaw(player.vx, player.vz), Math.min(1, dt * 14));
@@ -3252,6 +3502,7 @@
     // isi dunia: potongan, semak, koin, telur
     ensureChunks(false);
     pumpBuildQueue();
+    updateZones(dt);
     const cx0 = Math.floor(player.x / CH), cz0 = Math.floor(player.z / CH);
     const sc = scaleNow / 1.1;
     for (let a = -1; a <= 1; a++) {
@@ -3485,7 +3736,8 @@
       }
     }
     swimBlend = approach(swimBlend, swimming ? 1 : 0, 6);
-    const groundY = heightAt(player.x, player.z);
+    const groundY = player.gnd !== undefined ? player.gnd : heightAt(player.x, player.z);
+    const onPlat = groundY - heightAt(player.x, player.z) > 0.6;
     const gy = swimBlend > 0.01 ? lerp(groundY, WL - 0.78 * (scaleNow / 1.1) + Math.sin(clock * 2.4) * 0.06, swimBlend) : groundY;
     player.gy = gy;
     hero.root.position.set(player.x, gy + player.y, player.z);
@@ -3497,11 +3749,13 @@
       hero.root.rotation.y = player.yaw;
       poseCreature(hero, phase, run, air, player.vy, player.atkT >= 0 ? clamp(player.atkT / 0.35, 0, 1) : -1, clock);
       if (swimBlend > 0.01) applySwim(hero, swimBlend, spd, clock);
-      tiltToGround(hero.root, player.x, player.z, player.yaw, 0.9 * scaleNow / 1.1, dt, swimBlend > 0.3 || lastWet || air);
+      tiltToGround(hero.root, player.x, player.z, player.yaw, 0.9 * scaleNow / 1.1, dt, swimBlend > 0.3 || lastWet || air || onPlat);
     }
     const s = Math.max(0.5, 1 - player.y / 3.2);
     heroShadow.visible = swimBlend < 0.5;
+    shadowFlat = onPlat ? gy : null;
     placeShadow(heroShadow, player.x, player.z, gy, 0.75 * scaleNow * s, 1.9 * scaleNow);
+    shadowFlat = null;
 
     for (const p of preds) {
       const c = p.c;
@@ -3627,7 +3881,7 @@
 
   // tampilan latar menu: dunia awal terlihat di belakang judul
   worldSeed = 1 + Math.floor(Math.random() * 1e6);
-  pondCache.clear();
+  pondCache.clear(); zoneReset();
   ensureChunks(true);
   applyDayNight();
   refreshPanels();

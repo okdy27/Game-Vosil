@@ -2639,7 +2639,7 @@
         h += '<button class="bBtn wide" data-ex="w-link"' + busy + '>' + t('a_link_btn') + '</button><p class="aNote">' + t('a_link_note') + '</p>';
       } else {
         h += '<div class="bRow"><span class="nm">' + t('a_link_code', { c: '<b>' + esc(W.link.code) + '</b>' }) + '<small>' + t('a_link_wait') + '</small></span></div>' +
-          '<button class="bBtn wide" data-ex="w-link-mm">' + t('a_link_mm') + '</button><button class="bBtn wide" data-ex="w-link-trust" style="background:#42a5f5">' + t('a_link_trust') + '</button>' +
+          '<p class="aNote">' + t('lk_warn') + '</p>' + '<button class="bBtn wide" data-ex="w-link-mm">' + t('a_link_mm') + '</button><button class="bBtn wide" data-ex="w-link-trust" style="background:#42a5f5">' + t('a_link_trust') + '</button>' +
           '<button class="bBtn wide" data-ex="w-link-check" style="background:#66bb6a"' + busy + '>' + t('a_link_check') + '</button><button class="bBtn wide" data-ex="w-link-cancel" style="background:#8d6e63;color:#fff">' + t('a_link_cancel') + '</button>';
       }
     } else if (!me) {

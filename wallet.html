@@ -9,13 +9,14 @@
  img{width:84px;height:84px;border-radius:18px} h1{font-size:19px;margin:12px 0 6px} p{font-size:14px;line-height:1.5;color:#d7c9c2;margin:10px 0}
  .code{display:inline-block;background:#1c1411;border:1px solid #5d4037;border-radius:10px;padding:6px 14px;font-size:18px;letter-spacing:3px;font-weight:800;color:#ffd54f}
  button{width:100%;margin-top:12px;padding:14px;border:0;border-radius:12px;background:#ffb300;color:#3e2723;font-weight:800;font-size:16px;cursor:pointer}
- button:disabled{background:#4e4640;color:#8d8179} #msg{font-weight:700;min-height:22px} .ok{color:#a5d6a7} .er{color:#ef9a9a}
+ button:disabled{background:#4e4640;color:#8d8179} #msg{font-weight:700;min-height:22px} .warn{font-size:12.5px;background:#1c1411;border-radius:10px;padding:9px 11px;color:#ffe082} .ok{color:#a5d6a7} .er{color:#ef9a9a}
 </style></head><body>
 <div class="card">
   <img src="vosil-logo-256.png" alt="Vosil">
   <h1 data-i18n="lk_title">Hubungkan dompet ke Vosil Game</h1>
   <p data-i18n="lk_desc">Tanda tangani pesan.</p>
   <p><span data-i18n="lk_code">Kode</span>: <span class="code" id="code">-</span></p>
+  <p class="warn" data-i18n="lk_warn"></p>
   <button id="go" data-i18n="lk_btn">✍ Tanda tangani & hubungkan</button>
   <p id="msg"></p>
 </div>

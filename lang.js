@@ -132,7 +132,8 @@ const L = (() => {
       lk_done: '✔ Berhasil! Kembali ke game, akun akan tersambung otomatis.',
       lk_nocode: 'Kode tidak ditemukan. Mulai lagi dari tombol Hubungkan dompet di game.',
       lk_nowallet: 'Dompet tidak terdeteksi. Buka halaman ini lewat peramban di dalam aplikasi MetaMask atau Trust Wallet.',
-      lk_code: 'Kode'
+      lk_code: 'Kode',
+      lk_warn: 'Jika MetaMask menampilkan peringatan situs baru/berbahaya, itu deteksi otomatis untuk situs yang belum dikenal. Game ini hanya meminta tanda tangan pesan, tidak pernah transaksi atau akses ke dana Anda.'
     },
     en: {
       hud_day: 'Day', power_mode: '🥚 POWER MODE', top_btn: '⚙ Trade & Settings', top_aria: 'Trade and settings',
@@ -260,7 +261,8 @@ const L = (() => {
       lk_done: '✔ Done! Go back to the game, your account connects automatically.',
       lk_nocode: 'Code not found. Start again from the Connect wallet button in the game.',
       lk_nowallet: 'No wallet detected. Open this page from the browser inside the MetaMask or Trust Wallet app.',
-      lk_code: 'Code'
+      lk_code: 'Code',
+      lk_warn: 'If MetaMask shows a new/dangerous site warning, it is an automatic check for sites it does not know yet. This game only asks for a message signature, never a transaction or access to your funds.'
     },
     es: {
       hud_day: 'Día', power_mode: '🥚 MODO FUERTE', top_btn: '⚙ Canje y Ajustes', top_aria: 'Canje y ajustes',
@@ -388,7 +390,8 @@ const L = (() => {
       lk_done: '✔ ¡Listo! Vuelve al juego, tu cuenta se conecta sola.',
       lk_nocode: 'Código no encontrado. Empieza de nuevo desde el botón Conectar billetera del juego.',
       lk_nowallet: 'No se detectó ninguna billetera. Abre esta página desde el navegador dentro de la app MetaMask o Trust Wallet.',
-      lk_code: 'Código'
+      lk_code: 'Código',
+      lk_warn: 'Si MetaMask muestra una advertencia de sitio nuevo/peligroso, es una detección automática de sitios aún desconocidos. Este juego solo pide la firma de un mensaje, nunca una transacción ni acceso a tus fondos.'
     }
   };
 

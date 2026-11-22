@@ -1,5 +1,5 @@
 // chain.js - semua hal on-chain (World Chain, chain id 480) memakai viem. Dipanggil oleh app.js.
-import { createPublicClient, createWalletClient, http, defineChain, recoverMessageAddress, isAddress as vIsAddress, erc20Abi, formatUnits } from 'viem';
+import { createPublicClient, createWalletClient, http, defineChain, recoverMessageAddress, isAddress as vIsAddress, getAddress, erc20Abi, formatUnits } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 
 const RPC_DEFAULT = 'https://worldchain-mainnet.g.alchemy.com/public';
@@ -11,6 +11,8 @@ const chainOf = (env) => defineChain({
 const pub = (env) => createPublicClient({ chain: chainOf(env), transport: http(env.RPC_URL || RPC_DEFAULT) });
 
 export const isAddress = (a) => vIsAddress(a, { strict: false });
+
+export const toChecksum = (a) => { try { return getAddress(a); } catch (e) { return a; } };
 
 export async function verifySignature(address, message, signature) {
   try { return (await recoverMessageAddress({ message, signature })).toLowerCase() === address.toLowerCase(); } catch (e) { return false; }

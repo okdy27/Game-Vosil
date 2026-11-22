@@ -141,12 +141,14 @@ export function createApp(deps) {
     const acc = await first(env, 'SELECT blocked FROM accounts WHERE address = ?', address);
     if (acc && acc.blocked) throw new HttpError(403, 'blocked');
     const nonce = hex(crypto.getRandomValues(new Uint8Array(16))), exp = nowFn() + 10 * 60e3;
+    // format standar EIP-4361 (Sign-In with Ethereum): MetaMask mengenalinya & menampilkannya sebagai "Permintaan masuk" yang rapi
+    const host = new URL(req.url).host, ck = chain.toChecksum ? chain.toChecksum(address) : address;
     const message = [
-      'Vosil Game - hubungkan dompet / connect wallet',
-      'Hanya tanda tangan pesan: tanpa transaksi, tanpa biaya. / Signature only: no transaction, no fee.',
-      '',
-      'Address: ' + address, 'Nonce: ' + nonce, 'Expires: ' + new Date(exp).toISOString(), 'Chain: World Chain (480)',
-    ].concat(linkCode ? ['Link: ' + linkCode] : []).join('\n');
+      host + ' wants you to sign in with your Ethereum account:', ck, '',
+      'Sign in to Vosil Game. Signature only: no transaction, no fee.', '',
+      'URI: https://' + host, 'Version: 1', 'Chain ID: ' + Number(env.CHAIN_ID || 480), 'Nonce: ' + nonce,
+      'Issued At: ' + new Date(nowFn()).toISOString(), 'Expiration Time: ' + new Date(exp).toISOString(),
+    ].concat(linkCode ? ['Request ID: ' + linkCode] : []).join('\n');
     await run(env, 'DELETE FROM nonces WHERE expires < ?', nowFn());
     await run(env, 'INSERT INTO nonces (nonce, address, message, expires) VALUES (?,?,?,?)', nonce, address, message, exp);
     return J({ ok: true, nonce, message });
@@ -163,7 +165,7 @@ export function createApp(deps) {
     if (typeof b.nonce !== 'string' || typeof b.signature !== 'string') throw new HttpError(400, 'bad_request');
     const row = await first(env, 'SELECT * FROM nonces WHERE nonce = ?', b.nonce);
     if (!row || row.address !== address || row.expires < nowFn()) throw new HttpError(400, 'nonce_invalid');
-    if (linkCode && !row.message.endsWith('\nLink: ' + linkCode)) throw new HttpError(400, 'nonce_invalid');   // tanda tangan harus untuk kode tautan ini
+    if (linkCode && !row.message.endsWith('\nRequest ID: ' + linkCode)) throw new HttpError(400, 'nonce_invalid');   // tanda tangan harus untuk kode tautan ini
     await run(env, 'DELETE FROM nonces WHERE nonce = ?', b.nonce);                      // sekali pakai
     if (!(await chain.verifySignature(address, row.message, b.signature))) throw new HttpError(401, 'signature_invalid');
     const acc0 = await first(env, 'SELECT blocked FROM accounts WHERE address = ?', address);

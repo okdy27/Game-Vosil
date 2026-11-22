@@ -2784,6 +2784,19 @@
       else { quitArm = performance.now(); quitBtn.textContent = t('quit_sure'); }
     });
   }
+  // keluar dari game: simpan, akhiri permainan berjalan (koin tetap tersimpan), lalu buka halaman perpisahan
+  let exitArm = -1e9;
+  const exitBtn = $('exitBtn');
+  if (exitBtn) {
+    exitBtn.addEventListener('click', () => {
+      if (performance.now() - exitArm > 3000) { exitArm = performance.now(); exitBtn.textContent = '🚪 ' + t('ex_sure'); return; }
+      exitArm = -1e9; exitBtn.textContent = t('ex_btn');
+      try { if (state === 'playing') quitToMenu(); } catch (e) { /* abaikan */ }
+      writeSave();
+      try { window.close(); } catch (e) { /* abaikan */ }                       // berhasil hanya jika tab dibuka oleh skrip / aplikasi terpasang
+      setTimeout(() => { location.href = 'keluar.html'; }, 250);
+    });
+  }
   function openBag() {
     if (state === 'playing') { input.sprint = false; input.attack = false; input.jump = false; for (const k in keys) keys[k] = false; }
     bagOpen = true; showTab(tabWanted); renderBag(); acctPrefetch(); bagEl.classList.remove('hidden'); }

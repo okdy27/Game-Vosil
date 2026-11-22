@@ -1,7 +1,10 @@
 wrangler.jsonc
 .assetsignore
+package.json
+package-lock.json
+node_modules
+server
+deploy
 .git
 .github
-node_modules
-deploy
 *.md

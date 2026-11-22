@@ -1,5 +1,34 @@
 {
-  "name": "vosil-game",
+  "name": "game-vosil",
+  "main": "server/index.js",
   "compatibility_date": "2026-11-01",
-  "assets": { "directory": "./" }
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "./",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [
+    { "binding": "DB", "database_name": "vosil-game", "database_id": "GANTI_DENGAN_ID_D1_ANDA" }
+  ],
+  "triggers": { "crons": ["*/5 5-6 * * *"] },
+  "vars": {
+    "CHAIN_ID": "480",
+    "TOKEN_ADDRESS": "0x37187dbEBC6778EA23ba9d37eB0Aac8990504544",
+    "GAME_WALLET_ADDRESS": "0xb8715dd0c0Fd1C085C28cB614361652Cd7A17361",
+    "PAYOUT_ENABLED": "0",
+    "PT_PER_VOS": "1000",
+    "EARN_CAP_DAY": "1000",
+    "EARN_PTS_PER_MIN": "30",
+    "REDEEM_MIN": "5000",
+    "REDEEM_MAX_DAY": "5000",
+    "REVIEW_MIN_HOURS": "24",
+    "REVIEW_MAX_HOURS": "48",
+    "QUARTER_BUDGET_VOS": "30185",
+    "DAILY_QUOTA_VOS": "335",
+    "MAX_WALLETS_PER_IP_DAY": "5",
+    "MAX_WALLETS_PER_DEVICE": "2",
+    "PAYOUT_BATCH": "5",
+    "TURNSTILE_SITEKEY": ""
+  }
 }

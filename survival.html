@@ -421,6 +421,8 @@
     .bBtn { border: 0; border-radius: 8px; padding: 6px 11px; font-weight: 800; font-size: 12px; cursor: pointer; touch-action: manipulation; background: #ffb300; color: #3e2723; }
     .bBtn:disabled { background: #4e4640; color: #8d8179; cursor: default; }
     .bBtn.wide { width: 100%; padding: 9px; margin-top: 6px; font-size: 13px; }
+    .aNote { margin: 6px 0 0; font-size: 11px; color: #bcaaa4; line-height: 1.35; }
+    .aMsg { margin: 8px 0 0; font-size: 12px; font-weight: 700; }
     #bagNote { margin: 8px 0 0; font-size: 11px; color: #a1887f; line-height: 1.35; }
 
 
@@ -542,7 +544,7 @@
     <p class="cta" data-i18n="cta_start">Ketuk untuk mulai</p>
     <!-- Tombol ini akan diaktifkan di tahap wallet + smart contract -->
     <button id="bagBtn" class="bagOpen" type="button" data-i18n="bag_btn">🎒 Tas &amp; Tukar Poin</button>
-    <button id="claimBtn" class="claim" disabled data-i18n="claim_soon">Klaim Vosil (segera)</button>
+    
   </div>
 
   <div id="over" class="panel hidden">
@@ -586,6 +588,7 @@
   <script>window.THREE || document.write('<script src="three.min.js"><\/script>');</script>
   <script src="lang.js"></script>
   <script src="audio.js"></script>
+  <script src="wallet.js"></script>
   <script src="survival.js"></script>
 </body>
 </html>

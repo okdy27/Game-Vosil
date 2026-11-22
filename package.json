@@ -1,0 +1,9 @@
+{
+  "name": "vosil-game",
+  "private": true,
+  "type": "module",
+  "description": "Game Vosil: server Cloudflare Worker (login dompet, poin, antrean tukar VOS)",
+  "dependencies": {
+    "viem": "^2.21.0"
+  }
+}

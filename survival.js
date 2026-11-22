@@ -2618,6 +2618,72 @@
   const bagEl = $('bag'), bagBody = $('bagBody'), bagSum = $('bagSum');
   function bagTroValue() { let v = 0; for (const k in save.tro) v += (save.tro[k] || 0) * (EXCH.tro[k] || 0); return v; }
   const exNote = () => (L.lang === 'id' ? EXCH.note : (EXCH['note_' + L.lang] || EXCH.note_en || ''));   // catatan kebijakan: pakai versi bahasa pemain
+  // ---------- Akun & Tukar VOS (server Cloudflare; lihat wallet.js dan server/app.js) ----------
+  const W = Wallet.st;
+  let cfgTry = false;
+  const shortAddr = (a) => (a ? a.slice(0, 6) + '…' + a.slice(-4) : '');
+  const wErr = (e) => { const k = 'err_' + ((e && e.code) || 'unknown'); const m = t(k); return m === k ? t('err_unknown') : m; };
+  function acctHtml() {
+    const cfg = W.cfg, me = W.me;
+    let h = '<h4>' + t('h_acct') + '</h4>';
+    const msg = W.msg ? '<p class="aMsg" style="color:' + (W.msgOk ? '#a5d6a7' : '#ef9a9a') + '">' + esc(W.msg) + '</p>' : '';
+    if (!cfg) {
+      if (W.apiOk === false) return h + '<div class="bRow"><span class="nm">' + t('a_server_off') + '</span><button class="bBtn" data-ex="w-retry">' + t('a_retry') + '</button></div>' + msg;
+      return h + '<div class="bRow"><span class="nm">' + t('a_loading') + '</span></div>';
+    }
+    const busy = W.busy ? ' disabled' : '';
+    if (!Wallet.loggedIn) {
+      h += '<button class="bBtn wide" data-ex="w-connect"' + busy + '>' + t('a_conn') + '</button><p class="aNote">' + t('a_conn_note') + '</p>';
+      if (!Wallet.hasProvider()) h += '<p class="aNote" style="color:#ffcc80">' + t('a_no_wallet') + '</p><button class="bBtn wide" data-ex="w-mm">' + t('a_open_mm') + '</button>';
+    } else if (!me) {
+      h += '<div class="bRow"><span class="nm">' + t('a_wallet', { a: shortAddr(Wallet.address) }) + '</span><button class="bBtn" data-ex="w-disc">' + t('a_disc') + '</button></div><div class="bRow"><span class="nm">' + t('a_loading') + '</span></div>';
+    } else {
+      const lim = me.limits, canSend = Math.min(save.pts, me.today.available);
+      const open = me.redemptions.some((r) => r.status === 'queued' || r.status === 'error' || r.status === 'sending');
+      const amt = Math.min(Math.floor(me.points / lim.ptPerVos) * lim.ptPerVos, lim.redeemMaxDay);
+      const canRedeem = !open && !me.redeemedToday && amt >= lim.redeemMin;
+      h += '<div class="bRow"><span class="nm">' + t('a_wallet', { a: shortAddr(me.address) }) + '<small>' + t('a_points', { n: me.points, m: lim.redeemMin }) + '</small></span><button class="bBtn" data-ex="w-disc">' + t('a_disc') + '</button></div>' +
+        '<p class="aNote">' + t('a_today', { a: me.today.available, c: me.today.cap }) + '</p>' +
+        '<button class="bBtn wide" data-ex="w-send"' + (canSend > 0 && !W.busy ? '' : ' disabled') + '>' + (canSend > 0 ? t('a_send', { n: canSend }) : t('a_send_none')) + '</button>' +
+        '<button class="bBtn wide" data-ex="w-redeem" style="background:#66bb6a"' + (canRedeem && !W.busy ? '' : ' disabled') + '>' + (canRedeem ? t('a_redeem', { n: amt, v: amt / lim.ptPerVos }) : t('a_redeem_none')) + '</button>';
+      if (me.redemptions.length) {
+        h += '<h4>' + t('a_hist') + '</h4>';
+        me.redemptions.slice(0, 4).forEach((r) => {
+          const stx = t('st_' + r.status, { p: r.position || '' });
+          h += '<div class="bRow"><span class="nm">' + r.vos + ' VOS<small>' + esc(stx) + (r.tx_hash ? ' · <a href="https://worldscan.org/tx/' + encodeURIComponent(r.tx_hash) + '" target="_blank" rel="noopener" style="color:#ffd54f">' + t('a_tx') + '</a>' : '') + '</small></span>' +
+            (r.status === 'queued' ? '<button class="bBtn" data-ex="w-cancel:' + r.id + '"' + busy + '>' + t('a_cancel') + '</button>' : '') + '</div>';
+        });
+      }
+    }
+    h += msg;
+    if (cfg) h += '<p class="aNote">' + t('a_queue', { n: cfg.queueCount, l: cfg.quotaLeft, q: cfg.quotaDay }) + '</p><p class="aNote">' + t('a_rule', { m: cfg.redeemMin, mv: cfg.redeemMin / cfg.ptPerVos, x: cfg.redeemMaxDay, h1: cfg.reviewHours[0], h2: cfg.reviewHours[1] }) + '</p><p class="aNote">' + t('a_free') + '</p>';
+    return h;
+  }
+  async function walletAct(ex) {
+    if (W.busy) return;
+    const done = (ok, m) => { W.msgOk = ok; W.msg = m || ''; W.busy = false; if (bagOpen) renderBag(); refreshPanels(); };
+    W.busy = true; W.msg = ''; renderBag();
+    try {
+      if (ex === 'w-retry') { cfgTry = false; await Wallet.loadConfig(true); if (Wallet.loggedIn) await Wallet.refresh().catch(() => {}); return done(true, ''); }
+      if (ex === 'w-mm') { window.open('https://metamask.app.link/dapp/' + location.host + location.pathname, '_blank'); return done(true, ''); }
+      if (ex === 'w-connect') { await Wallet.connect(); return done(true, t('ok_conn')); }
+      if (ex === 'w-disc') { Wallet.disconnect(); return done(true, ''); }
+      if (ex === 'w-send') {
+        const n = Math.min(save.pts, W.me ? W.me.today.available : 0);
+        const c = await Wallet.credit(n); save.pts = Math.max(0, save.pts - c); writeSave();
+        return done(true, t('ok_sent', { n: c }));
+      }
+      if (ex === 'w-redeem') { const r = await Wallet.redeem(); return done(true, t('ok_redeem', { v: r.vos })); }
+      if (ex.startsWith('w-cancel:')) { await Wallet.cancel(Number(ex.slice(9))); return done(true, t('ok_cancel')); }
+      done(true, '');
+    } catch (e) { done(false, wErr(e)); }
+  }
+  function acctPrefetch() {
+    if (!W.cfg && !cfgTry) { cfgTry = true; Wallet.loadConfig().then((c) => { if (c && c.ptPerVos) EXCH.ptPerVosil = c.ptPerVos; if (bagOpen) renderBag(); }); }
+    if (Wallet.loggedIn && !W.me) Wallet.refresh().then(() => { if (bagOpen) renderBag(); }).catch(() => { if (bagOpen) renderBag(); });
+    else if (Wallet.loggedIn) Wallet.refresh().then(() => { if (bagOpen) renderBag(); }).catch(() => {});
+  }
+  setInterval(() => { if (state === 'playing' && !bagOpen && !document.hidden && Wallet.loggedIn) Wallet.beat(); }, 60e3);   // waktu main yang tercatat server (batas poin harian)
   function renderBag() {
     const coinPts = Math.floor(save.coins / EXCH.coinPerPt);
     let rows = '';
@@ -2637,7 +2703,7 @@
       '<h4>' + t('h_trophy') + '</h4>' + rows +
       '<button class="bBtn wide" data-ex="all"' + (tv || coinPts ? '' : ' disabled') + '>' + t('b_trade_all', { n: tv + coinPts }) + '</button>' +
       '<h4>' + t('h_token') + '</h4><div class="bRow"><span class="nm">' + t('b_pts_row', { n: save.pts }) + '<small>' + t('b_pts_rate', { r: EXCH.ptPerVosil, e: est }) + '</small></span>' +
-      '<button class="bBtn" disabled>' + t('b_claim_soon') + '</button></div>' +
+      '</div>' + acctHtml() +
       (exNote() ? '<p id="bagNote" style="color:#ffcc80">📢 ' + esc(exNote()) + (EXCH.updated ? ' (' + esc(EXCH.updated) + ')' : '') + '</p>' : '') + (state === 'playing' ? '<button class="bBtn wide" data-ex="resume" style="background:#66bb6a">' + t('b_resume') + '</button>' : '') + '<p id="bagNote">' + t('b_note') + '</p>';
   }
   function doExchange(what) {
@@ -2699,7 +2765,7 @@
   }
   function openBag() {
     if (state === 'playing') { input.sprint = false; input.attack = false; input.jump = false; for (const k in keys) keys[k] = false; }
-    bagOpen = true; showTab(tabWanted); renderBag(); bagEl.classList.remove('hidden'); }
+    bagOpen = true; showTab(tabWanted); renderBag(); acctPrefetch(); bagEl.classList.remove('hidden'); }
   function closeBag() { bagOpen = false; bagEl.classList.add('hidden'); }
   ['bagBtn', 'bagBtn2', 'bagTop'].forEach((id) => {
     const b = $(id); if (!b) return;
@@ -2708,7 +2774,7 @@
   });
   $('bagX').addEventListener('click', closeBag);
   bagEl.addEventListener('pointerdown', (e) => { e.stopPropagation(); if (e.target === bagEl) closeBag(); });
-  bagBody.addEventListener('click', (e) => { const b = e.target.closest && e.target.closest('[data-ex]'); if (b && !b.disabled) { const ex = b.getAttribute('data-ex'); if (ex === 'resume') closeBag(); else doExchange(ex); } });
+  bagBody.addEventListener('click', (e) => { const b = e.target.closest && e.target.closest('[data-ex]'); if (b && !b.disabled) { const ex = b.getAttribute('data-ex'); if (ex === 'resume') closeBag(); else if (ex.startsWith('w-')) walletAct(ex); else doExchange(ex); } });
 
   if (rotBtn) rotBtn.addEventListener('click', () => { GameAudio.init(); enterImmersive(); });
   let autoFsTried = false;

@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow">
+<title>Vosil Game - Admin</title>
+<style>
+ body{font-family:system-ui,sans-serif;background:#1c1411;color:#f1e7e2;margin:0;padding:14px;font-size:14px}
+ h1{font-size:18px;margin:0 0 10px} h2{font-size:14px;margin:18px 0 6px;color:#ffd54f}
+ input,button{font:inherit;padding:8px 10px;border-radius:8px;border:1px solid #5d4037;background:#2b1d16;color:#fff}
+ button{background:#ffb300;color:#3e2723;font-weight:700;border:0;cursor:pointer} button.r{background:#e57373} button.g{background:#66bb6a} button.s{background:#8d6e63;color:#fff}
+ table{border-collapse:collapse;width:100%;font-size:12px} td,th{border-bottom:1px solid #4e342e;padding:5px 4px;text-align:left;vertical-align:top}
+ .box{background:#2b1d16;border-radius:10px;padding:10px;margin:8px 0} .warn{color:#ffab91} .ok{color:#a5d6a7} code{font-size:11px;word-break:break-all}
+ .row{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+</style></head><body>
+<h1>Vosil Game - Admin</h1>
+<div class="row"><input id="key" type="password" placeholder="ADMIN_KEY" style="flex:1;min-width:180px"><button id="go">Muat</button></div>
+<div id="out"></div>
+<script>
+const $=(i)=>document.getElementById(i); let KEY=''; try{KEY=sessionStorage.getItem('vk')||''}catch(e){}
+$('key').value=KEY;
+const esc=(s)=>String(s==null?'':s).replace(/[&<>"']/g,(c)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+async function api(p,b){const r=await fetch(p,{method:b?'POST':'GET',headers:{authorization:'Bearer '+KEY,'content-type':'application/json'},body:b?JSON.stringify(b):undefined});return r.json();}
+const dt=(t)=>t?new Date(t).toLocaleString('id-ID'):'-';
+async function load(){
+  KEY=$('key').value.trim(); try{sessionStorage.setItem('vk',KEY)}catch(e){}
+  const j=await api('/api/admin/summary'); const o=$('out');
+  if(!j.ok){o.innerHTML='<p class="warn">Gagal: '+esc(j.error)+'</p>';return;}
+  const low=j.gameWalletVos!=null&&j.gameWalletVos<j.weeklyNeed*0.2;
+  let h='<div class="box"><b>Dompet game:</b> '+(j.gameWalletVos==null?'?':esc(j.gameWalletVos))+' VOS (jatah mingguan '+esc(j.weeklyNeed)+') '+(low?'<span class="warn">⚠ di bawah 20% jatah mingguan, isi ulang dari Treasury</span>':'<span class="ok">cukup</span>')+
+   '<br><b>Antrean:</b> '+esc(j.queue.queueCount)+' permintaan ('+esc(j.queue.queueVos)+' VOS) · <b>Kuota hari ini:</b> terpakai '+esc(j.queue.paidToday)+' / '+esc(j.queue.quotaDay)+' VOS'+
+   '<br><b>Pembayaran:</b> '+(j.settings.payoutEnabled?'<span class="ok">AKTIF</span>':'<span class="warn">NONAKTIF (PAYOUT_ENABLED=0)</span>')+' · Akun: '+esc(j.accounts)+
+   '<br><b>7 hari:</b> dompet meminta tukar '+esc(j.week.walletsRequesting)+' · ditolak '+esc(j.week.rejected)+' · kena batas IP/perangkat '+esc(j.week.limitHits)+'</div>';
+  h+='<div class="row"><button id="pn" class="g">Jalankan pembayaran sekarang</button></div>';
+  h+='<h2>Antrean dan transaksi</h2><table><tr><th>#</th><th>Dompet</th><th>VOS</th><th>Status</th><th>Masuk</th><th>Tinjau setelah</th><th>Aksi</th></tr>';
+  for(const r of j.list){
+    h+='<tr><td>'+r.id+'</td><td><code>'+esc(r.address)+'</code>'+(r.blocked?' <span class="warn">DIBLOKIR</span>':'')+'<br><small>total kredit '+esc(r.total_credited)+'</small></td><td>'+esc(r.vos)+'</td><td>'+esc(r.status)+(r.note?'<br><small class="warn">'+esc(r.note)+'</small>':'')+(r.tx_hash?'<br><a style="color:#ffd54f" target="_blank" rel="noopener" href="https://worldscan.org/tx/'+esc(r.tx_hash)+'">tx</a>':'')+'</td><td>'+dt(r.created_at)+'</td><td>'+dt(r.review_after)+'</td><td><div class="row">'+
+    (r.status==='queued'?'<button data-a="approve-now" data-id="'+r.id+'" class="g">Setujui sekarang</button>':'')+
+    (r.status==='queued'||r.status==='error'?'<button data-a="reject" data-id="'+r.id+'" class="r">Tolak+kembalikan</button>':'')+
+    (r.status==='error'?'<button data-a="requeue" data-id="'+r.id+'">Antre ulang</button><button data-a="mark-paid" data-id="'+r.id+'" class="s">Tandai terbayar</button>':'')+
+    '<button data-b="'+esc(r.address)+'" class="s">Blokir</button></div></td></tr>';
+  }
+  h+='</table>'; if(!j.list.length)h+='<p>Tidak ada antrean.</p>';
+  h+='<h2>Kejadian terakhir</h2><table>'+j.events.map((e)=>'<tr><td>'+dt(e.ts)+'</td><td>'+esc(e.kind)+'</td><td>'+esc(e.detail)+'</td></tr>').join('')+'</table>';
+  o.innerHTML=h;
+  o.querySelectorAll('button[data-a]').forEach((b)=>b.onclick=async()=>{
+    const a=b.dataset.a,id=Number(b.dataset.id); let body={id,action:a};
+    if(a==='reject'){const n=prompt('Alasan penolakan (boleh kosong)'); if(n===null)return; body.note=n;}
+    if(a==='mark-paid'){const t=prompt('Hash transaksi (0x...) yang sudah Anda cek di worldscan'); if(!t)return; body.tx=t;}
+    const r=await api('/api/admin/action',body); if(!r.ok)alert('Gagal: '+r.error); load();});
+  o.querySelectorAll('button[data-b]').forEach((b)=>b.onclick=async()=>{const n=prompt('Catatan blokir untuk '+b.dataset.b); if(n===null)return; const r=await api('/api/admin/block',{address:b.dataset.b,note:n}); if(!r.ok)alert('Gagal: '+r.error); load();});
+  $('pn').onclick=async()=>{if(!confirm('Jalankan putaran pembayaran sekarang?'))return; const r=await api('/api/admin/payout-now',{}); alert(JSON.stringify(r.result||r)); load();};
+}
+$('go').onclick=load; if(KEY)load();
+</script></body></html>

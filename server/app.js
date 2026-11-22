@@ -13,6 +13,7 @@ const SCHEMA = [
   `CREATE INDEX IF NOT EXISTS red_addr ON redemptions (address, created_at)`,
   `CREATE TABLE IF NOT EXISTS ips (day TEXT NOT NULL, ip_hash TEXT NOT NULL, address TEXT NOT NULL, PRIMARY KEY (day, ip_hash, address))`,
   `CREATE TABLE IF NOT EXISTS devices (device_hash TEXT NOT NULL, address TEXT NOT NULL, PRIMARY KEY (device_hash, address))`,
+  `CREATE TABLE IF NOT EXISTS links (code TEXT PRIMARY KEY, secret_hash TEXT NOT NULL, status TEXT NOT NULL, address TEXT, token TEXT, expires INTEGER NOT NULL, ip_hash TEXT)`,
   `CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, kind TEXT NOT NULL, detail TEXT)`,
 ];
 
@@ -131,7 +132,12 @@ export function createApp(deps) {
   async function routeNonce(env, req) {
     const b = await readBody(req), ip = req.headers.get('cf-connecting-ip') || '';
     const address = normAddr(b.address);
-    if (!(await verifyTurnstile(env, b.cf, ip))) throw new HttpError(403, 'captcha_failed');
+    let linkCode = '';
+    if (typeof b.code === 'string' && b.code) {                              // tautan dari halaman wallet.html (captcha sudah dicek di link/start)
+      linkCode = b.code.toUpperCase().slice(0, 12);
+      const lk = await first(env, 'SELECT status, expires FROM links WHERE code = ?', linkCode);
+      if (!lk || lk.status !== 'pending' || lk.expires < nowFn()) throw new HttpError(400, 'link_expired');
+    } else if (!(await verifyTurnstile(env, b.cf, ip))) throw new HttpError(403, 'captcha_failed');
     const acc = await first(env, 'SELECT blocked FROM accounts WHERE address = ?', address);
     if (acc && acc.blocked) throw new HttpError(403, 'blocked');
     const nonce = hex(crypto.getRandomValues(new Uint8Array(16))), exp = nowFn() + 10 * 60e3;
@@ -140,18 +146,24 @@ export function createApp(deps) {
       'Hanya tanda tangan pesan: tanpa transaksi, tanpa biaya. / Signature only: no transaction, no fee.',
       '',
       'Address: ' + address, 'Nonce: ' + nonce, 'Expires: ' + new Date(exp).toISOString(), 'Chain: World Chain (480)',
-    ].join('\n');
+    ].concat(linkCode ? ['Link: ' + linkCode] : []).join('\n');
     await run(env, 'DELETE FROM nonces WHERE expires < ?', nowFn());
     await run(env, 'INSERT INTO nonces (nonce, address, message, expires) VALUES (?,?,?,?)', nonce, address, message, exp);
     return J({ ok: true, nonce, message });
   }
 
   async function routeLogin(env, req) {
-    const S = settings(env), b = await readBody(req), ip = req.headers.get('cf-connecting-ip') || '';
+    const b = await readBody(req), ip = req.headers.get('cf-connecting-ip') || '';
+    const r = await doLogin(env, b, ip);
+    return J({ ok: true, address: r.address, token: r.token });
+  }
+  async function doLogin(env, b, ip, linkCode) {
+    const S = settings(env);
     const address = normAddr(b.address);
     if (typeof b.nonce !== 'string' || typeof b.signature !== 'string') throw new HttpError(400, 'bad_request');
     const row = await first(env, 'SELECT * FROM nonces WHERE nonce = ?', b.nonce);
     if (!row || row.address !== address || row.expires < nowFn()) throw new HttpError(400, 'nonce_invalid');
+    if (linkCode && !row.message.endsWith('\nLink: ' + linkCode)) throw new HttpError(400, 'nonce_invalid');   // tanda tangan harus untuk kode tautan ini
     await run(env, 'DELETE FROM nonces WHERE nonce = ?', b.nonce);                      // sekali pakai
     if (!(await chain.verifySignature(address, row.message, b.signature))) throw new HttpError(401, 'signature_invalid');
     const acc0 = await first(env, 'SELECT blocked FROM accounts WHERE address = ?', address);
@@ -174,7 +186,40 @@ export function createApp(deps) {
       }
     }
     await run(env, 'INSERT OR IGNORE INTO accounts (address, created_at) VALUES (?,?)', address, nowFn());
-    return J({ ok: true, address, token: await makeToken(env, address) });
+    return { address, token: await makeToken(env, address) };
+  }
+
+  // ---- tautan dompet: game di Chrome <-> tanda tangan di peramban MetaMask/Trust (tanpa perlu landscape) ----
+  async function routeLinkStart(env, req) {
+    const b = await readBody(req), ip = req.headers.get('cf-connecting-ip') || '';
+    if (typeof b.secretHash !== 'string' || !/^[0-9a-f]{64}$/.test(b.secretHash)) throw new HttpError(400, 'bad_request');
+    if (!(await verifyTurnstile(env, b.cf, ip))) throw new HttpError(403, 'captcha_failed');
+    const ipH = await sha((env.SESSION_SECRET || '') + '|ip|' + ip), t = nowFn();
+    await run(env, 'DELETE FROM links WHERE expires < ?', t);
+    const open = await first(env, 'SELECT COUNT(*) AS n FROM links WHERE ip_hash = ?', ipH);
+    if (open.n >= 10) throw new HttpError(429, 'too_many_links');
+    const ALPHA = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+    let code = ''; for (const x of crypto.getRandomValues(new Uint8Array(8))) code += ALPHA[x % ALPHA.length];
+    await run(env, 'INSERT INTO links (code, secret_hash, status, expires, ip_hash) VALUES (?,?,?,?,?)', code, b.secretHash, 'pending', t + 10 * 60e3, ipH);
+    return J({ ok: true, code, expires: t + 10 * 60e3 });
+  }
+  async function routeLinkComplete(env, req) {
+    const b = await readBody(req), ip = req.headers.get('cf-connecting-ip') || '';
+    const code = typeof b.code === 'string' ? b.code.toUpperCase().slice(0, 12) : '';
+    const lk = code ? await first(env, 'SELECT * FROM links WHERE code = ?', code) : null;
+    if (!lk || lk.status !== 'pending' || lk.expires < nowFn()) throw new HttpError(400, 'link_expired');
+    const r = await doLogin(env, b, ip, code);
+    await run(env, "UPDATE links SET status = 'done', address = ?, token = ? WHERE code = ?", r.address, r.token, code);
+    return J({ ok: true, address: r.address });
+  }
+  async function routeLinkPoll(env, req) {
+    const b = await readBody(req), code = typeof b.code === 'string' ? b.code.toUpperCase().slice(0, 12) : '';
+    const lk = code ? await first(env, 'SELECT * FROM links WHERE code = ?', code) : null;
+    if (!lk || lk.expires < nowFn()) throw new HttpError(400, 'link_expired');
+    if (typeof b.secret !== 'string' || !safeEq(await sha(b.secret), lk.secret_hash)) throw new HttpError(403, 'link_invalid');
+    if (lk.status !== 'done') return J({ ok: true, status: 'pending' });
+    await run(env, 'DELETE FROM links WHERE code = ?', code);                              // token diserahkan sekali
+    return J({ ok: true, status: 'done', address: lk.address, token: lk.token });
   }
 
   async function redemptionList(env, acc) {
@@ -358,6 +403,9 @@ export function createApp(deps) {
       if (m === 'GET' && path === '/api/me') return await routeMe(env, request);
       if (m === 'POST' && path === '/api/nonce') return await routeNonce(env, request);
       if (m === 'POST' && path === '/api/login') return await routeLogin(env, request);
+      if (m === 'POST' && path === '/api/link/start') return await routeLinkStart(env, request);
+      if (m === 'POST' && path === '/api/link/complete') return await routeLinkComplete(env, request);
+      if (m === 'POST' && path === '/api/link/poll') return await routeLinkPoll(env, request);
       if (m === 'POST' && path === '/api/beat') return await routeBeat(env, request);
       if (m === 'POST' && path === '/api/credit') return await routeCredit(env, request);
       if (m === 'POST' && path === '/api/redeem') return await routeRedeem(env, request);

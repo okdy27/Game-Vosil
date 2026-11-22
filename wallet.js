@@ -3,13 +3,15 @@
 const Wallet = (() => {
   'use strict';
   const K_SES = 'vosil_session_v1', K_DEV = 'vosil_device_v1';
-  const st = { cfg: null, cfgAt: 0, me: null, session: null, busy: false, msg: '', msgOk: true, apiOk: null };
+  const K_LNK = 'vosil_link_v1';
+  const st = { cfg: null, cfgAt: 0, me: null, session: null, busy: false, msg: '', msgOk: true, apiOk: null, link: null };
   const store = {
     get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
     set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* abaikan */ } },
     del(k) { try { localStorage.removeItem(k); } catch (e) { /* abaikan */ } },
   };
   try { const s = JSON.parse(store.get(K_SES) || 'null'); if (s && s.token && s.address) st.session = s; } catch (e) { /* abaikan */ }
+  try { const l = JSON.parse(store.get(K_LNK) || 'null'); if (l && l.code && l.secret && l.expires > Date.now()) st.link = l; else store.del(K_LNK); } catch (e) { /* abaikan */ }
   let device = store.get(K_DEV);
   if (!device || device.length < 16) { device = Array.from(crypto.getRandomValues(new Uint8Array(16))).map((b) => b.toString(16).padStart(2, '0')).join(''); store.set(K_DEV, device); }
   const rid = () => Array.from(crypto.getRandomValues(new Uint8Array(12))).map((b) => b.toString(16).padStart(2, '0')).join('');
@@ -102,6 +104,32 @@ const Wallet = (() => {
     await refresh();
     return l.address;
   }
+  // ---- tautan dompet: game tetap di Chrome, tanda tangan dilakukan di peramban MetaMask/Trust (halaman wallet.html) ----
+  async function sha256hex(s) { const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)); return Array.from(new Uint8Array(b)).map((x) => x.toString(16).padStart(2, '0')).join(''); }
+  async function linkStart() {
+    await loadConfig(true);
+    const cf = await captcha();
+    const secret = rid() + rid(), secretHash = await sha256hex(secret);
+    const r = await api('/api/link/start', { secretHash, cf });
+    st.link = { code: r.code, secret, expires: r.expires }; store.set(K_LNK, JSON.stringify(st.link));
+    return st.link;
+  }
+  function linkCancel() { st.link = null; store.del(K_LNK); }
+  async function linkPoll() {
+    if (!st.link) return 'none';
+    if (Date.now() > st.link.expires) { linkCancel(); throw new WErr('link_expired'); }
+    let r;
+    try { r = await api('/api/link/poll', { code: st.link.code, secret: st.link.secret }); }
+    catch (e) { if (e.code === 'link_expired' || e.code === 'link_invalid') linkCancel(); throw e; }
+    if (r.status !== 'done') return 'pending';
+    st.session = { address: r.address, token: r.token }; store.set(K_SES, JSON.stringify(st.session)); linkCancel();
+    await refresh();
+    return 'done';
+  }
+  const linkPage = () => location.origin + '/wallet.html?code=' + (st.link ? st.link.code : '');
+  const linkUrl = (kind) => (kind === 'trust'
+    ? 'https://link.trustwallet.com/open_url?coin_id=60&url=' + encodeURIComponent(linkPage())
+    : 'https://metamask.app.link/dapp/' + location.host + '/wallet.html?code=' + (st.link ? st.link.code : ''));
   function disconnect() { st.session = null; st.me = null; store.del(K_SES); }
   async function refresh() { if (!st.session) { st.me = null; return null; } try { st.me = await api('/api/me'); } catch (e) { st.me = null; throw e; } return st.me; }
   async function beat() { if (!st.session) return; try { const r = await api('/api/beat', {}); if (st.me) { st.me.today.available = r.available; st.me.today.allowance = r.allowance; st.me.today.credited = r.credited; } } catch (e) { /* diam */ } }
@@ -110,7 +138,7 @@ const Wallet = (() => {
   async function cancel(id) { await api('/api/cancel', { id }); await refresh(); }
 
   return {
-    st, loadConfig, hasProvider, connect, disconnect, refresh, beat, credit, redeem, cancel, WErr,
+    st, loadConfig, hasProvider, connect, linkStart, linkPoll, linkCancel, linkUrl, disconnect, refresh, beat, credit, redeem, cancel, WErr,
     get loggedIn() { return !!st.session; }, get address() { return st.session ? st.session.address : ''; },
   };
 })();

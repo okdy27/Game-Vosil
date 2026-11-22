@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow"><meta name="theme-color" content="#2b1d16">
+<title>Vosil Game - Wallet</title>
+<link rel="icon" href="vosil-logo-256.png">
+<style>
+ *{box-sizing:border-box} body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#1c1411;color:#f1e7e2;font-family:system-ui,-apple-system,sans-serif;padding:20px}
+ .card{max-width:420px;width:100%;background:#2b1d16;border-radius:16px;padding:22px;text-align:center;box-shadow:0 8px 30px rgba(0,0,0,.4)}
+ img{width:84px;height:84px;border-radius:18px} h1{font-size:19px;margin:12px 0 6px} p{font-size:14px;line-height:1.5;color:#d7c9c2;margin:10px 0}
+ .code{display:inline-block;background:#1c1411;border:1px solid #5d4037;border-radius:10px;padding:6px 14px;font-size:18px;letter-spacing:3px;font-weight:800;color:#ffd54f}
+ button{width:100%;margin-top:12px;padding:14px;border:0;border-radius:12px;background:#ffb300;color:#3e2723;font-weight:800;font-size:16px;cursor:pointer}
+ button:disabled{background:#4e4640;color:#8d8179} #msg{font-weight:700;min-height:22px} .ok{color:#a5d6a7} .er{color:#ef9a9a}
+</style></head><body>
+<div class="card">
+  <img src="vosil-logo-256.png" alt="Vosil">
+  <h1 data-i18n="lk_title">Hubungkan dompet ke Vosil Game</h1>
+  <p data-i18n="lk_desc">Tanda tangani pesan.</p>
+  <p><span data-i18n="lk_code">Kode</span>: <span class="code" id="code">-</span></p>
+  <button id="go" data-i18n="lk_btn">✍ Tanda tangani & hubungkan</button>
+  <p id="msg"></p>
+</div>
+<script src="lang.js"></script>
+<script>
+(function () {
+  'use strict';
+  const $ = (i) => document.getElementById(i);
+  const code = (new URLSearchParams(location.search).get('code') || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12);
+  $('code').textContent = code || '-';
+  const msg = (k, ok) => { const m = $('msg'); m.className = ok ? 'ok' : 'er'; m.textContent = k ? L.t(k) : ''; };
+  L.apply();
+  let device = ''; try { device = localStorage.getItem('vosil_device_v1') || ''; } catch (e) { /* abaikan */ }
+  if (device.length < 16) { device = Array.from(crypto.getRandomValues(new Uint8Array(16))).map((b) => b.toString(16).padStart(2, '0')).join(''); try { localStorage.setItem('vosil_device_v1', device); } catch (e) { /* abaikan */ } }
+  const toHex = (s) => '0x' + Array.from(new TextEncoder().encode(s)).map((b) => b.toString(16).padStart(2, '0')).join('');
+  async function post(path, body) {
+    let r, j; try { r = await fetch(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }); j = await r.json(); } catch (e) { throw { code: 'network' }; }
+    if (!r.ok || !j.ok) throw { code: j && j.error || 'server_error' };
+    return j;
+  }
+  function provider() { const e = window.ethereum; if (!e) return null; return Array.isArray(e.providers) && e.providers.length ? (e.providers.find((p) => p.isMetaMask) || e.providers[0]) : e; }
+  if (!code) { msg('lk_nocode', false); $('go').disabled = true; }
+  else if (!provider()) { msg('lk_nowallet', false); }
+  $('go').addEventListener('click', async () => {
+    const p = provider(); if (!p) { msg('lk_nowallet', false); return; }
+    $('go').disabled = true; msg('', true);
+    try {
+      let acc; try { acc = await p.request({ method: 'eth_requestAccounts' }); } catch (e) { throw { code: e && e.code === 4001 ? 'rejected' : 'no_wallet' }; }
+      const address = acc && acc[0]; if (!address) throw { code: 'no_wallet' };
+      try { await p.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0x1e0' }] }); }
+      catch (e) { if (e && (e.code === 4902 || e.code === -32603)) { try { await p.request({ method: 'wallet_addEthereumChain', params: [{ chainId: '0x1e0', chainName: 'World Chain', nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 }, rpcUrls: ['https://worldchain-mainnet.g.alchemy.com/public'], blockExplorerUrls: ['https://worldscan.org'] }] }); } catch (e2) { /* abaikan */ } } }
+      const n = await post('/api/nonce', { address, code });
+      let sig; try { sig = await p.request({ method: 'personal_sign', params: [toHex(n.message), address] }); } catch (e) { throw { code: e && e.code === 4001 ? 'rejected' : 'sign_failed' }; }
+      await post('/api/link/complete', { code, address, nonce: n.nonce, signature: sig, device });
+      msg('lk_done', true); $('go').style.display = 'none';
+    } catch (e) {
+      const k = 'err_' + (e && e.code || 'unknown'); const s = L.t(k); const m = $('msg'); m.className = 'er'; m.textContent = s === k ? L.t('err_unknown') : s; $('go').disabled = false;
+    }
+  });
+})();
+</script></body></html>

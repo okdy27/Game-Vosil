@@ -2633,8 +2633,15 @@
     }
     const busy = W.busy ? ' disabled' : '';
     if (!Wallet.loggedIn) {
-      h += '<button class="bBtn wide" data-ex="w-connect"' + busy + '>' + t('a_conn') + '</button><p class="aNote">' + t('a_conn_note') + '</p>';
-      if (!Wallet.hasProvider()) h += '<p class="aNote" style="color:#ffcc80">' + t('a_no_wallet') + '</p><button class="bBtn wide" data-ex="w-mm">' + t('a_open_mm') + '</button>';
+      if (Wallet.hasProvider()) {
+        h += '<button class="bBtn wide" data-ex="w-connect"' + busy + '>' + t('a_conn') + '</button><p class="aNote">' + t('a_conn_note') + '</p>';
+      } else if (!W.link) {
+        h += '<button class="bBtn wide" data-ex="w-link"' + busy + '>' + t('a_link_btn') + '</button><p class="aNote">' + t('a_link_note') + '</p>';
+      } else {
+        h += '<div class="bRow"><span class="nm">' + t('a_link_code', { c: '<b>' + esc(W.link.code) + '</b>' }) + '<small>' + t('a_link_wait') + '</small></span></div>' +
+          '<button class="bBtn wide" data-ex="w-link-mm">' + t('a_link_mm') + '</button><button class="bBtn wide" data-ex="w-link-trust" style="background:#42a5f5">' + t('a_link_trust') + '</button>' +
+          '<button class="bBtn wide" data-ex="w-link-check" style="background:#66bb6a"' + busy + '>' + t('a_link_check') + '</button><button class="bBtn wide" data-ex="w-link-cancel" style="background:#8d6e63;color:#fff">' + t('a_link_cancel') + '</button>';
+      }
     } else if (!me) {
       h += '<div class="bRow"><span class="nm">' + t('a_wallet', { a: shortAddr(Wallet.address) }) + '</span><button class="bBtn" data-ex="w-disc">' + t('a_disc') + '</button></div><div class="bRow"><span class="nm">' + t('a_loading') + '</span></div>';
     } else {
@@ -2665,7 +2672,10 @@
     W.busy = true; W.msg = ''; renderBag();
     try {
       if (ex === 'w-retry') { cfgTry = false; await Wallet.loadConfig(true); if (Wallet.loggedIn) await Wallet.refresh().catch(() => {}); return done(true, ''); }
-      if (ex === 'w-mm') { window.open('https://metamask.app.link/dapp/' + location.host + location.pathname, '_blank'); return done(true, ''); }
+      if (ex === 'w-link') { await Wallet.linkStart(); return done(true, ''); }
+      if (ex === 'w-link-mm' || ex === 'w-link-trust') { window.open(Wallet.linkUrl(ex === 'w-link-trust' ? 'trust' : 'mm'), '_blank'); return done(true, ''); }
+      if (ex === 'w-link-check') { const r = await Wallet.linkPoll(); return done(true, r === 'done' ? t('ok_conn') : ''); }
+      if (ex === 'w-link-cancel') { Wallet.linkCancel(); return done(true, ''); }
       if (ex === 'w-connect') { await Wallet.connect(); return done(true, t('ok_conn')); }
       if (ex === 'w-disc') { Wallet.disconnect(); return done(true, ''); }
       if (ex === 'w-send') {
@@ -2683,6 +2693,17 @@
     if (Wallet.loggedIn && !W.me) Wallet.refresh().then(() => { if (bagOpen) renderBag(); }).catch(() => { if (bagOpen) renderBag(); });
     else if (Wallet.loggedIn) Wallet.refresh().then(() => { if (bagOpen) renderBag(); }).catch(() => {});
   }
+  // tautan dompet: periksa otomatis tiap 3 dtk (dan segera saat kembali ke peramban ini) sampai tanda tangan masuk
+  let linkBusy = false;
+  async function linkTick() {
+    if (!W.link || linkBusy || Wallet.loggedIn || document.hidden) return;
+    linkBusy = true;
+    try { const r = await Wallet.linkPoll(); if (r === 'done') { W.msgOk = true; W.msg = t('ok_conn'); refreshPanels(); } }
+    catch (e) { W.msgOk = false; W.msg = wErr(e); }
+    linkBusy = false; if (bagOpen) renderBag();
+  }
+  setInterval(linkTick, 3000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) linkTick(); });
   setInterval(() => { if (state === 'playing' && !bagOpen && !document.hidden && Wallet.loggedIn) Wallet.beat(); }, 60e3);   // waktu main yang tercatat server (batas poin harian)
   function renderBag() {
     const coinPts = Math.floor(save.coins / EXCH.coinPerPt);

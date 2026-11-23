@@ -96,7 +96,7 @@ export class ArenaCore {
         if (Math.hypot(b.x - a.x, b.z - a.z) > RADIUS) continue;
         list.push([b.id, r1(b.x), r1(b.y), r1(b.z), Math.round(b.yaw * 100) / 100, r1(b.vx), r1(b.vz), Math.round(b.atk * 100) / 100, b.sw, b.level]);
       }
-      try { a.send(JSON.stringify({ t: 'p', ts: ts, p: list })); } catch (e) { /* abaikan */ }
+      try { a.send(JSON.stringify({ t: 'p', ts: ts, n: ps.length, p: list })); } catch (e) { /* abaikan */ }
     }
   }
   size() { return this.players.size; }

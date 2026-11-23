@@ -1788,6 +1788,16 @@
       placeShadow(v.sh, r.x, r.z, air ? gnd : r.y, 0.75 * v.sc, 1.9 * v.sc);
     }
   }
+  const onlineBox = $('onlineBox'), onlineN = $('onlineN'), onlineMax = $('onlineMax');
+  let onlineShown = -1;
+  function updateOnline() {
+    if (!onlineBox) return;
+    const n = arenaOn && typeof Arena !== 'undefined' ? Arena.st.count : 0;
+    if (n === onlineShown) return;
+    onlineShown = n;
+    onlineBox.classList.toggle('hidden', n === 0);
+    if (n) { onlineN.textContent = n; onlineMax.textContent = Arena.st.max; }
+  }
   async function startArena() {
     if (state === 'playing' || arenaBusy) return;
     arenaBusy = true; toast(t('ar_connecting'), 8);
@@ -1807,6 +1817,8 @@
   }
   if (typeof Arena !== 'undefined') {
     Arena.onFix = (x, z) => { player.x = x; player.z = z; };                       // server mengembalikan posisi (gerak tidak wajar)
+    Arena.onJoin = (c) => { if (arenaOn) toast(t('ar_joined', { n: c.name }), 2); };
+    Arena.onLeave = (c) => { if (arenaOn) toast(t('ar_left', { n: c.name }), 2); };
     Arena.onEnd = () => { if (arenaOn) { arenaOn = false; clearRemotes(); if (state === 'playing') die(t('ar_lost')); } };
   }
 
@@ -4117,6 +4129,7 @@
     else if (state === 'menu') { player.yaw = Math.sin(clock * 0.5) * 0.6 + Math.PI; }
     animate(dt);
     updateRemotes(dt);
+    updateOnline();
     if (arenaOn && state === 'playing') Arena.send({ x: player.x, z: player.z, y: hero.root.position.y, yaw: player.yaw, vx: player.vx, vz: player.vz, atk: player.atkT, sw: swimming, lv: player.level }, now);
     updateCamera(dt);
     updateDmg(dt);

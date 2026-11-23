@@ -1,7 +1,7 @@
 /* arena.js - klien arena online (TAHAP UJI 1). Menyambung ke /api/arena/ws, mengirim posisi sendiri,
  * menerima posisi pemain lain. Tidak menggambar apa pun: survival.js yang menggambar pemain lain dari Arena.remotes. */
 const Arena = (() => {
-  const st = { ws: null, id: 0, on: false, seed: 0, x: 0, z: 0, room: 0, remotes: new Map(), onFix: null, onEnd: null, lastSend: 0, skew: 0, t0: 0 };
+  const st = { ws: null, id: 0, on: false, seed: 0, x: 0, z: 0, room: 0, remotes: new Map(), onFix: null, onEnd: null, lastSend: 0, skew: 0, t0: 0, count: 1, max: 8, onJoin: null, onLeave: null };
   const nowMs = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
   const wsUrl = (room) => (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/api/arena/ws?room=' + room;
   const WS = () => (typeof WebSocket !== 'undefined' ? WebSocket : null);
@@ -34,7 +34,7 @@ const Arena = (() => {
         if (m.t === 'full') { fin(resolve, null); return; }
         if (m.t === 'w' && !done) {
           st.ws = ws; st.id = m.id; st.on = true; st.seed = m.seed; st.x = m.x; st.z = m.z; st.room = room; st.remotes.clear();
-          st.t0 = m.t0 || 0; st.skew = m.ts ? m.ts - (Date.now() - (Date.now() - helloAt) / 2) : 0;      // selisih jam server (perkiraan separuh waktu pulang-pergi)
+          st.count = (m.roster || []).length || 1; st.max = m.max || 8; st.t0 = m.t0 || 0; st.skew = m.ts ? m.ts - (Date.now() - (Date.now() - helloAt) / 2) : 0;      // selisih jam server (perkiraan separuh waktu pulang-pergi)
           for (const c of m.roster || []) if (c.id !== m.id) addCard(c);
           fin(resolve, { id: m.id, seed: m.seed, x: m.x, z: m.z, room });
           return;
@@ -50,11 +50,12 @@ const Arena = (() => {
   }
 
   function handle(m) {
-    if (m.t === 'j') addCard(m.p);
-    else if (m.t === 'l') st.remotes.delete(m.id);
+    if (m.t === 'j') { addCard(m.p); st.count = Math.min(st.max, st.count + 1); if (st.onJoin) st.onJoin(m.p); }
+    else if (m.t === 'l') { const r = st.remotes.get(m.id); st.remotes.delete(m.id); st.count = Math.max(1, st.count - 1); if (r && st.onLeave) st.onLeave(r); }
     else if (m.t === 'f') { if (st.onFix) st.onFix(m.x, m.z); }
     else if (m.t === 'kick') leave();
     else if (m.t === 'p') {
+      if (typeof m.n === 'number') st.count = m.n;
       if (m.ts) { const d = Date.now() - m.ts; st.off = st.off === undefined ? d : Math.min(d, st.off + 0.4); }     // selisih jam terkecil = paket tercepat
       const seen = new Set();
       for (const a of m.p) {
@@ -85,6 +86,6 @@ const Arena = (() => {
 
   function leave() { const ws = st.ws; reset(); try { ws && ws.close(); } catch (e) { /* abaikan */ } }
 
-  return { st, join, send, leave, worldTime, nowMs, renderTime, get on() { return st.on; }, get remotes() { return st.remotes; }, set onFix(f) { st.onFix = f; }, set onEnd(f) { st.onEnd = f; } };
+  return { st, join, send, leave, worldTime, nowMs, renderTime, get on() { return st.on; }, get remotes() { return st.remotes; }, set onFix(f) { st.onFix = f; }, set onEnd(f) { st.onEnd = f; }, set onJoin(f) { st.onJoin = f; }, set onLeave(f) { st.onLeave = f; } };
 })();
 if (typeof module !== 'undefined') module.exports = Arena;

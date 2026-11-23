@@ -1723,6 +1723,79 @@
   Object.assign(PTYPES.diplo, { atk: 'sweep', sweepR: 5.4, recover: 0.9 });
   Object.assign(PTYPES.trike, { atk: 'lunge', lunge: 2.6, recover: 0.7 });
 
+  // ---------- Arena online (TAHAP UJI 1): pemain lain terlihat; belum ada serangan & poin ----------
+  let arenaOn = false;
+  const addC = (n) => { if (!arenaOn) save.coins += n; };              // di arena uji koin tidak masuk dompet/poin
+  const remoteViews = new Map();
+  function nameSprite(txt) {
+    const cv = document.createElement('canvas'); cv.width = 256; cv.height = 64;
+    const g = cv.getContext('2d'); g.font = 'bold 30px sans-serif'; g.textAlign = 'center';
+    g.lineWidth = 6; g.strokeStyle = 'rgba(0,0,0,.75)'; g.strokeText(txt, 128, 42); g.fillStyle = '#fff'; g.fillText(txt, 128, 42);
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(cv), transparent: true, depthTest: false }));
+    sp.scale.set(3.4, 0.85, 1); sp.renderOrder = 10;
+    return sp;
+  }
+  function dropRemote(id) {
+    const v = remoteViews.get(id); if (!v) return;
+    scene.remove(v.c.root); disposeTree(v.c.root); scene.remove(v.sp);
+    if (v.sp.material.map) v.sp.material.map.dispose(); v.sp.material.dispose();
+    if (v.sh) { scene.remove(v.sh); if (v.sh.userData.unit && v.sh.geometry) v.sh.geometry.dispose(); }
+    remoteViews.delete(id);
+  }
+  function clearRemotes() { for (const id of [...remoteViews.keys()]) dropRemote(id); }
+  function updateRemotes(dt) {
+    if (!arenaOn || typeof Arena === 'undefined') { if (remoteViews.size) clearRemotes(); return; }
+    for (const id of [...remoteViews.keys()]) if (!Arena.remotes.has(id)) dropRemote(id);
+    for (const r of Arena.remotes.values()) {
+      let v = remoteViews.get(r.id);
+      if (!r.seen || !r.near) { if (v) { v.c.root.visible = false; v.sp.visible = false; if (v.sh) v.sh.visible = false; } continue; }
+      if (!v) {
+        const pl = PLAYABLES[r.char] || PLAYABLES.vosil;
+        const c = makeCreature(Object.assign({ scale: pl.scale, variant: pl.variant }, pl.pal));
+        const sp = nameSprite(r.name), sh = makeDynShadow();
+        scene.add(c.root); scene.add(sp); scene.add(sh);
+        v = { c, sp, sh, pl, phase: 0, sc: pl.scale * lvScale(r.level), name: r.name };
+        remoteViews.set(r.id, v);
+      }
+      v.c.root.visible = true; v.sp.visible = true; v.sh.visible = true;
+      const k = Math.min(1, dt * 10);
+      r.x += (r.tx - r.x) * k; r.y += (r.ty - r.y) * k; r.z += (r.tz - r.z) * k;
+      const want = v.pl.scale * lvScale(r.level);
+      v.sc += (want - v.sc) * Math.min(1, dt * 5);
+      const spd = Math.hypot(r.vx, r.vz);
+      v.phase += (spd * 1.5 + 1.2) * dt * (spd > 0.4 ? 1 : 0.3);
+      const gnd = heightAt(r.x, r.z), air = r.y - gnd > 0.35 && !r.sw;
+      v.c.root.scale.setScalar(v.sc);
+      v.c.root.position.set(r.x, r.y, r.z);
+      v.c.root.rotation.z = 0; v.c.root.rotation.y = r.yaw;
+      poseCreature(v.c, v.phase, clamp(spd / 6, 0, 1.3), air, 0, r.atk >= 0 ? clamp(r.atk / 0.35, 0, 1) : -1, clock);
+      v.sp.position.set(r.x, r.y + 2.9 * v.sc + 0.6, r.z);
+      v.sh.visible = !r.sw;
+      placeShadow(v.sh, r.x, r.z, air ? gnd : r.y, 0.75 * v.sc, 1.9 * v.sc);
+    }
+  }
+  async function startArena() {
+    if (state === 'playing' || arenaBusy) return;
+    arenaBusy = true; toast(t('ar_connecting'), 8);
+    try {
+      const r = await Arena.join({ name: (Wallet.address ? Wallet.address.slice(2, 6) + '…' + Wallet.address.slice(-3) : 'Dino' + Math.floor(Math.random() * 900 + 100)), char: save.char, level: 1 });
+      startGame({ arena: true, seed: r.seed, x: r.x, z: r.z });
+      toast(t('ar_hint'), 4);
+    } catch (e) { toast(t(e && e.message === 'full' ? 'ar_full' : 'ar_fail'), 4); }
+    arenaBusy = false;
+  }
+  let arenaBusy = false;
+  const arenaBtn = $('arenaBtn');
+  if (arenaBtn) {
+    arenaBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
+    arenaBtn.addEventListener('click', (e) => { e.stopPropagation(); GameAudio.init(); startArena(); });
+    try { Wallet.loadConfig().then((c) => { if (c && c.arena) arenaBtn.classList.remove('hidden'); }); } catch (e) { /* abaikan */ }
+  }
+  if (typeof Arena !== 'undefined') {
+    Arena.onFix = (x, z) => { player.x = x; player.z = z; };                       // server mengembalikan posisi (gerak tidak wajar)
+    Arena.onEnd = () => { if (arenaOn) { arenaOn = false; clearRemotes(); if (state === 'playing') die(t('ar_lost')); } };
+  }
+
   const player = {
     x: 0, z: 0, y: 0, vy: 0, vx: 0, vz: 0, yaw: Math.PI,
     hp: 100, hunger: 100, thirst: 100, stamina: 100, exhausted: false,
@@ -1847,7 +1920,7 @@
         d.mesh.position.y = d.by + Math.sin(clock * 2.6 + d.ph) * 0.16;
         const fx = d.x - player.x, fz = d.z - player.z;
         if (fx * fx + fz * fz < (1.7 * sc) * (1.7 * sc) && Math.abs((player.gnd + player.y + 0.9 * sc) - d.y) < 2.3) {
-          runCoins += d.val; save.coins += d.val; zoneTaken.add(d.zkey);
+          runCoins += d.val; addC(d.val); zoneTaken.add(d.zkey);
           flyCoins.push({ mesh: d.mesh, t: 0, x0: d.x, y0: d.mesh.position.y, z0: d.z });
           showDmg(d.x, d.mesh.position.y + 0.5, d.z, '+' + d.val, 'gain', 0.9);
           GameAudio.sfx.coin();
@@ -1870,7 +1943,7 @@
       d.mesh.visible = d.t < DROP_LIFE - 6 || Math.sin(d.t * 22) > -0.2;       // berkedip sebelum lenyap
       const dx = d.x - player.x, dz = d.z - player.z;
       if (d.t > 0.45 && dx * dx + dz * dz < (1.7 * sc) * (1.7 * sc) && player.y < 1.8) {
-        runCoins += d.val; save.coins += d.val;
+        runCoins += d.val; addC(d.val);
         flyCoins.push({ mesh: d.mesh, t: 0, x0: d.x, y0: d.mesh.position.y, z0: d.z });
         d.mesh.visible = true; if (d.sh) scene.remove(d.sh);
         showDmg(d.x, d.mesh.position.y + 0.5, d.z, '+' + d.val, 'gain', 0.9);
@@ -2006,7 +2079,7 @@
       for (const c of O.chests) {
         if (!c.open && Math.hypot(player.x - c.x, player.z - c.z) < 2.3 && player.y < 1.5) {
           c.open = true; zoneTaken.add(c.key);
-          runCoins += 25; save.coins += 25; writeSave();
+          runCoins += 25; addC(25); writeSave();
           starBurst(c.x, O.Zn.isl + 1.0, c.z, 14, 'gain');
           showDmg(c.x, O.Zn.isl + 2.0, c.z, '+25 🪙', 'gain', 1.3);
           GameAudio.sfx.power();
@@ -2323,12 +2396,14 @@
   }
 
   // ---------- Mulai / selesai ----------
-  function startGame() {
+  function startGame(opts) {
+    const AR = opts && opts.arena === true ? opts : null;
+    arenaOn = !!AR; if (!AR) { try { Arena.leave(); } catch (e) { /* abaikan */ } clearRemotes(); }
     if (PLAYABLES[save.char] && PLAYABLES[save.char] !== curChar) applyChar(save.char);
     clearWorld();
     for (const p of preds) removePred(p);
     preds = [];
-    worldSeed = 1 + Math.floor(Math.random() * 1e6);
+    worldSeed = AR ? AR.seed : 1 + Math.floor(Math.random() * 1e6);
     pondCache.clear(); zoneReset(); zoneTaken.clear(); zoneSeen.clear();
     camGy = 0; camYaw = 0; camPitch = 0.71; camLift = 0;
     Object.assign(player, {
@@ -2339,6 +2414,7 @@
     roarCd = 0; hordeCd = 70; horde = null; dangerNow = 0; waryNow = 0; swimming = false; swimBlend = 0; time = 0; runTime = 0; runCoins = 0; kills = 0; powerLeft = 0; scaleNow = baseScale(); shake = 0; lvDay = 0;
     spawnCd = 8; animalCd = 2; chased = false; lastBiome = null; biomeCd = 0; drinkCd = 0; deathReason = '';
     camX = 0; camZ = 0; camLead = { x: 0, z: 0 }; shown = {};
+    if (AR) { player.x = AR.x; player.z = AR.z; }
     state = 'playing';
     startPerf = performance.now();
     ensureChunks(true);
@@ -2353,6 +2429,7 @@
   function die(reason) {
     if (state !== 'playing') return;
     state = 'over';
+    if (arenaOn) { arenaOn = false; try { Arena.leave(); } catch (e) { /* abaikan */ } clearRemotes(); }
     overAt = performance.now();
     deathReason = reason;
     const days = Math.floor(runTime / DAY_LEN);
@@ -2892,7 +2969,7 @@
     if (!p.def.timid && !p.def.neutral) save.tro[p.type] = (save.tro[p.type] || 0) + 1;   // trofi predator = aset yang bisa ditukar
     const rw = Math.ceil(p.def.reward * KILL_REWARD_MUL);
     runCoins += rw;
-    save.coins += rw;
+    addC(rw);
     player.hunger = Math.min(100, player.hunger + p.def.food);
     burst(14, p.x, 1, p.z);
     starBurst(p.x, heightAt(p.x, p.z) + 1.3 * p.def.scale, p.z, 12, 'gain');
@@ -3182,6 +3259,7 @@
     horde.members.push(p);
   }
   function updateHorde(dt) {
+    if (arenaOn) return;
     if (state !== 'playing') return;
     if (!horde) {
       hordeCd -= dt;
@@ -3203,7 +3281,7 @@
     const alive = horde.members.filter((p) => !p.dead && preds.includes(p));
     if (!alive.length) {
       const bonus = horde.n * 12;
-      gainXp(bonus); runCoins += horde.n * 2; save.coins += horde.n * 2; writeSave();
+      gainXp(bonus); runCoins += horde.n * 2; addC(horde.n * 2); writeSave();
       toast(t('horde_won', { x: bonus, c: horde.n * 4 }), 3);
       GameAudio.sfx.record();
       horde = null; hordeCd = rand(100, 160);
@@ -3344,6 +3422,7 @@
 
   function updatePredators(dt) {
     chased = false;
+    if (arenaOn) return;                                          // arena uji: belum ada dino bersama
     const day = Math.floor(runTime / DAY_LEN);
     const maxCount = Math.max(2, Math.round(((isNight ? 4 : 2) + Math.min(2, Math.floor(day / 2))) * predMul));
     spawnCd -= dt;
@@ -4022,6 +4101,8 @@
     if (state !== 'playing') { try { GameAudio.nightAmbience(false); } catch (e) { /* abaikan */ } }
     else if (state === 'menu') { player.yaw = Math.sin(clock * 0.5) * 0.6 + Math.PI; }
     animate(dt);
+    updateRemotes(dt);
+    if (arenaOn && state === 'playing') Arena.send({ x: player.x, z: player.z, y: hero.root.position.y, yaw: player.yaw, vx: player.vx, vz: player.vz, atk: player.atkT, sw: swimming, lv: player.level }, now);
     updateCamera(dt);
     updateDmg(dt);
     updateStars(dt);

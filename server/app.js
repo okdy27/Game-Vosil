@@ -124,6 +124,7 @@ export function createApp(deps) {
       ok: true, chainId: Number(env.CHAIN_ID || 480), token: env.TOKEN_ADDRESS || '', symbol: 'VOS',
       ptPerVos: S.ptPerVos, earnCapDay: S.earnCapDay, redeemMin: S.redeemMin, redeemMaxDay: S.redeemMaxDay,
       reviewHours: [S.reviewMinH, S.reviewMaxH], payoutEnabled: S.payoutEnabled,
+      arena: String(env.ARENA_ENABLED || '0') === '1' && !!env.ARENA,
       turnstileSiteKey: env.TURNSTILE_SECRET ? (env.TURNSTILE_SITEKEY || '') : '',
       ...(await queueInfo(env)),
     });

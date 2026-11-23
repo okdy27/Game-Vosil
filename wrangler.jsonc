@@ -11,6 +11,8 @@
   "d1_databases": [
     { "binding": "DB", "database_name": "vosil-game", "database_id": "121a78d5-1c12-41df-801f-275c5b7071de" }
   ],
+  "durable_objects": { "bindings": [ { "name": "ARENA", "class_name": "Arena" } ] },
+  "migrations": [ { "tag": "v1-arena", "new_sqlite_classes": ["Arena"] } ],
   "triggers": { "crons": ["*/5 5-6 * * *"] },
   "vars": {
     "CHAIN_ID": "480",
@@ -29,6 +31,7 @@
     "MAX_WALLETS_PER_IP_DAY": "5",
     "MAX_WALLETS_PER_DEVICE": "2",
     "PAYOUT_BATCH": "5",
+    "ARENA_ENABLED": "0",
     "TURNSTILE_SITEKEY": ""
   }
 }

@@ -2349,6 +2349,18 @@
         if (active) { ctx.strokeStyle = 'rgba(255,255,255,.85)'; ctx.lineWidth = 1; ctx.stroke(); }
         ctx.globalAlpha = 1;
       }
+      // pemain online lain: titik KUNING besar bercincin putih (koin = kotak kecil, area tantangan = berlian)
+      if (arenaOn && typeof Arena !== 'undefined') for (const r of Arena.remotes.values()) {
+        if (!r.seen || !r.near) continue;
+        let q = pt(r.x, r.z), edge = false;
+        if (q[2] > MM_R) { const a = Math.atan2(q[1] - c, q[0] - c); q = [c + Math.cos(a) * rad, c + Math.sin(a) * rad]; edge = true; }
+        ctx.globalAlpha = edge ? 0.75 : 1;
+        ctx.fillStyle = '#ffee00'; ctx.strokeStyle = '#4e342e'; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.arc(q[0], q[1], 4, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        ctx.strokeStyle = 'rgba(255,255,255,.95)'; ctx.lineWidth = 1.2;
+        ctx.beginPath(); ctx.arc(q[0], q[1], 6.2, 0, Math.PI * 2); ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
       ctx.restore();
       // pemain (segitiga menghadap arah jalan)
       const pfx = -Math.sin(player.yaw), pfz = -Math.cos(player.yaw);

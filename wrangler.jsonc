@@ -31,7 +31,7 @@
     "MAX_WALLETS_PER_IP_DAY": "5",
     "MAX_WALLETS_PER_DEVICE": "2",
     "PAYOUT_BATCH": "5",
-    "ARENA_ENABLED": "0",
+    "ARENA_ENABLED": "1",
     "TURNSTILE_SITEKEY": ""
   }
 }

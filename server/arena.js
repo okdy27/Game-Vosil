@@ -3,7 +3,7 @@
 // ArenaCore = logika murni (bisa diuji tanpa Cloudflare). Arena = pembungkus Durable Object (WebSocket).
 
 export const MAX_PLAYERS = 8;           // pemain per arena
-export const TICK_MS = 100;             // 10 siaran per detik
+export const TICK_MS = 66;              // ~15 siaran per detik
 export const RADIUS = 140;              // hanya pemain dalam jarak ini yang dikirim (interest management)
 const MAX_SPEED = 32;                   // m/detik; di atas ini dianggap teleport -> dikembalikan (lari 10, lompat jauh sekitar 20)
 const WORLD_LIM = 4000;
@@ -20,14 +20,14 @@ export class ArenaCore {
     this.now = now; this.rnd = rnd;
     this.players = new Map();
     this.nextId = 1;
-    this.seed = this.newSeed();
+    this.seed = this.newSeed(); this.t0 = this.now();            // t0 = awal "hari pertama" arena (jam siang-malam bersama)
   }
   newSeed() { return 1 + Math.floor(this.rnd() * 1e6); }
 
   // send(str) mengirim teks ke pemain itu. Mengembalikan id, atau null jika penuh.
   join(send) {
     if (this.players.size >= MAX_PLAYERS) return null;
-    if (this.players.size === 0) this.seed = this.newSeed();      // arena kosong -> dunia baru
+    if (this.players.size === 0) { this.seed = this.newSeed(); this.t0 = this.now(); }      // arena kosong -> dunia & jam baru
     const id = this.nextId++;
     const ang = (id * 2.399963) % (Math.PI * 2), d = 18;           // titik awal melingkar, tersebar
     const p = {
@@ -59,7 +59,7 @@ export class ArenaCore {
       p.level = Math.min(10, Math.max(1, Math.floor(num(m.level, 1))));
       const first = !p.ready; p.ready = true;
       const roster = [...this.players.values()].filter((q) => q.ready).map((q) => this.card(q));
-      p.send(JSON.stringify({ t: 'w', id: p.id, seed: this.seed, x: r1(p.x), z: r1(p.z), roster, max: MAX_PLAYERS }));
+      p.send(JSON.stringify({ t: 'w', id: p.id, seed: this.seed, ts: this.now(), t0: this.t0, x: r1(p.x), z: r1(p.z), roster, max: MAX_PLAYERS }));
       if (first) this.broadcast({ t: 'j', p: this.card(p) }, p.id);
     } else if (m.t === 's' && p.ready) {                           // state: posisi sendiri
       const x = num(m.x, p.x), z = num(m.z, p.z), y = num(m.y, p.y);
@@ -88,7 +88,7 @@ export class ArenaCore {
 
   // siaran berkala: tiap pemain hanya menerima pemain lain yang dekat
   tick() {
-    const ps = [...this.players.values()].filter((p) => p.ready);
+    const ps = [...this.players.values()].filter((p) => p.ready), ts = this.now();
     for (const a of ps) {
       const list = [];
       for (const b of ps) {
@@ -96,7 +96,7 @@ export class ArenaCore {
         if (Math.hypot(b.x - a.x, b.z - a.z) > RADIUS) continue;
         list.push([b.id, r1(b.x), r1(b.y), r1(b.z), Math.round(b.yaw * 100) / 100, r1(b.vx), r1(b.vz), Math.round(b.atk * 100) / 100, b.sw, b.level]);
       }
-      try { a.send(JSON.stringify({ t: 'p', p: list })); } catch (e) { /* abaikan */ }
+      try { a.send(JSON.stringify({ t: 'p', ts: ts, p: list })); } catch (e) { /* abaikan */ }
     }
   }
   size() { return this.players.size; }

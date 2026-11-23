@@ -1758,8 +1758,22 @@
         remoteViews.set(r.id, v);
       }
       v.c.root.visible = true; v.sp.visible = true; v.sh.visible = true;
-      const k = Math.min(1, dt * 10);
-      r.x += (r.tx - r.x) * k; r.y += (r.ty - r.y) * k; r.z += (r.tz - r.z) * k;
+      if (r.buf && r.buf.length >= 1) {                              // tampilkan posisi ~180 ms di masa lalu, diinterpolasi antar data jaringan
+        const rt = Arena.renderTime(), b = r.buf;
+        let i = b.length - 1; while (i > 0 && b[i].at > rt) i--;
+        const a0 = b[i], a1 = b[i + 1];
+        if (a1 && rt >= a0.at) {
+          const f = clamp((rt - a0.at) / Math.max(1, a1.at - a0.at), 0, 1);
+          r.x = a0.x + (a1.x - a0.x) * f; r.y = a0.y + (a1.y - a0.y) * f; r.z = a0.z + (a1.z - a0.z) * f;
+          let dy = a1.yaw - a0.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); r.dyaw = a0.yaw + dy * f;
+        } else {                                                     // data terlambat: lanjutkan dengan kecepatan terakhir (maks 0,25 detik)
+          const last = b[b.length - 1], ex = Math.min(0.25, Math.max(0, (rt - last.at) / 1000));
+          r.x = last.x + r.vx * ex; r.z = last.z + r.vz * ex; r.y = last.y; r.dyaw = last.yaw;
+        }
+      } else {
+        const k = Math.min(1, dt * 10);
+        r.x += (r.tx - r.x) * k; r.y += (r.ty - r.y) * k; r.z += (r.tz - r.z) * k; r.dyaw = r.yaw;
+      }
       const want = v.pl.scale * lvScale(r.level);
       v.sc += (want - v.sc) * Math.min(1, dt * 5);
       const spd = Math.hypot(r.vx, r.vz);
@@ -1767,7 +1781,7 @@
       const gnd = heightAt(r.x, r.z), air = r.y - gnd > 0.35 && !r.sw;
       v.c.root.scale.setScalar(v.sc);
       v.c.root.position.set(r.x, r.y, r.z);
-      v.c.root.rotation.z = 0; v.c.root.rotation.y = r.yaw;
+      v.c.root.rotation.z = 0; v.c.root.rotation.y = r.dyaw !== undefined ? r.dyaw : r.yaw;
       poseCreature(v.c, v.phase, clamp(spd / 6, 0, 1.3), air, 0, r.atk >= 0 ? clamp(r.atk / 0.35, 0, 1) : -1, clock);
       v.sp.position.set(r.x, r.y + 2.9 * v.sc + 0.6, r.z);
       v.sh.visible = !r.sw;
@@ -2416,6 +2430,7 @@
     camX = 0; camZ = 0; camLead = { x: 0, z: 0 }; shown = {};
     if (AR) { player.x = AR.x; player.z = AR.z; }
     state = 'playing';
+    if (AR) { runTime = Arena.worldTime(); lvDay = Math.floor(runTime / DAY_LEN); }
     startPerf = performance.now();
     ensureChunks(true);
     save.runs++;
@@ -3573,7 +3588,7 @@
 
   // ---------- Update logika ----------
   function update(dt) {
-    runTime += dt;
+    if (arenaOn) runTime = Arena.worldTime(); else runTime += dt;                  // arena: jam siang-malam mengikuti server
     applyDayNight();
     { const dNow = Math.floor(runTime / DAY_LEN); if (dNow > lvDay) { lvDay = dNow; if (dNow > 0) { gainXp(30); toast(t('day_toast', { n: dNow + 1 }), 2); } } }
     if (keys.camL) camYaw += 1.9 * dt;

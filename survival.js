@@ -1765,6 +1765,7 @@
   function pvpHit(m) {                                                              // seranganku mengenai pemain lain
     const v = remoteViews.get(m.to); if (!v) return;
     const r = Arena.remotes.get(m.to); if (!r) return;
+    v.hitT = 0.18;                                                                  // lawan 'tersentak' sesaat
     showDmg(r.x, r.y + 2.2 * v.sc + 0.4, r.z, '-' + Math.round(m.dmg), m.k === 'roar' ? 'crit' : 'hit', m.k === 'roar' ? 1.2 : 1);
     starBurst(r.x, r.y + 1.3 * v.sc, r.z, 5, 'hit');
     GameAudio.sfx.hit();
@@ -1802,6 +1803,11 @@
     for (const id of [...remoteViews.keys()]) dropRemote(id);
     for (const o of remoteRings) { scene.remove(o.m); o.m.material.dispose(); }
     remoteRings.length = 0;
+    for (const b of bubbles) { scene.remove(b.sp); b.sp.material.dispose(); }
+    bubbles.length = 0;
+    for (const o of ringFx) { scene.remove(o.m); o.m.material.dispose(); }
+    ringFx.length = 0;
+    myEmote = { e: -1, t: 99 };
   }
   function updateRemotes(dt) {
     if (!arenaOn || typeof Arena === 'undefined') { if (remoteViews.size) clearRemotes(); return; }
@@ -1844,6 +1850,10 @@
       v.c.root.position.set(r.x, r.y, r.z);
       v.c.root.rotation.z = 0; v.c.root.rotation.y = r.dyaw !== undefined ? r.dyaw : r.yaw;
       poseCreature(v.c, v.phase, clamp(spd / 6, 0, 1.3), air, 0, r.atk >= 0 ? clamp(r.atk / 0.35, 0, 1) : -1, clock);
+      if (r.atk >= 0 && (v.lastAtk === undefined || v.lastAtk < 0)) spawnSlash(r.x, r.y, r.z, v.c.root.rotation.y, v.sc);   // lawan menyerang
+      v.lastAtk = r.atk;
+      if (v.em) { v.em.t += dt; const o = emoteOff(v.em.e, v.em.t); if (o) { v.c.root.position.y += o.dy * v.sc; v.c.root.rotation.y += o.dyaw; } else if (v.em.t > 2.2) v.em = null; }
+      if (v.hitT > 0) { v.hitT -= dt; v.c.root.scale.setScalar(v.sc * (1 + 0.12 * Math.sin(Math.PI * Math.max(0, v.hitT) / 0.18))); }
       v.sp.position.set(r.x, r.y + 2.9 * v.sc + 0.95, r.z);
       v.hb.position.set(r.x, r.y + 2.9 * v.sc + 0.4, r.z);
       v.sh.visible = !r.sw;
@@ -1859,7 +1869,116 @@
     onlineShown = key;
     if (onlinePing) onlinePing.textContent = pg ? ' · ' + pg + ' ms' : '';
     onlineBox.classList.toggle('hidden', n === 0);
+    if (emoteBtn) { emoteBtn.classList.toggle('hidden', n === 0); if (n === 0 && emoteBar) emoteBar.classList.add('hidden'); }
     if (n) { onlineN.textContent = n; onlineMax.textContent = Arena.st.max; }
+  }
+  // ---------- Efek serangan ringan & emote ----------
+  // goresan cakar/gigitan: busur cahaya singkat di depan penyerang (pool 8 mesh, tanpa partikel berat)
+  const slashGeo = new THREE.RingGeometry(0.55, 1.0, 24, 1, -0.95, 1.9);
+  const slashPool = [];
+  for (let i = 0; i < 8; i++) {
+    const m = new THREE.Mesh(slashGeo, new THREE.MeshBasicMaterial({ color: 0xfff1c8, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending }));
+    m.visible = false; m.renderOrder = 5; scene.add(m); slashPool.push({ m, t: 9, sc: 1 });
+  }
+  let slashFlip = 1;
+  function spawnSlash(x, y, z, yaw, sc, col) {
+    const o = slashPool.find((q) => q.t >= 0.22); if (!o) return;
+    slashFlip = -slashFlip;
+    o.t = 0; o.sc = Math.max(0.6, sc);
+    o.m.material.color.setHex(col || 0xfff1c8);
+    o.m.position.set(x - Math.sin(yaw) * 1.5 * o.sc, y + 1.15 * o.sc, z - Math.cos(yaw) * 1.5 * o.sc);
+    o.m.rotation.set(0, yaw, -0.55 * slashFlip);
+    o.m.visible = true;
+  }
+  function updateSlashes(dt) {
+    for (const o of slashPool) {
+      if (o.t >= 0.22) continue;
+      o.t += dt;
+      const f = Math.min(1, o.t / 0.22);
+      o.m.scale.setScalar(o.sc * (0.7 + 0.9 * f)); o.m.material.opacity = 0.85 * (1 - f) * (1 - f);
+      if (f >= 1) o.m.visible = false;
+    }
+  }
+  // cincin cahaya di kaki (dipakai emote), mengembang lalu memudar
+  const ringFx = [];
+  const ringFxGeo = new THREE.RingGeometry(0.85, 1, 40); ringFxGeo.rotateX(-Math.PI / 2);
+  function fxRing(x, y, z, maxR, col, delay) {
+    const mat = new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.7, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending });
+    const m = new THREE.Mesh(ringFxGeo, mat); m.position.set(x, y + 0.2, z); m.visible = !delay; scene.add(m);
+    ringFx.push({ m, t: -(delay || 0), maxR });
+  }
+  function updateRingFx(dt) {
+    for (let i = ringFx.length - 1; i >= 0; i--) {
+      const o = ringFx[i]; o.t += dt;
+      if (o.t < 0) continue;
+      o.m.visible = true;
+      const f = Math.min(1, o.t / 0.9);
+      o.m.scale.set(0.4 + f * o.maxR, 1, 0.4 + f * o.maxR); o.m.material.opacity = 0.7 * (1 - f);
+      if (f >= 1) { scene.remove(o.m); o.m.material.dispose(); ringFx.splice(i, 1); }
+    }
+  }
+  // emote: ikon siap pakai di atas kepala + gaya gerak. 2 = meledek (joget lompat), 0 = melambai, 3 = tantang duel
+  const EMOTES = ['👋', '👍', '😂', '⚔️', '🏳️', '😱'];
+  const bubbles = [];
+  function emojiSprite(ch) {
+    const cv = document.createElement('canvas'); cv.width = cv.height = 128;
+    const g = cv.getContext('2d'); g.font = '84px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(ch, 64, 70);
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(cv), transparent: true, depthTest: false }));
+    sp.scale.set(1.5, 1.5, 1); sp.renderOrder = 11;
+    return sp;
+  }
+  const emoteOff = (e, el) => {                                                        // el = detik sejak emote mulai -> {dy, dyaw}
+    if (el > 2.2) return null;
+    if (e === 2) return { dy: Math.abs(Math.sin(el * 9)) * 0.3, dyaw: Math.sin(el * 13) * 0.4 };       // joget meledek
+    if (e === 0) return el < 1.2 ? { dy: Math.abs(Math.sin(el * 6)) * 0.18, dyaw: Math.sin(el * 9) * 0.15 } : null;   // lambai
+    if (e === 3) return el < 0.9 ? { dy: Math.sin(Math.min(1, el / 0.9) * Math.PI) * 0.35, dyaw: 0 } : null;          // menantang: melompat sekali
+    return null;
+  };
+  function addBubble(ch, id) {
+    const sp = emojiSprite(ch); scene.add(sp);
+    bubbles.push({ sp, t: 0, id });
+  }
+  function emoteFx(e, x, y, z, sc, onceOnly) {                                         // efek visual di kaki (mirip "recall" tapi tidak berpindah)
+    if (e === 2) { fxRing(x, y, z, 3.2 * sc, 0xffd54f); fxRing(x, y, z, 3.6 * sc, 0xffa726, 0.35); fxRing(x, y, z, 4 * sc, 0xffd54f, 0.7); }
+    else if (e === 3) fxRing(x, y, z, 3.4 * sc, 0xff5252);
+    else if (e === 4) fxRing(x, y, z, 3 * sc, 0xffffff);
+    if (e === 2 || e === 3) starBurst(x, y + 1.2 * sc, z, 8, 'gain');
+  }
+  let myEmote = { e: -1, t: 99 }, emoteCd = 0;
+  function doEmote(i) {
+    if (!arenaOn || state !== 'playing' || emoteCd > 0 || i < 0 || i >= EMOTES.length) return;
+    emoteCd = 2.0;
+    myEmote = { e: i, t: 0 };
+    addBubble(EMOTES[i], null);
+    emoteFx(i, player.x, player.gy || 0, player.z, scaleNow / 1.1);
+    Arena.emote(i);
+  }
+  function remoteEmote(id, e) {
+    if (e < 0 || e >= EMOTES.length) return;
+    const r = Arena.remotes.get(id), v = remoteViews.get(id); if (!r || !v || !r.seen) return;
+    v.em = { e, t: 0 };
+    addBubble(EMOTES[e], id);
+    emoteFx(e, r.x, r.y, r.z, v.sc);
+  }
+  function updateBubbles(dt) {
+    emoteCd = Math.max(0, emoteCd - dt);
+    if (myEmote.t < 9) myEmote.t += dt;
+    for (let i = bubbles.length - 1; i >= 0; i--) {
+      const b = bubbles[i]; b.t += dt;
+      let x, y, z, ok = true;
+      if (b.id === null) { x = hero.root.position.x; y = hero.root.position.y + 2.9 * scaleNow + 1.6; z = hero.root.position.z; }
+      else { const v = remoteViews.get(b.id); if (!v) ok = false; else { x = v.c.root.position.x; y = v.c.root.position.y + 2.9 * v.sc + 1.6; z = v.c.root.position.z; } }
+      if (!ok || b.t > 2.4) { scene.remove(b.sp); if (b.sp.material.map) b.sp.material.map.dispose(); b.sp.material.dispose(); bubbles.splice(i, 1); continue; }
+      const pop = Math.min(1, b.t / 0.18), fade = b.t > 2 ? Math.max(0, (2.4 - b.t) / 0.4) : 1;
+      b.sp.position.set(x, y + b.t * 0.18, z);
+      b.sp.scale.setScalar(1.5 * (0.5 + 0.5 * pop)); b.sp.material.opacity = fade;
+    }
+    if (emoteBtn) emoteBtn.classList.toggle('cd', emoteCd > 0);
+  }
+  const emoteBtn = $('emoteBtn'), emoteBar = $('emoteBar');
+  if (emoteBtn && emoteBar) {
+    bindBtn(emoteBtn, () => emoteBar.classList.toggle('hidden'));
+    for (let i = 0; i < EMOTES.length; i++) bindBtn($('em' + i), () => { doEmote(i); emoteBar.classList.add('hidden'); });
   }
   async function startArena() {
     if (state === 'playing' || arenaBusy) return;
@@ -1880,7 +1999,7 @@
   }
   if (typeof Arena !== 'undefined') {
     Arena.onFix = (x, z) => { player.x = x; player.z = z; };                       // server mengembalikan posisi (gerak tidak wajar)
-    Arena.onDamaged = pvpHurt; Arena.onHit = pvpHit; Arena.onKill = pvpKill; Arena.onRoar = pvpRoar;
+    Arena.onDamaged = pvpHurt; Arena.onHit = pvpHit; Arena.onKill = pvpKill; Arena.onRoar = pvpRoar; Arena.onEmote = remoteEmote;
     Arena.onJoin = (c) => { if (arenaOn) toast(t('ar_joined', { n: c.name }), 2); };
     Arena.onLeave = (c) => { if (arenaOn) toast(t('ar_left', { n: c.name }), 2); };
     Arena.onEnd = () => { if (arenaOn) { arenaOn = false; clearRemotes(); if (state === 'playing') die(t('ar_lost')); } };
@@ -3246,6 +3365,7 @@
     }
     if (best) player.yaw = faceYaw(best.x - player.x, best.z - player.z);
     if (arenaOn) Arena.attack(player.yaw);
+    spawnSlash(player.x, hero.root.position.y, player.z, player.yaw, scaleNow / 1.1);
     player.atkT = 0;
     player.atkHit = false;
     player.atkCd = 0.55;
@@ -4100,6 +4220,7 @@
       poseCreature(hero, phase, run, air, player.vy, player.atkT >= 0 ? clamp(player.atkT / 0.35, 0, 1) : -1, clock);
       if (swimBlend > 0.01) applySwim(hero, swimBlend, spd, clock);
       tiltToGround(hero.root, player.x, player.z, player.yaw, 0.9 * scaleNow / 1.1, dt, swimBlend > 0.3 || lastWet || air || onPlat);
+      if (myEmote.e >= 0 && arenaOn) { const o = emoteOff(myEmote.e, myEmote.t); if (o) { hero.root.position.y += o.dy * scaleNow / 1.1; hero.root.rotation.y += o.dyaw; } }
     }
     const s = Math.max(0.5, 1 - player.y / 3.2);
     heroShadow.visible = swimBlend < 0.5;
@@ -4213,6 +4334,7 @@
     animate(dt);
     updateRemotes(dt);
     updateRemoteRings(dt);
+    updateSlashes(dt); updateRingFx(dt); updateBubbles(dt);
     updateOnline();
     if (arenaOn && state === 'playing') Arena.send({ x: player.x, z: player.z, y: hero.root.position.y, yaw: player.yaw, vx: player.vx, vz: player.vz, atk: player.atkT, sw: swimming, hp: player.hp }, now);
     updateCamera(dt);

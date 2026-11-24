@@ -21,6 +21,7 @@ export const STATS = {
   spino: { scale: 1.4, bite: 1.3, armor: 0.75 },
   parasaur: { scale: 1.25, bite: 0.6, armor: 1.1 },
 };
+export const EMOTES = 6, EMOTE_CD_MS = 2000;
 const LV1 = 0.72;                       // skala level 1 (lvScale(1))
 export const HP_MAX = 100;
 export const BITE_DMG = 18, BITE_CD_MS = 450, BITE_ARC = 1.1;
@@ -55,7 +56,7 @@ export class ArenaCore {
       id, send, name: 'Dino', char: 'vosil', level: 1, ready: false, alive: true,
       x: Math.cos(ang) * d, y: 0, z: Math.sin(ang) * d, yaw: 0, vx: 0, vz: 0, atk: -1, sw: 0,
       lastT: this.now(), bucket: RATE, bucketT: this.now(), strikes: 0,
-      hp: HP_MAX, dseq: 0, heal: HEAL_CAP, invUntil: 0, atkReady: 0, roarReady: 0, kills: 0,
+      emReady: 0, hp: HP_MAX, dseq: 0, heal: HEAL_CAP, invUntil: 0, atkReady: 0, roarReady: 0, kills: 0,
     };
     this.players.set(id, p);
     this.dirty = true;
@@ -92,6 +93,7 @@ export class ArenaCore {
     if (m.t === 's') this.onState(p, m, t);
     else if (m.t === 'a') this.onBite(p, m, t);
     else if (m.t === 'r') this.onRoar(p, t);
+    else if (m.t === 'e') this.onEmote(p, m, t);
   }
 
   onState(p, m, t) {
@@ -162,6 +164,14 @@ export class ArenaCore {
     }
     this.broadcast({ t: 'R', id: a.id });                          // semua melihat cincin raungan
     this.dirty = true;
+  }
+
+  // emote: pilihan gerakan/ikon siap pakai (bukan teks bebas, jadi aman dari penyalahgunaan)
+  onEmote(p, m, t) {
+    const e = Math.floor(num(m.e, -1));
+    if (e < 0 || e >= EMOTES || t < p.emReady) return;
+    p.emReady = t + EMOTE_CD_MS;
+    this.broadcast({ t: 'E', id: p.id, e }, p.id);
   }
 
   strike(p) { p.strikes++; if (p.strikes > 60) { try { p.send(JSON.stringify({ t: 'kick' })); } catch (e) { /* abaikan */ } } }

@@ -160,6 +160,12 @@
       margin-right: 6px;
     }
 
+    #emoteBtn, #emoteBar button { pointer-events: auto; width: 40px; height: 40px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, .45); background: rgba(0, 0, 0, .5); color: #fff; font-size: 20px; line-height: 1; padding: 0; touch-action: none; text-shadow: none; }
+    #emoteBtn { position: absolute; top: calc(var(--st) + 152px); left: calc(var(--sl) + 56px); }
+    #emoteBtn.cd, #emoteBar.cd button { opacity: .35; }
+    #emoteBar { position: absolute; top: calc(var(--st) + 146px); left: calc(var(--sl) + 104px); display: flex; gap: 6px; padding: 6px; border-radius: 26px; background: rgba(0, 0, 0, .35); }
+    #emoteBar.hidden, #emoteBtn.hidden { display: none; }
+    #emoteBar button:active, #emoteBtn.on { transform: scale(.9); background: rgba(255, 255, 255, .25); }
     #toast {
       position: absolute;
       top: calc(var(--st) + 14px);
@@ -502,6 +508,10 @@
       <div id="coinBox"><span class="coinIcon"></span><span id="runCoins">0</span></div>
       <div class="lvl">Lv <b id="lvNo">1</b><span class="xpTrack"><i id="xpFill"></i></span></div>
       <div class="sub"><span data-i18n="hud_day">Hari</span> <b id="dayNo">1</b> · <span id="timeIcon">☀️</span></div>
+    </div>
+    <button id="emoteBtn" class="hidden" type="button" aria-label="Emote">💬</button>
+    <div id="emoteBar" class="hidden">
+      <button id="em0" type="button">👋</button><button id="em1" type="button">👍</button><button id="em2" type="button">😂</button><button id="em3" type="button">⚔️</button><button id="em4" type="button">🏳️</button><button id="em5" type="button">😱</button>
     </div>
     <div id="toast"></div>
     <div id="power" class="hidden">

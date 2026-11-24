@@ -1869,33 +1869,34 @@
     onlineShown = key;
     if (onlinePing) onlinePing.textContent = pg ? ' · ' + pg + ' ms' : '';
     onlineBox.classList.toggle('hidden', n === 0);
-    if (emoteBtn) { emoteBtn.classList.toggle('hidden', n === 0); if (n === 0 && emoteBar) emoteBar.classList.add('hidden'); }
+    if (emoteBar) emoteBar.classList.toggle('hidden', n === 0);
     if (n) { onlineN.textContent = n; onlineMax.textContent = Arena.st.max; }
   }
   // ---------- Efek serangan ringan & emote ----------
   // goresan cakar/gigitan: busur cahaya singkat di depan penyerang (pool 8 mesh, tanpa partikel berat)
-  const slashGeo = new THREE.RingGeometry(0.55, 1.0, 24, 1, -0.95, 1.9);
+  const slashGeo = new THREE.RingGeometry(0.62, 1.0, 28, 1, -1.25, 2.5);       // busur lebar ~143 derajat, cukup tebal agar terlihat jelas
   const slashPool = [];
   for (let i = 0; i < 8; i++) {
-    const m = new THREE.Mesh(slashGeo, new THREE.MeshBasicMaterial({ color: 0xfff1c8, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending }));
-    m.visible = false; m.renderOrder = 5; scene.add(m); slashPool.push({ m, t: 9, sc: 1 });
+    const m = new THREE.Mesh(slashGeo, new THREE.MeshBasicMaterial({ color: 0xfff1c8, transparent: true, opacity: 0, depthWrite: false, depthTest: false, fog: false, side: THREE.DoubleSide }));
+    m.visible = false; m.renderOrder = 9; scene.add(m); slashPool.push({ m, t: 9, sc: 1 });
   }
   let slashFlip = 1;
   function spawnSlash(x, y, z, yaw, sc, col) {
-    const o = slashPool.find((q) => q.t >= 0.22); if (!o) return;
+    starBurst(x - Math.sin(yaw) * 2.1 * Math.max(0.6, sc), y + 1.2 * Math.max(0.6, sc), z - Math.cos(yaw) * 2.1 * Math.max(0.6, sc), 4, 'hit');   // percikan selalu terlihat, kena atau tidak
+    const o = slashPool.find((q) => q.t >= 0.3); if (!o) return;
     slashFlip = -slashFlip;
     o.t = 0; o.sc = Math.max(0.6, sc);
     o.m.material.color.setHex(col || 0xfff1c8);
-    o.m.position.set(x - Math.sin(yaw) * 1.5 * o.sc, y + 1.15 * o.sc, z - Math.cos(yaw) * 1.5 * o.sc);
+    o.m.position.set(x - Math.sin(yaw) * 1.7 * o.sc, y + 1.2 * o.sc, z - Math.cos(yaw) * 1.7 * o.sc);
     o.m.rotation.set(0, yaw, -0.55 * slashFlip);
     o.m.visible = true;
   }
   function updateSlashes(dt) {
     for (const o of slashPool) {
-      if (o.t >= 0.22) continue;
+      if (o.t >= 0.3) continue;
       o.t += dt;
-      const f = Math.min(1, o.t / 0.22);
-      o.m.scale.setScalar(o.sc * (0.7 + 0.9 * f)); o.m.material.opacity = 0.85 * (1 - f) * (1 - f);
+      const f = Math.min(1, o.t / 0.3);
+      o.m.scale.setScalar(o.sc * (1.1 + 1.0 * f)); o.m.material.opacity = 0.95 * (1 - f * f);
       if (f >= 1) o.m.visible = false;
     }
   }
@@ -1973,12 +1974,11 @@
       b.sp.position.set(x, y + b.t * 0.18, z);
       b.sp.scale.setScalar(1.5 * (0.5 + 0.5 * pop)); b.sp.material.opacity = fade;
     }
-    if (emoteBtn) emoteBtn.classList.toggle('cd', emoteCd > 0);
+    if (emoteBar) emoteBar.classList.toggle('cd', emoteCd > 0);
   }
-  const emoteBtn = $('emoteBtn'), emoteBar = $('emoteBar');
-  if (emoteBtn && emoteBar) {
-    bindBtn(emoteBtn, () => emoteBar.classList.toggle('hidden'));
-    for (let i = 0; i < EMOTES.length; i++) bindBtn($('em' + i), () => { doEmote(i); emoteBar.classList.add('hidden'); });
+  const emoteBar = $('emoteBar');
+  if (emoteBar) {
+    for (let i = 0; i < EMOTES.length; i++) bindBtn($('em' + i), () => doEmote(i));
   }
   async function startArena() {
     if (state === 'playing' || arenaBusy) return;

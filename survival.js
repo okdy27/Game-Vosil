@@ -1735,29 +1735,90 @@
     sp.scale.set(3.4, 0.85, 1); sp.renderOrder = 10;
     return sp;
   }
+  function hpSprite() {
+    const cv = document.createElement('canvas'); cv.width = 128; cv.height = 20;
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(cv), transparent: true, depthTest: false }));
+    sp.scale.set(2.3, 0.36, 1); sp.renderOrder = 10; sp.userData.cv = cv;
+    return sp;
+  }
+  function drawHp(sp, hp) {
+    const cv = sp.userData.cv, g = cv.getContext('2d'), f = Math.max(0, Math.min(1, hp / 100));
+    g.clearRect(0, 0, 128, 20);
+    g.fillStyle = 'rgba(0,0,0,.65)'; g.fillRect(0, 0, 128, 20);
+    g.fillStyle = f > 0.5 ? '#43c85a' : f > 0.25 ? '#ffb300' : '#ef3b30'; g.fillRect(3, 3, 122 * f, 14);
+    sp.material.map.needsUpdate = true;
+  }
+  const pName = (id) => { const r = Arena.remotes.get(id); return r ? r.name : 'Dino'; };
+  const remoteRings = [];
+  function pvpHurt(m) {                                                            // aku terkena serangan pemain lain (server yang memutuskan)
+    if (state !== 'playing' || !arenaOn) return;
+    player.hp = Math.max(0, m.hp);
+    showDmg(player.x, (player.gy || 0) + player.y + 2.3 * scaleNow / 1.1, player.z, '-' + Math.round(m.dmg), 'hurt', 1 + Math.min(0.5, m.dmg / 40));
+    starBurst(player.x, (player.gy || 0) + player.y + 1.3 * scaleNow / 1.1, player.z, 6, 'hurt');
+    player.invuln = 0.7; player.lastDmg = 0;
+    const dx = player.x - m.x, dz = player.z - m.z, d = Math.hypot(dx, dz) || 1, kb = m.k === 'roar' ? 2.4 : 0.9;
+    player.x += (dx / d) * kb; player.z += (dz / d) * kb;
+    hurtT = 0.25; shake = Math.max(shake, m.k === 'roar' ? 0.8 : 0.6);
+    GameAudio.sfx.hit(); GameAudio.sfx.dino(save.char, 'hurt', 0.9);
+    if (player.hp <= 0) die(t('ar_killed', { n: pName(m.by) }));
+  }
+  function pvpHit(m) {                                                              // seranganku mengenai pemain lain
+    const v = remoteViews.get(m.to); if (!v) return;
+    const r = Arena.remotes.get(m.to); if (!r) return;
+    showDmg(r.x, r.y + 2.2 * v.sc + 0.4, r.z, '-' + Math.round(m.dmg), m.k === 'roar' ? 'crit' : 'hit', m.k === 'roar' ? 1.2 : 1);
+    starBurst(r.x, r.y + 1.3 * v.sc, r.z, 5, 'hit');
+    GameAudio.sfx.hit();
+  }
+  function pvpKill(m) {
+    if (!arenaOn) return;
+    const me = Arena.st.id;
+    if (m.id === me) die(t('ar_killed', { n: m.bn }));
+    else if (m.by === me) { toast(t('ar_you_kill', { n: m.nm }), 3); GameAudio.sfx.record(); }
+    else toast(t('ar_kill', { a: m.bn, b: m.nm }), 2.6);
+  }
+  function pvpRoar(id) {                                                            // cincin raungan pemain lain
+    const r = Arena.remotes.get(id); if (!r || !r.seen) return;
+    const mat = mRoar.clone(); mat.opacity = 0.6;
+    const m = new THREE.Mesh(roarRingGeo, mat); m.position.set(r.x, r.y + 0.25, r.z); scene.add(m);
+    remoteRings.push({ m, t: 0 });
+  }
+  function updateRemoteRings(dt) {
+    for (let i = remoteRings.length - 1; i >= 0; i--) {
+      const o = remoteRings[i]; o.t += dt;
+      const f = Math.min(1, o.t / 0.6);
+      o.m.scale.set(1 + f * 8.2, 1, 1 + f * 8.2); o.m.material.opacity = 0.6 * (1 - f) * (1 - f);
+      if (f >= 1) { scene.remove(o.m); o.m.material.dispose(); remoteRings.splice(i, 1); }
+    }
+  }
   function dropRemote(id) {
     const v = remoteViews.get(id); if (!v) return;
-    scene.remove(v.c.root); disposeTree(v.c.root); scene.remove(v.sp);
+    scene.remove(v.c.root); disposeTree(v.c.root); scene.remove(v.sp); scene.remove(v.hb);
+    if (v.hb.material.map) v.hb.material.map.dispose(); v.hb.material.dispose();
     if (v.sp.material.map) v.sp.material.map.dispose(); v.sp.material.dispose();
     if (v.sh) { scene.remove(v.sh); if (v.sh.userData.unit && v.sh.geometry) v.sh.geometry.dispose(); }
     remoteViews.delete(id);
   }
-  function clearRemotes() { for (const id of [...remoteViews.keys()]) dropRemote(id); }
+  function clearRemotes() {
+    for (const id of [...remoteViews.keys()]) dropRemote(id);
+    for (const o of remoteRings) { scene.remove(o.m); o.m.material.dispose(); }
+    remoteRings.length = 0;
+  }
   function updateRemotes(dt) {
     if (!arenaOn || typeof Arena === 'undefined') { if (remoteViews.size) clearRemotes(); return; }
     for (const id of [...remoteViews.keys()]) if (!Arena.remotes.has(id)) dropRemote(id);
     for (const r of Arena.remotes.values()) {
       let v = remoteViews.get(r.id);
-      if (!r.seen || !r.near) { if (v) { v.c.root.visible = false; v.sp.visible = false; if (v.sh) v.sh.visible = false; } continue; }
+      if (!r.seen || !r.near) { if (v) { v.c.root.visible = false; v.sp.visible = false; v.hb.visible = false; if (v.sh) v.sh.visible = false; } continue; }
       if (!v) {
         const pl = PLAYABLES[r.char] || PLAYABLES.vosil;
         const c = makeCreature(Object.assign({ scale: pl.scale, variant: pl.variant }, pl.pal));
-        const sp = nameSprite(r.name), sh = makeDynShadow();
-        scene.add(c.root); scene.add(sp); scene.add(sh);
-        v = { c, sp, sh, pl, phase: 0, sc: pl.scale * lvScale(r.level), name: r.name };
+        const sp = nameSprite(r.name), sh = makeDynShadow(), hb = hpSprite();
+        scene.add(c.root); scene.add(sp); scene.add(sh); scene.add(hb);
+        v = { c, sp, sh, hb, hp: -1, pl, phase: 0, sc: pl.scale * lvScale(r.level), name: r.name };
         remoteViews.set(r.id, v);
       }
-      v.c.root.visible = true; v.sp.visible = true; v.sh.visible = true;
+      v.c.root.visible = true; v.sp.visible = true; v.sh.visible = true; v.hb.visible = true;
+      if (r.hp !== undefined && r.hp !== v.hp) { v.hp = r.hp; drawHp(v.hb, r.hp); }
       if (r.buf && r.buf.length >= 1) {                              // tampilkan posisi sedikit di masa lalu (110-260 ms, menyesuaikan kestabilan jaringan), diinterpolasi antar data jaringan
         const rt = Arena.renderTime(), b = r.buf;
         let i = b.length - 1; while (i > 0 && b[i].at > rt) i--;
@@ -1783,7 +1844,8 @@
       v.c.root.position.set(r.x, r.y, r.z);
       v.c.root.rotation.z = 0; v.c.root.rotation.y = r.dyaw !== undefined ? r.dyaw : r.yaw;
       poseCreature(v.c, v.phase, clamp(spd / 6, 0, 1.3), air, 0, r.atk >= 0 ? clamp(r.atk / 0.35, 0, 1) : -1, clock);
-      v.sp.position.set(r.x, r.y + 2.9 * v.sc + 0.6, r.z);
+      v.sp.position.set(r.x, r.y + 2.9 * v.sc + 0.95, r.z);
+      v.hb.position.set(r.x, r.y + 2.9 * v.sc + 0.4, r.z);
       v.sh.visible = !r.sw;
       placeShadow(v.sh, r.x, r.z, air ? gnd : r.y, 0.75 * v.sc, 1.9 * v.sc);
     }
@@ -1818,6 +1880,7 @@
   }
   if (typeof Arena !== 'undefined') {
     Arena.onFix = (x, z) => { player.x = x; player.z = z; };                       // server mengembalikan posisi (gerak tidak wajar)
+    Arena.onDamaged = pvpHurt; Arena.onHit = pvpHit; Arena.onKill = pvpKill; Arena.onRoar = pvpRoar;
     Arena.onJoin = (c) => { if (arenaOn) toast(t('ar_joined', { n: c.name }), 2); };
     Arena.onLeave = (c) => { if (arenaOn) toast(t('ar_left', { n: c.name }), 2); };
     Arena.onEnd = () => { if (arenaOn) { arenaOn = false; clearRemotes(); if (state === 'playing') die(t('ar_lost')); } };
@@ -1850,7 +1913,7 @@
   const armorMul = () => curChar.armor * (1 - 0.025 * (player.level - 1));
   const speedLv = () => 1 + 0.01 * (player.level - 1);
   function gainXp(n) {
-    if (state !== 'playing' || n <= 0) return;
+    if (state !== 'playing' || n <= 0 || arenaOn) return;                      // arena: semua pemain level 1 (adil)
     if (player.level >= MAX_LEVEL) { player.xp = 0; return; }
     player.xp += n;
     let up = 0;
@@ -3131,6 +3194,7 @@
       if (p.def.timid) { p.state = 'flee'; p.t = 3; }
       else { p.state = 'stun'; p.t = giant ? 0.9 : 1.9; p.cd = Math.max(p.cd, 1.6); p.warn && (p.warn.visible = false); }
     }
+    if (arenaOn) Arena.roar();
     player.invuln = Math.max(player.invuln, 0.7);
     shake = Math.max(shake, 0.7);
     GameAudio.sfx.dino(save.char === 'vosil' ? 'carno' : save.char, 'call', 1.6);
@@ -3175,7 +3239,13 @@
       const d = Math.hypot(p.x - player.x, p.z - player.z);
       if (d < bd) { bd = d; best = p; }
     }
+    if (arenaOn) for (const r of Arena.remotes.values()) {
+      if (!r.seen || !r.near) continue;
+      const d = Math.hypot(r.x - player.x, r.z - player.z);
+      if (d < bd) { bd = d; best = r; }
+    }
     if (best) player.yaw = faceYaw(best.x - player.x, best.z - player.z);
+    if (arenaOn) Arena.attack(player.yaw);
     player.atkT = 0;
     player.atkHit = false;
     player.atkCd = 0.55;
@@ -4142,8 +4212,9 @@
     else if (state === 'menu') { player.yaw = Math.sin(clock * 0.5) * 0.6 + Math.PI; }
     animate(dt);
     updateRemotes(dt);
+    updateRemoteRings(dt);
     updateOnline();
-    if (arenaOn && state === 'playing') Arena.send({ x: player.x, z: player.z, y: hero.root.position.y, yaw: player.yaw, vx: player.vx, vz: player.vz, atk: player.atkT, sw: swimming, lv: player.level }, now);
+    if (arenaOn && state === 'playing') Arena.send({ x: player.x, z: player.z, y: hero.root.position.y, yaw: player.yaw, vx: player.vx, vz: player.vz, atk: player.atkT, sw: swimming, hp: player.hp }, now);
     updateCamera(dt);
     updateDmg(dt);
     updateStars(dt);

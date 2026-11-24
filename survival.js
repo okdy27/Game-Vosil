@@ -1758,7 +1758,7 @@
         remoteViews.set(r.id, v);
       }
       v.c.root.visible = true; v.sp.visible = true; v.sh.visible = true;
-      if (r.buf && r.buf.length >= 1) {                              // tampilkan posisi ~180 ms di masa lalu, diinterpolasi antar data jaringan
+      if (r.buf && r.buf.length >= 1) {                              // tampilkan posisi sedikit di masa lalu (110-260 ms, menyesuaikan kestabilan jaringan), diinterpolasi antar data jaringan
         const rt = Arena.renderTime(), b = r.buf;
         let i = b.length - 1; while (i > 0 && b[i].at > rt) i--;
         const a0 = b[i], a1 = b[i + 1];
@@ -1788,13 +1788,14 @@
       placeShadow(v.sh, r.x, r.z, air ? gnd : r.y, 0.75 * v.sc, 1.9 * v.sc);
     }
   }
-  const onlineBox = $('onlineBox'), onlineN = $('onlineN'), onlineMax = $('onlineMax');
+  const onlineBox = $('onlineBox'), onlineN = $('onlineN'), onlineMax = $('onlineMax'), onlinePing = $('onlinePing');
   let onlineShown = -1;
   function updateOnline() {
     if (!onlineBox) return;
-    const n = arenaOn && typeof Arena !== 'undefined' ? Arena.st.count : 0;
-    if (n === onlineShown) return;
-    onlineShown = n;
+    const n = arenaOn && typeof Arena !== 'undefined' ? Arena.st.count : 0, pg = n && Arena.st.rtt ? Math.round(Arena.st.rtt / 10) * 10 : 0, key = n * 100000 + pg;
+    if (key === onlineShown) return;
+    onlineShown = key;
+    if (onlinePing) onlinePing.textContent = pg ? ' · ' + pg + ' ms' : '';
     onlineBox.classList.toggle('hidden', n === 0);
     if (n) { onlineN.textContent = n; onlineMax.textContent = Arena.st.max; }
   }

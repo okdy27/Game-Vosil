@@ -2064,7 +2064,7 @@
     try {
       const r = await Arena.join({ name: (Wallet.address ? Wallet.address.slice(2, 6) + '…' + Wallet.address.slice(-3) : 'Dino' + Math.floor(Math.random() * 900 + 100)), char: save.char, level: 1 });
       startGame({ arena: true, seed: r.seed, x: r.x, z: r.z });
-      const sk = kitSkill(); toast(sk ? t('kit_' + sk.id) : t('ar_hint'), 6);
+      const sk = kitSkill(); toast(sk ? t('kit_' + sk.id) : t('ar_old'), sk ? 6 : 9);
     } catch (e) { toast(t(e && e.message === 'full' ? 'ar_full' : 'ar_fail'), 4); }
     arenaBusy = false;
   }
@@ -2865,6 +2865,52 @@
   if (charRow) charRow.addEventListener('click', charClick);
   if (charRow2) charRow2.addEventListener('click', charClick);
   renderChars();
+
+  // ===== layar pilih dino: statistik, ikon skill, keterangan, cara melawan =====
+  // Angka skill di bawah HARUS sama dengan KITS di server/arena-room.js (dites otomatis di dex_test.mjs)
+  const DEX = {
+    vosil: { icon: '📢', st: [3, 3, 3, 1], bite: { dmg: 6, cd: 550 }, sk: { id: 'roar', cd: 14000, windup: 350, dmg: 7, shape: 'circle', r: 8.2 } },
+    velo: { icon: '🐾', st: [2, 3, 1, 4], bite: { dmg: 3.5, cd: 330 }, sk: { id: 'pounce', cd: 8000, windup: 300, dmg: 12, shape: 'line', len: 7, width: 2.4 } },
+    carno: { icon: '🐂', st: [3, 5, 1, 3], bite: { dmg: 11, cd: 950 }, sk: { id: 'charge', cd: 10000, windup: 550, dmg: 18, shape: 'line', len: 7, width: 3.2 } },
+    spino: { icon: '🌀', st: [5, 3, 3, 2], bite: { dmg: 6.5, cd: 650 }, sk: { id: 'sweep', cd: 7000, windup: 450, dmg: 9, shape: 'circle', r: 5.2 } },
+    parasaur: { icon: '🔊', st: [2, 1, 5, 4], bite: { dmg: 4.5, cd: 550 }, sk: { id: 'sonic', cd: 9000, windup: 400, dmg: 5, shape: 'cone', r: 10 } }
+  };
+  const dexEl = $('dex');
+  let dexId = 'vosil', dexTab = 'sk';
+  function dexArea(sk) { return t('dx_' + sk.shape, { r: sk.r, l: sk.len, w: sk.width }); }
+  function renderDex() {
+    const c = PLAYABLES[dexId], d = DEX[dexId], col = (id) => '#' + PLAYABLES[id].pal.body.toString(16).padStart(6, '0');
+    $('dexList').innerHTML = Object.keys(PLAYABLES).map((id) => '<button type="button" class="dxi' + (id === dexId ? ' sel' : '') + '" data-d="' + id + '"><i style="background:' + col(id) + '"></i><span>' + esc(PLAYABLES[id].name) + '<small>' + esc(t('dx_role_' + id)) + '</small></span></button>').join('');
+    $('dexName').innerHTML = '<b>' + esc(c.name) + '</b><em>' + esc(t('dx_role_' + dexId)) + '</em>' + t('dx_tags_' + dexId).split(' · ').map((x) => '<span>' + esc(x) + '</span>').join('');
+    const labels = ['dx_dur', 'dx_off', 'dx_ctl', 'dx_dif'];
+    const stats = '<div class="dxs">' + labels.map((k, i) => '<label>' + t(k) + '</label><div class="bar"><b style="width:' + (d.st[i] * 20) + '%"></b></div>').join('') + '</div>';
+    const tabs = [['bite', '🦷', 'dx_s_bite'], ['sk', d.icon, 'sk_' + d.sk.id], ['pass', '✨', 'dx_s_pass']];
+    const keys = '<div class="dxk">' + tabs.map((x) => '<button type="button" class="' + (dexTab === x[0] ? 'sel' : '') + '" data-k="' + x[0] + '"><span>' + x[1] + '</span>' + esc(t(x[2])) + '</button>').join('') + '</div>';
+    let body;
+    if (dexTab === 'bite') body = '<h4>' + t('dx_s_bite') + '</h4><div class="nums"><b>' + t('dx_dmg') + ' ' + d.bite.dmg + '</b><b>' + t('dx_cd') + ' ' + t('dx_ms', { n: (d.bite.cd / 1000).toFixed(2) }) + '</b><b>' + t('dx_area') + ' ' + t('dx_single') + '</b></div><p>' + esc(t('dx_bite_' + dexId)) + '</p>';
+    else if (dexTab === 'pass') body = '<h4>' + t('dx_s_pass') + '</h4><p>' + esc(t('dx_pass_' + dexId)) + '</p>';
+    else body = '<h4>' + esc(t('sk_' + d.sk.id)) + '</h4><div class="nums"><b>' + t('dx_cd') + ' ' + t('dx_ms', { n: d.sk.cd / 1000 }) + '</b><b>' + t('dx_cast') + ' ' + t('dx_ms', { n: (d.sk.windup / 1000).toFixed(2) }) + '</b><b>' + t('dx_dmg') + ' ' + d.sk.dmg + '</b><b>' + t('dx_area') + ' ' + esc(dexArea(d.sk)) + '</b></div><p>' + esc(t('dx_sk_' + dexId)) + '</p>';
+    body += '<p class="pro">' + t('dx_pro') + ': ' + esc(t('dx_pro_' + dexId)) + '</p><p class="con">' + t('dx_con') + ': ' + esc(t('dx_con_' + dexId)) + '</p><p class="cnt">' + t('dx_cnt') + ': ' + esc(t('dx_cnt_' + dexId)) + '</p>';
+    $('dexInfo').innerHTML = stats + keys + '<div class="dxd">' + body + '</div>';
+    const pk = $('dexPick'), on = save.char === dexId;
+    pk.textContent = t(on ? 'dx_picked' : 'dx_pick'); pk.classList.toggle('on', on);
+  }
+  function dexPreview(id) { dexId = id; if (state !== 'playing') applyChar(id); renderDex(); }
+  function openDex() { dexId = save.char in PLAYABLES ? save.char : 'vosil'; dexTab = 'sk'; renderDex(); dexEl.classList.add('on'); }
+  function closeDex() {
+    dexEl.classList.remove('on');
+    if (state !== 'playing' && curChar !== PLAYABLES[save.char]) applyChar(save.char);      // batal: kembalikan pratinjau ke pilihan tersimpan
+  }
+  ['dexOpen', 'dexOpen2'].forEach((id) => { const b = $(id); if (b) { b.addEventListener('pointerdown', (e) => e.stopPropagation()); b.addEventListener('click', (e) => { e.stopPropagation(); GameAudio.init(); openDex(); }); } });
+  dexEl.addEventListener('pointerdown', (e) => e.stopPropagation());
+  dexEl.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const el = e.target.closest ? e.target.closest('button') : null; if (!el) return;
+    if (el.id === 'dexX') closeDex();
+    else if (el.id === 'dexPick') { selectChar(dexId); renderDex(); closeDex(); }
+    else if (el.dataset.d) dexPreview(el.dataset.d);
+    else if (el.dataset.k) { dexTab = el.dataset.k; renderDex(); }
+  });
 
   function bindBtn(el, down, up) {
     if (!el) return;

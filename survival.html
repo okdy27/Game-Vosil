@@ -392,6 +392,36 @@
     .chr i { width: 14px; height: 14px; border-radius: 50%; border: 1px solid rgba(255, 255, 255, .7); display: inline-block; }
     .chr.sel { border-color: #ffd54f; background: rgba(255, 213, 79, .25); color: #fff; }
     #charInfo { color: #ffe082; font-size: clamp(11px, 3vh, 14px); min-height: 1.3em; margin: 2px 0 4px; }
+    #dex { position: fixed; inset: 0; z-index: 35; display: none; color: #eceff1; touch-action: manipulation;
+      background: linear-gradient(90deg, rgba(10,16,22,.92) 0, rgba(10,16,22,.55) 24%, rgba(10,16,22,0) 40%, rgba(10,16,22,0) 52%, rgba(10,16,22,.9) 66%); }
+    #dex.on { display: block; }
+    #dexList { position: absolute; left: calc(var(--sl, 0px) + 8px); top: calc(var(--st, 0px) + 44px); bottom: 8px; width: min(21vw, 190px); overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+    .dxi { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 12px; border: 2px solid rgba(255,255,255,.2); background: rgba(30,40,50,.7); color: #eceff1; text-align: left; font-weight: 800; font-size: clamp(11px, 3vh, 14px); cursor: pointer; }
+    .dxi i { flex: 0 0 auto; width: clamp(22px, 6vh, 32px); height: clamp(22px, 6vh, 32px); border-radius: 50%; border: 2px solid rgba(255,255,255,.75); }
+    .dxi small { display: block; font-weight: 600; color: #b0bec5; font-size: .82em; }
+    .dxi.sel { border-color: #ffd54f; background: rgba(255,213,79,.2); }
+    #dexTitle { position: absolute; left: calc(var(--sl, 0px) + 12px); top: calc(var(--st, 0px) + 8px); font-weight: 900; letter-spacing: 2px; color: #ffd54f; font-size: clamp(13px, 3.6vh, 18px); }
+    #dexX { position: absolute; right: calc(var(--sr, 0px) + 10px); top: calc(var(--st, 0px) + 6px); width: 36px; height: 36px; border-radius: 50%; border: 0; background: rgba(0,0,0,.55); color: #fff; font-size: 18px; cursor: pointer; z-index: 2; }
+    #dexName { position: absolute; left: 22vw; right: 38vw; bottom: calc(var(--sb, 0px) + 58px); text-align: center; text-shadow: 0 2px 6px #000; pointer-events: none; }
+    #dexName b { display: block; font-size: clamp(16px, 4.8vh, 26px); letter-spacing: 1px; }
+    #dexName span { display: inline-block; margin: 2px 3px 0; padding: 2px 9px; border-radius: 10px; background: rgba(255,213,79,.9); color: #3e2723; font-weight: 800; font-size: clamp(10px, 2.8vh, 13px); }
+    #dexName em { font-style: normal; display: inline-block; margin: 2px 3px 0; padding: 2px 9px; border-radius: 10px; background: rgba(255,255,255,.18); font-weight: 700; font-size: clamp(10px, 2.8vh, 13px); }
+    #dexPick { position: absolute; left: 22vw; right: 38vw; margin: 0 auto; width: 180px; max-width: 100%; bottom: calc(var(--sb, 0px) + 10px); min-width: 160px; padding: 10px 22px; border: 0; border-radius: 22px; background: #ffb300; color: #3e2723; font-weight: 900; font-size: clamp(13px, 3.6vh, 17px); cursor: pointer; }
+    #dexPick.on { background: #66bb6a; color: #10300f; }
+    #dexInfo { position: absolute; right: calc(var(--sr, 0px) + 8px); top: calc(var(--st, 0px) + 46px); bottom: 8px; width: min(36vw, 330px); overflow-y: auto; padding-right: 2px; font-size: clamp(11px, 3vh, 13.5px); line-height: 1.35; }
+    .dxs { display: grid; grid-template-columns: auto 1fr; gap: 3px 8px; align-items: center; margin-bottom: 8px; }
+    .dxs label { color: #cfd8dc; font-weight: 700; }
+    .dxs .bar { height: 8px; border-radius: 5px; background: rgba(255,255,255,.15); overflow: hidden; }
+    .dxs .bar b { display: block; height: 100%; border-radius: 5px; background: linear-gradient(90deg, #ffd54f, #ff8f00); }
+    .dxk { display: flex; gap: 8px; margin-bottom: 8px; }
+    .dxk button { flex: 1; padding: 6px 2px; border-radius: 12px; border: 2px solid rgba(255,255,255,.25); background: rgba(30,40,50,.75); color: #eceff1; font-weight: 800; font-size: clamp(10px, 2.8vh, 12px); cursor: pointer; }
+    .dxk button span { display: block; font-size: clamp(18px, 5vh, 26px); line-height: 1.2; }
+    .dxk button.sel { border-color: #ffd54f; background: rgba(255,213,79,.22); }
+    .dxd { background: rgba(0,0,0,.45); border: 1px solid rgba(255,255,255,.15); border-radius: 12px; padding: 8px 10px; }
+    .dxd h4 { margin: 0 0 4px; color: #ffd54f; font-size: 1.1em; }
+    .dxd p { margin: 3px 0; }
+    .dxd .nums { display: flex; flex-wrap: wrap; gap: 4px 12px; color: #ffe082; font-weight: 700; margin: 4px 0; }
+    .dxd .pro { color: #a5d6a7; } .dxd .con { color: #ef9a9a; } .dxd .cnt { color: #90caf9; }
     @media (max-height: 430px) { .help { display: none; } }
     .stat { color: #cfd8dc; font-size: clamp(13px, 3.4vh, 16px); }
     .big { font-size: clamp(16px, 4.4vh, 21px); }
@@ -539,12 +569,15 @@
   </div>
   </div>
 
+  <div id="dex"><div id="dexTitle" data-i18n="dx_title">PILIH DINO</div><button id="dexX" type="button" data-i18n="dx_close">✕</button><div id="dexList"></div><div id="dexName"></div><button id="dexPick" type="button"></button><div id="dexInfo"></div></div>
+
   <div id="menu" class="panel">
     <img class="menuLogo" src="vosil-logo-256.png" alt="Vosil">
     <h1>VOSIL SURVIVAL</h1>
     <p class="lead" data-i18n="menu_lead">Jelajahi lembah prasejarah, bertahan hidup, kumpulkan koin</p>
     <div id="charRow"></div>
     <p id="charInfo"></p>
+    <button id="dexOpen" class="bBtn" type="button" style="margin:4px auto 6px;background:#ffb300;color:#3e2723;font-size:14px;padding:9px 16px" data-i18n="dx_open">🦖 Pilih Dino & Skill</button>
     <ul class="help">
       <li data-i18n="help1">🕹️ Analog kiri: bergerak bebas</li>
       <li data-i18n="help2">👆 Geser kanan: putar kamera 360°</li>
@@ -576,7 +609,7 @@
   <div id="bag" class="hidden"><div id="bagBox">
     <div id="bagHead"><button class="tab on" id="tabBag" type="button" data-i18n="tab_ex">🎒 Tukar</button><button class="tab" id="tabChr" type="button" data-i18n="tab_chr">🦖 Karakter</button><button class="tab" id="tabSet" type="button" data-i18n="tab_set">⚙ Seting</button><span class="sum" id="bagSum"></span><button id="bagX" type="button" data-i18n-aria="close" aria-label="Tutup">✕</button></div>
     <div id="bagBody"></div>
-    <div id="chrBody" class="hidden"><button id="quitMenuBtn" class="bBtn wide" type="button" style="margin:0 0 10px;background:#66bb6a;font-size:14px;padding:12px" data-i18n="quit_open">🦖 Buka halaman pilih karakter</button><div id="charRow2"></div><p id="charInfo2"></p><p id="bagNote" data-i18n="chr_note">Memilih di sini: dino baru dipakai di permainan berikutnya. Tombol hijau di atas mengakhiri permainan ini dan membuka halaman utama dengan pratinjau dino (koin tetap tersimpan).</p></div>
+    <div id="chrBody" class="hidden"><button id="quitMenuBtn" class="bBtn wide" type="button" style="margin:0 0 10px;background:#66bb6a;font-size:14px;padding:12px" data-i18n="quit_open">🦖 Buka halaman pilih karakter</button><button id="dexOpen2" class="bBtn wide" type="button" style="margin:0 0 10px;background:#ffb300;color:#3e2723;font-size:14px;padding:12px" data-i18n="dx_open">🦖 Pilih Dino & Skill</button><div id="charRow2"></div><p id="charInfo2"></p><p id="bagNote" data-i18n="chr_note">Memilih di sini: dino baru dipakai di permainan berikutnya. Tombol hijau di atas mengakhiri permainan ini dan membuka halaman utama dengan pratinjau dino (koin tetap tersimpan).</p></div>
     <div id="setBody" class="hidden">
       <button id="musicBtn" class="ibtn" type="button" data-on="🎵 Musik: ON" data-off="🎵 Musik: OFF">🎵 Musik</button>
       <button id="sfxBtn" class="ibtn" type="button" data-on="🔊 Efek suara: ON" data-off="🔊 Efek suara: OFF">🔊 Efek suara</button>
@@ -605,7 +638,7 @@
   <script src="lang.js"></script>
   <script src="audio.js"></script>
   <script src="wallet.js"></script>
-  <script src="arena.js"></script>
+  <script src="arena-client.js"></script>
   <script src="survival.js"></script>
 </body>
 </html>

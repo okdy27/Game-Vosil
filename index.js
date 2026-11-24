@@ -2,7 +2,7 @@
 // file game (html/js/audio) dilayani langsung oleh Cloudflare.
 import { createApp } from './app.js';
 import * as chain from './chain.js';
-export { Arena } from './arena.js';            // Durable Object untuk arena online (aktif jika ARENA_ENABLED = "1")
+export { Arena } from './arena-room.js';            // Durable Object untuk arena online (aktif jika ARENA_ENABLED = "1")
 
 const app = createApp({ chain });
 export default {

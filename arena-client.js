@@ -1,4 +1,4 @@
-/* arena.js - klien arena online (TAHAP UJI 1). Menyambung ke /api/arena/ws, mengirim posisi sendiri,
+/* arena-client.js - klien arena online (JALAN DI HP PEMAIN; folder utama) (TAHAP UJI 1). Menyambung ke /api/arena/ws, mengirim posisi sendiri,
  * menerima posisi pemain lain. Tidak menggambar apa pun: survival.js yang menggambar pemain lain dari Arena.remotes. */
 const Arena = (() => {
   const st = { ws: null, id: 0, on: false, seed: 0, x: 0, z: 0, room: 0, remotes: new Map(), onFix: null, onEnd: null, lastSend: 0, skew: 0, t0: 0, count: 1, max: 8, rtt: 0, jit: 0, lastPing: 0, ds: 0, lastKey: '', onDamaged: null, onHit: null, onKill: null, onRoar: null, onEmote: null, onSkill: null, kits: null, onJoin: null, onLeave: null };

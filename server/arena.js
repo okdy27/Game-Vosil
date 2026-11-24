@@ -24,9 +24,25 @@ export const STATS = {
 export const EMOTES = 6, EMOTE_CD_MS = 2000;
 const LV1 = 0.72;                       // skala level 1 (lvScale(1))
 export const HP_MAX = 100;
-export const BITE_DMG = 18, BITE_CD_MS = 450, BITE_ARC = 1.1;
-export const ROAR_DMG = 11, ROAR_CD_MS = 14000, ROAR_R = 8.2;
-export const INVULN_MS = 700;           // kebal sebentar setelah terkena (sama seperti di game)
+export const BITE_ARC = 1.1;
+export const HIT_GAP_MS = 300;          // satu penyerang tidak bisa mengenai korban yang sama lebih rapat dari ini (dikeroyok tetap bisa)
+
+// Kit tiap dino: gigitan biasa + SATU skill khas. Semua angka bisa di-tuning di sini.
+//  bite  : dmg (sebelum ketahanan korban), cd (ms), reach (tambahan jangkauan, meter)
+//  skill : cd, windup (ms jeda persiapan - lawan melihat tanda bahaya di tanah & bisa menghindar), recover (ms terkunci setelahnya),
+//          shape circle(r) | line(len,width) | cone(r,arc), dmg, kb (dorong), dash (maju sendiri, meter), slow (0-1) & slowMs
+export const KITS = {
+  vosil: { bite: { dmg: 6, cd: 550, reach: 0 },
+    skill: { id: 'roar', cd: 14000, windup: 350, recover: 250, shape: 'circle', r: 8.2, dmg: 7, kb: 3 } },
+  velo: { bite: { dmg: 3.5, cd: 330, reach: -0.3 },
+    skill: { id: 'pounce', cd: 8000, windup: 300, recover: 700, shape: 'line', len: 7, width: 2.4, dmg: 12, kb: 1.2, dash: 7 } },
+  carno: { bite: { dmg: 11, cd: 950, reach: 0.1 },
+    skill: { id: 'charge', cd: 10000, windup: 550, recover: 900, shape: 'line', len: 7, width: 3.2, dmg: 18, kb: 5, dash: 6.5 } },
+  spino: { bite: { dmg: 6.5, cd: 650, reach: 0.9 },
+    skill: { id: 'sweep', cd: 7000, windup: 450, recover: 350, shape: 'circle', r: 5.2, dmg: 9, kb: 4.5 } },
+  parasaur: { bite: { dmg: 4.5, cd: 550, reach: 0 },
+    skill: { id: 'sonic', cd: 9000, windup: 400, recover: 300, shape: 'cone', r: 10, arc: 0.85, dmg: 5, kb: 1.5, slow: 0.45, slowMs: 2500 } },
+};
 const LAG_RANGE = 1.5, LAG_ARC = 0.25;  // toleransi karena data posisi lawan sedikit tertinggal
 const HEAL_CAP = 40, HEAL_RATE = 13;    // pemulihan yang dilaporkan klien: maks 40 nyawa, terisi 13/detik (makan buah, pulih alami)
 
@@ -42,7 +58,7 @@ export class ArenaCore {
     this.players = new Map();
     this.nextId = 1;
     this.seed = this.newSeed(); this.t0 = this.now();            // t0 = awal "hari pertama" arena (jam siang-malam bersama)
-    this.dirty = true; this.lastSnap = 0;
+    this.dirty = true; this.lastSnap = 0; this.pending = [];
   }
   newSeed() { return 1 + Math.floor(this.rnd() * 1e6); }
 
@@ -56,7 +72,7 @@ export class ArenaCore {
       id, send, name: 'Dino', char: 'vosil', level: 1, ready: false, alive: true,
       x: Math.cos(ang) * d, y: 0, z: Math.sin(ang) * d, yaw: 0, vx: 0, vz: 0, atk: -1, sw: 0,
       lastT: this.now(), bucket: RATE, bucketT: this.now(), strikes: 0,
-      emReady: 0, hp: HP_MAX, dseq: 0, heal: HEAL_CAP, invUntil: 0, atkReady: 0, roarReady: 0, kills: 0,
+      emReady: 0, hp: HP_MAX, dseq: 0, heal: HEAL_CAP, hitGap: new Map(), atkReady: 0, skReady: 0, lockUntil: 0, dashUntil: 0, kills: 0,
     };
     this.players.set(id, p);
     this.dirty = true;
@@ -66,6 +82,7 @@ export class ArenaCore {
   leave(id) {
     const p = this.players.get(id); if (!p) return;
     this.players.delete(id);
+    this.pending = this.pending.filter((s) => s.a.id !== id);
     this.dirty = true;
     if (p.ready) this.broadcast({ t: 'l', id });
   }
@@ -85,21 +102,21 @@ export class ArenaCore {
       p.level = 1;                                                 // arena: semua level 1 (adil)
       const first = !p.ready; p.ready = true; this.dirty = true;
       const roster = [...this.players.values()].filter((q) => q.ready).map((q) => this.card(q));
-      p.send(JSON.stringify({ t: 'w', id: p.id, seed: this.seed, ts: this.now(), t0: this.t0, x: r1(p.x), z: r1(p.z), roster, max: MAX_PLAYERS }));
+      p.send(JSON.stringify({ t: 'w', id: p.id, seed: this.seed, ts: this.now(), t0: this.t0, x: r1(p.x), z: r1(p.z), roster, max: MAX_PLAYERS, kits: KITS }));
       if (first) this.broadcast({ t: 'j', p: this.card(p) }, p.id);
       return;
     }
     if (!p.ready || !p.alive) return;
     if (m.t === 's') this.onState(p, m, t);
     else if (m.t === 'a') this.onBite(p, m, t);
-    else if (m.t === 'r') this.onRoar(p, t);
+    else if (m.t === 'k' || m.t === 'r') this.onSkill(p, m, t);
     else if (m.t === 'e') this.onEmote(p, m, t);
   }
 
   onState(p, m, t) {
     const x = num(m.x, p.x), z = num(m.z, p.z), y = num(m.y, p.y);
     const dt = Math.max(0.05, Math.min(1, (t - p.lastT) / 1000));
-    if (Math.abs(x) > WORLD_LIM || Math.abs(z) > WORLD_LIM || Math.hypot(x - p.x, z - p.z) > MAX_SPEED * dt + 2) {
+    if (Math.abs(x) > WORLD_LIM || Math.abs(z) > WORLD_LIM || Math.hypot(x - p.x, z - p.z) > MAX_SPEED * dt + 2 + (t < p.dashUntil ? 9 : 0)) {
       p.strikes++;                                                 // loncat terlalu jauh -> kembalikan ke posisi terakhir yang sah
       p.send(JSON.stringify({ t: 'f', x: r1(p.x), z: r1(p.z) }));
       if (p.strikes > 30) p.send(JSON.stringify({ t: 'kick' }));
@@ -122,12 +139,14 @@ export class ArenaCore {
 
   // ---- serangan ----
   armor(q) { return STATS[q.char].armor; }
-  // lakukan kerusakan; mengembalikan true jika kena
-  strikeTarget(a, q, dmg, t, kind) {
-    if (!q.alive || q.id === a.id || !q.ready || t < q.invUntil) return false;
+  // lakukan kerusakan; mengembalikan true jika kena. ex = {kb, slow, slowMs}
+  strikeTarget(a, q, dmg, t, kind, ex) {
+    if (!q.alive || q.id === a.id || !q.ready) return false;
+    if ((q.hitGap.get(a.id) || 0) > t) return false;               // baru saja dikenai penyerang yang sama
+    q.hitGap.set(a.id, t + HIT_GAP_MS);
     const real = dmg * this.armor(q);
-    q.hp = Math.max(0, q.hp - real); q.dseq++; q.invUntil = t + INVULN_MS;
-    q.send(JSON.stringify({ t: 'd', by: a.id, k: kind, dmg: r1(real), hp: r1(q.hp), seq: q.dseq, x: r1(a.x), z: r1(a.z) }));
+    q.hp = Math.max(0, q.hp - real); q.dseq++;
+    q.send(JSON.stringify({ t: 'd', by: a.id, k: kind, dmg: r1(real), hp: r1(q.hp), seq: q.dseq, x: r1(a.x), z: r1(a.z), kb: (ex && ex.kb) || 0, slow: (ex && ex.slow) || 0, slowMs: (ex && ex.slowMs) || 0 }));
     a.send(JSON.stringify({ t: 'h', to: q.id, k: kind, dmg: r1(real), hp: r1(q.hp) }));
     this.dirty = true;
     if (q.hp <= 0) this.kill(q, a);
@@ -138,31 +157,52 @@ export class ArenaCore {
     this.broadcast({ t: 'k', id: q.id, by: a.id, nm: q.name, bn: a.name });
   }
   onBite(a, m, t) {
-    if (t < a.atkReady) return;                                    // terlalu cepat: abaikan
-    a.atkReady = t + BITE_CD_MS;
+    if (t < a.atkReady || t < a.lockUntil) return;                 // terlalu cepat / sedang terkunci: abaikan
+    const kit = KITS[a.char].bite;
+    a.atkReady = t + kit.cd;
     if (typeof m.yaw === 'number' && Number.isFinite(m.yaw)) a.yaw = m.yaw;
     const sa = STATS[a.char], sA = (sa.scale * LV1) / 1.1;
-    const dmg = BITE_DMG * sa.bite;
     for (const q of this.players.values()) {
       if (q.id === a.id || !q.alive || !q.ready) continue;
       const dx = q.x - a.x, dz = q.z - a.z, d = Math.hypot(dx, dz);
-      if (d > 2.4 * sA + STATS[q.char].scale * LV1 * 0.9 + LAG_RANGE) continue;
+      if (d > 2.4 * sA + STATS[q.char].scale * LV1 * 0.9 + kit.reach + LAG_RANGE) continue;
       if (d > 1.3 && Math.abs(angDiff(a.yaw, faceYaw(dx, dz))) > BITE_ARC + LAG_ARC) continue;
       if (Math.abs(q.y - a.y) > 6) continue;                       // beda ketinggian jauh (tebing)
-      this.strikeTarget(a, q, dmg, t, 'bite');
+      this.strikeTarget(a, q, kit.dmg, t, 'bite');
     }
     this.dirty = true;
   }
-  onRoar(a, t) {
-    if (t < a.roarReady) return;
-    a.roarReady = t + ROAR_CD_MS;
-    a.invUntil = Math.max(a.invUntil, t + INVULN_MS);
+  // skill khas: ada jeda persiapan (windup). Semua melihat tanda bahaya di tanah; kena atau tidak ditentukan SAAT jeda habis.
+  onSkill(a, m, t) {
+    const sk = KITS[a.char].skill;
+    if (t < a.skReady || t < a.lockUntil) return;
+    a.skReady = t + sk.cd;
+    a.lockUntil = t + sk.windup + sk.recover;
+    a.atkReady = Math.max(a.atkReady, a.lockUntil);
+    if (sk.dash) a.dashUntil = t + sk.windup + 500;
+    if (typeof m.yaw === 'number' && Number.isFinite(m.yaw)) a.yaw = m.yaw;
+    const shape = { shape: sk.shape, r: sk.r || 0, len: sk.len || 0, width: sk.width || 0, arc: sk.arc || 0 };
+    this.pending.push({ a, sk, yaw: a.yaw, ox: a.x, oz: a.z, at: t + sk.windup });
+    this.broadcast({ t: 'S', id: a.id, s: sk.id, w: sk.windup, yaw: r1(a.yaw * 100) / 100, x: r1(a.x), z: r1(a.z), sh: shape }, a.id);
+    this.dirty = true;
+  }
+  resolveSkill(sp, t) {
+    const a = sp.a, sk = sp.sk;
+    if (!a.alive || !this.players.has(a.id)) return;
+    const dx = -Math.sin(sp.yaw), dz = -Math.cos(sp.yaw);          // arah depan model
+    const cx = sk.shape === 'circle' ? a.x : sp.ox, cz = sk.shape === 'circle' ? a.z : sp.oz;
     for (const q of this.players.values()) {
       if (q.id === a.id || !q.alive || !q.ready) continue;
-      if (Math.hypot(q.x - a.x, q.z - a.z) > ROAR_R) continue;
-      this.strikeTarget(a, q, ROAR_DMG, t, 'roar');
+      const body = STATS[q.char].scale * LV1 * 0.9, rx = q.x - cx, rz = q.z - cz, dist = Math.hypot(rx, rz);
+      if (Math.abs(q.y - a.y) > 6) continue;
+      let hit = false;
+      if (sk.shape === 'circle') hit = dist <= sk.r + body * 0.5 + LAG_RANGE;
+      else if (sk.shape === 'line') {
+        const along = rx * dx + rz * dz, lat = Math.abs(rx * dz - rz * dx);
+        hit = along >= -0.8 && along <= sk.len + LAG_RANGE && lat <= sk.width / 2 + body * 0.5 + LAG_RANGE * 0.6;
+      } else if (sk.shape === 'cone') hit = dist <= sk.r + body * 0.5 + LAG_RANGE && (dist < 1.3 || Math.abs(angDiff(sp.yaw, faceYaw(rx, rz))) <= sk.arc + LAG_ARC);
+      if (hit) this.strikeTarget(a, q, sk.dmg, t, sk.id, { kb: sk.kb, slow: sk.slow, slowMs: sk.slowMs });
     }
-    this.broadcast({ t: 'R', id: a.id });                          // semua melihat cincin raungan
     this.dirty = true;
   }
 
@@ -186,6 +226,7 @@ export class ArenaCore {
   // siaran berkala: hanya jika ada perubahan (atau 1x per detik); tiap pemain hanya menerima pemain lain yang dekat
   tick() {
     const ts = this.now();
+    if (this.pending.length) { const due = this.pending.filter((p) => p.at <= ts); if (due.length) { this.pending = this.pending.filter((p) => p.at > ts); for (const p of due) this.resolveSkill(p, ts); } }
     if (!this.dirty && ts - this.lastSnap < KEEPALIVE_MS) return;
     this.dirty = false; this.lastSnap = ts;
     const ps = [...this.players.values()].filter((p) => p.ready && p.alive);

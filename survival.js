@@ -1756,9 +1756,10 @@
     showDmg(player.x, (player.gy || 0) + player.y + 2.3 * scaleNow / 1.1, player.z, '-' + Math.round(m.dmg), 'hurt', 1 + Math.min(0.5, m.dmg / 40));
     starBurst(player.x, (player.gy || 0) + player.y + 1.3 * scaleNow / 1.1, player.z, 6, 'hurt');
     player.invuln = 0.7; player.lastDmg = 0;
-    const dx = player.x - m.x, dz = player.z - m.z, d = Math.hypot(dx, dz) || 1, kb = m.k === 'roar' ? 2.4 : 0.9;
+    const dx = player.x - m.x, dz = player.z - m.z, d = Math.hypot(dx, dz) || 1, kb = m.kb > 0 ? m.kb : 0.9;
     player.x += (dx / d) * kb; player.z += (dz / d) * kb;
-    hurtT = 0.25; shake = Math.max(shake, m.k === 'roar' ? 0.8 : 0.6);
+    if (m.slow > 0) { slowT = (m.slowMs || 2000) / 1000; slowMul = 1 - m.slow; showDmg(player.x, (player.gy || 0) + player.y + 3.1 * scaleNow / 1.1, player.z, '🐌', 'crit', 1.1); }
+    hurtT = 0.25; shake = Math.max(shake, m.kb >= 3 ? 0.85 : 0.6);
     GameAudio.sfx.hit(); GameAudio.sfx.dino(save.char, 'hurt', 0.9);
     if (player.hp <= 0) die(t('ar_killed', { n: pName(m.by) }));
   }
@@ -1808,6 +1809,8 @@
     for (const o of ringFx) { scene.remove(o.m); o.m.material.dispose(); }
     ringFx.length = 0;
     myEmote = { e: -1, t: 99 };
+    while (teles.length) removeTele(0);
+    skillWind = null; dashS = null; slowT = 0; slowMul = 1;
   }
   function updateRemotes(dt) {
     if (!arenaOn || typeof Arena === 'undefined') { if (remoteViews.size) clearRemotes(); return; }
@@ -1980,13 +1983,88 @@
   if (emoteBar) {
     for (let i = 0; i < EMOTES.length; i++) bindBtn($('em' + i), () => doEmote(i));
   }
+  // ---------- Skill khas tiap dino (arena) ----------
+  // tanda bahaya di tanah (merah = lawan, oranye = milikku): bentuk area + bilah isi yang menunjukkan sisa waktu persiapan
+  const teleGeo = {
+    circle: (() => { const g = new THREE.CircleGeometry(1, 40); g.rotateX(-Math.PI / 2); return g; })(),
+    line: (() => { const g = new THREE.PlaneGeometry(1, 1); g.rotateX(-Math.PI / 2); g.translate(0, 0, -0.5); return g; })(),
+  };
+  const teleCone = {};
+  const coneGeo = (arc) => { const k = Math.round(arc * 100); if (!teleCone[k]) { const g = new THREE.CircleGeometry(1, 28, Math.PI / 2 - arc, arc * 2); g.rotateX(-Math.PI / 2); teleCone[k] = g; } return teleCone[k]; };
+  const teleMat = (col, op) => new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: op, depthWrite: false, depthTest: false, fog: false, side: THREE.DoubleSide });
+  const teles = [];
+  function telegraph(x, z, yaw, sh, wind, mine) {
+    if (!sh) return;
+    const geo = sh.shape === 'line' ? teleGeo.line : sh.shape === 'cone' ? coneGeo(sh.arc) : teleGeo.circle;
+    const col = mine ? 0xffb300 : 0xff3b30;
+    const base = new THREE.Mesh(geo, teleMat(col, mine ? 0.16 : 0.26)), fill = new THREE.Mesh(geo, teleMat(col, mine ? 0.28 : 0.5));
+    base.renderOrder = 3; fill.renderOrder = 4;
+    const y = heightAt(x, z) + 0.3;
+    for (const m of [base, fill]) { m.position.set(x, y, z); m.rotation.y = yaw; scene.add(m); }
+    const w = sh.shape === 'line' ? sh.width : sh.r, l = sh.shape === 'line' ? sh.len : sh.r;
+    base.scale.set(sh.shape === 'line' ? w : l, 1, sh.shape === 'line' ? l : l);
+    teles.push({ base, fill, t: 0, wind: Math.max(0.15, wind), sh, w, l });
+    if (teles.length > 12) removeTele(0);
+  }
+  function removeTele(i) { const o = teles[i]; scene.remove(o.base); scene.remove(o.fill); o.base.material.dispose(); o.fill.material.dispose(); teles.splice(i, 1); }
+  function updateTele(dt) {
+    for (let i = teles.length - 1; i >= 0; i--) {
+      const o = teles[i]; o.t += dt;
+      const f = Math.min(1, o.t / o.wind);
+      if (o.sh.shape === 'line') o.fill.scale.set(o.w, 1, Math.max(0.01, o.l * f)); else o.fill.scale.set(o.l * f, 1, o.l * f);
+      if (o.t > o.wind + 0.12) { o.base.material.opacity *= 0.8; o.fill.material.opacity *= 0.8; }
+      if (o.t > o.wind + 0.4) removeTele(i);
+    }
+  }
+  let skillWind = null, dashS = null, slowT = 0, slowMul = 1;
+  const kitSkill = () => (typeof Arena !== 'undefined' && Arena.kits && Arena.kits[save.char] ? Arena.kits[save.char].skill : null);
+  const skLabel = () => { const sk = arenaOn ? kitSkill() : null; return t('sk_' + (sk ? sk.id : 'roar')); };
+  function aimYaw() {                                                              // bidik otomatis ke lawan terdekat (jika dekat)
+    let best = null, bd = 9;
+    for (const r of Arena.remotes.values()) {
+      if (!r.seen || !r.near) continue;
+      const d = Math.hypot(r.x - player.x, r.z - player.z);
+      if (d < bd) { bd = d; best = r; }
+    }
+    return best ? faceYaw(best.x - player.x, best.z - player.z) : player.yaw;
+  }
+  function arenaSkillPress() {
+    const sk = kitSkill();
+    if (!sk || roarCd > 0 || player.atkCd > 0 || skillWind) return;
+    if (sk.shape !== 'circle') player.yaw = aimYaw();
+    roarCd = sk.cd / 1000;
+    player.atkCd = Math.max(player.atkCd, (sk.windup + sk.recover) / 1000);          // terkunci selama persiapan + pemulihan (kelemahan tiap skill)
+    skillWind = { t: sk.windup / 1000, sk, yaw: player.yaw, ox: player.x, oz: player.z };
+    Arena.skill(player.yaw);
+    telegraph(player.x, player.z, player.yaw, { shape: sk.shape, r: sk.r || 0, len: sk.len || 0, width: sk.width || 0, arc: sk.arc || 0 }, sk.windup / 1000, true);
+  }
+  function fireSkill(sk, yaw) {                                                    // efek di sisi saya saat persiapan selesai (kerusakan ditentukan server)
+    const gy = player.gy || 0;
+    shake = Math.max(shake, 0.6);
+    GameAudio.sfx.dino(save.char === 'vosil' ? 'carno' : save.char, sk.id === 'sonic' ? 'call' : 'attack', 1.5);
+    if (sk.shape === 'circle') { roarR = sk.r; roarT = 0; }
+    if (sk.id === 'roar') showDmg(player.x, gy + player.y + 3.0 * scaleNow / 1.1, player.z, t('roar_pop'), 'crit', 1.3);
+    if (sk.dash) dashS = { left: 0.22, dx: -Math.sin(yaw), dz: -Math.cos(yaw), v: sk.dash / 0.22 };
+    if (sk.id === 'sonic') fxRing(player.x, gy, player.z, sk.r * 0.6, 0x80d8ff);
+    starBurst(player.x, gy + player.y + 1.4 * scaleNow / 1.1, player.z, 8, 'gain');
+  }
+  function updateSkill(dt) {
+    slowT = Math.max(0, slowT - dt); if (slowT <= 0) slowMul = 1;
+    if (state !== 'playing' || !arenaOn) { skillWind = null; dashS = null; return; }
+    if (skillWind) { skillWind.t -= dt; if (skillWind.t <= 0) { const w = skillWind; skillWind = null; fireSkill(w.sk, w.yaw); } }
+    if (dashS) {
+      const step = Math.min(dashS.left, dt); dashS.left -= dt;
+      player.x += dashS.dx * dashS.v * step; player.z += dashS.dz * dashS.v * step;
+      if (dashS.left <= 0) dashS = null;
+    }
+  }
   async function startArena() {
     if (state === 'playing' || arenaBusy) return;
     arenaBusy = true; toast(t('ar_connecting'), 8);
     try {
       const r = await Arena.join({ name: (Wallet.address ? Wallet.address.slice(2, 6) + '…' + Wallet.address.slice(-3) : 'Dino' + Math.floor(Math.random() * 900 + 100)), char: save.char, level: 1 });
       startGame({ arena: true, seed: r.seed, x: r.x, z: r.z });
-      toast(t('ar_hint'), 4);
+      const sk = kitSkill(); toast(sk ? t('kit_' + sk.id) : t('ar_hint'), 6);
     } catch (e) { toast(t(e && e.message === 'full' ? 'ar_full' : 'ar_fail'), 4); }
     arenaBusy = false;
   }
@@ -2000,6 +2078,7 @@
   if (typeof Arena !== 'undefined') {
     Arena.onFix = (x, z) => { player.x = x; player.z = z; };                       // server mengembalikan posisi (gerak tidak wajar)
     Arena.onDamaged = pvpHurt; Arena.onHit = pvpHit; Arena.onKill = pvpKill; Arena.onRoar = pvpRoar; Arena.onEmote = remoteEmote;
+    Arena.onSkill = (m) => telegraph(m.x, m.z, m.yaw, m.sh, m.w / 1000, false);
     Arena.onJoin = (c) => { if (arenaOn) toast(t('ar_joined', { n: c.name }), 2); };
     Arena.onLeave = (c) => { if (arenaOn) toast(t('ar_left', { n: c.name }), 2); };
     Arena.onEnd = () => { if (arenaOn) { arenaOn = false; clearRemotes(); if (state === 'playing') die(t('ar_lost')); } };
@@ -3294,7 +3373,9 @@
   scene.add(roarRing);
   const roarCooldown = () => Math.max(8, 15 - 0.6 * (player.level - 1));
   function doRoar() {
-    if (state !== 'playing' || roarCd > 0) return;
+    if (state !== 'playing') return;
+    if (arenaOn) { arenaSkillPress(); return; }
+    if (roarCd > 0) return;
     roarCd = roarCooldown();
     roarR = 8 + 0.2 * player.level;
     roarT = 0;
@@ -3313,7 +3394,6 @@
       if (p.def.timid) { p.state = 'flee'; p.t = 3; }
       else { p.state = 'stun'; p.t = giant ? 0.9 : 1.9; p.cd = Math.max(p.cd, 1.6); p.warn && (p.warn.visible = false); }
     }
-    if (arenaOn) Arena.roar();
     player.invuln = Math.max(player.invuln, 0.7);
     shake = Math.max(shake, 0.7);
     GameAudio.sfx.dino(save.char === 'vosil' ? 'carno' : save.char, 'call', 1.6);
@@ -3343,7 +3423,7 @@
       btnRoar.classList.toggle('cd', !ready);
       btnRoar.classList.toggle('urgent', ready && swarm >= 3);
       const sp = btnRoar.querySelector('span');
-      const txt = ready ? t('sk_roar') : Math.ceil(roarCd) + ' ' + t('unit_sec');
+      const txt = ready ? skLabel() : Math.ceil(roarCd) + ' ' + t('unit_sec');
       if (sp && sp.textContent !== txt) sp.textContent = txt;
     }
     if (swarm >= 3 && roarCd <= 0 && roarHint <= 0) { toast(t('swarm_hint', { b: t('sk_roar') }), 2.2); roarHint = 14; }
@@ -3834,7 +3914,7 @@
     else player.stamina = Math.min(100, player.stamina + (mag > 0.2 ? 12 : 22) * dt);
 
     const weak = player.hunger <= 0 || player.thirst <= 0;
-    const speedMul = (powerLeft > 0 ? 1.25 : 1) * (weak ? 0.85 : 1) * curChar.speed * speedLv();
+    const speedMul = (powerLeft > 0 ? 1.25 : 1) * (weak ? 0.85 : 1) * curChar.speed * speedLv() * (slowT > 0 ? slowMul : 1);
     // berenang: air cukup dalam -> mode renang (lebih lambat, tanpa lompat, tenaga terkuras pelan)
     const depth = WL - (player.gnd !== undefined ? player.gnd : heightAt(player.x, player.z));
     const wasSwim = swimming;
@@ -4334,7 +4414,7 @@
     animate(dt);
     updateRemotes(dt);
     updateRemoteRings(dt);
-    updateSlashes(dt); updateRingFx(dt); updateBubbles(dt);
+    updateSlashes(dt); updateRingFx(dt); updateBubbles(dt); updateTele(dt); updateSkill(dt);
     updateOnline();
     if (arenaOn && state === 'playing') Arena.send({ x: player.x, z: player.z, y: hero.root.position.y, yaw: player.yaw, vx: player.vx, vz: player.vz, atk: player.atkT, sw: swimming, hp: player.hp }, now);
     updateCamera(dt);

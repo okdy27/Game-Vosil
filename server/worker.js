@@ -1,8 +1,8 @@
-// index.js - pintu masuk Worker. Hanya /api/* yang sampai ke sini (lihat run_worker_first di wrangler.jsonc);
+// worker.js (dulu index.js) - pintu masuk Worker. Hanya /api/* yang sampai ke sini (lihat run_worker_first di wrangler.jsonc);
 // file game (html/js/audio) dilayani langsung oleh Cloudflare.
 import { createApp } from './app.js';
 import * as chain from './chain.js';
-export { Arena } from './arena.js';            // Durable Object untuk arena online (aktif jika ARENA_ENABLED = "1")
+export { Arena } from './arena-room.js';            // Durable Object untuk arena online (aktif jika ARENA_ENABLED = "1")
 
 const app = createApp({ chain });
 export default {
@@ -13,7 +13,7 @@ export default {
       const origin = request.headers.get('Origin');
       if (origin && new URL(origin).host !== url.host) return new Response('asal tidak diizinkan', { status: 403 });   // cegah situs lain menyambung
       const room = Math.min(4, Math.max(1, parseInt(url.searchParams.get('room') || '1', 10) || 1));
-      return env.ARENA.get(env.ARENA.idFromName('arena-' + room)).fetch(request);
+      return env.ARENA.get(env.ARENA.idFromName('arena-' + room), { locationHint: 'apac' }).fetch(request);   // buat arena di Asia-Pasifik (lebih dekat ke pemain)
     }
     return app.fetch(request, env, ctx);
   },

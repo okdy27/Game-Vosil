@@ -1780,7 +1780,7 @@
   }
   function pvpRoar(id) {                                                            // cincin raungan pemain lain
     const r = Arena.remotes.get(id); if (!r || !r.seen) return;
-    const mat = mRoar.clone(); mat.opacity = 0.6;
+    const mat = mRoar.clone(); mat.opacity = 0.4;
     const m = new THREE.Mesh(roarRingGeo, mat); m.position.set(r.x, r.y + 0.25, r.z); scene.add(m);
     remoteRings.push({ m, t: 0 });
   }
@@ -1788,7 +1788,7 @@
     for (let i = remoteRings.length - 1; i >= 0; i--) {
       const o = remoteRings[i]; o.t += dt;
       const f = Math.min(1, o.t / 0.6);
-      o.m.scale.set(1 + f * 8.2, 1, 1 + f * 8.2); o.m.material.opacity = 0.6 * (1 - f) * (1 - f);
+      o.m.scale.set(1 + f * 8.2, 1, 1 + f * 8.2); o.m.material.opacity = 0.4 * (1 - f) * (1 - f);
       if (f >= 1) { scene.remove(o.m); o.m.material.dispose(); remoteRings.splice(i, 1); }
     }
   }
@@ -1907,7 +1907,7 @@
   const ringFx = [];
   const ringFxGeo = new THREE.RingGeometry(0.85, 1, 40); ringFxGeo.rotateX(-Math.PI / 2);
   function fxRing(x, y, z, maxR, col, delay) {
-    const mat = new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.7, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending });
+    const mat = new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.7, depthWrite: false, side: THREE.DoubleSide });
     const m = new THREE.Mesh(ringFxGeo, mat); m.position.set(x, y + 0.2, z); m.visible = !delay; scene.add(m);
     ringFx.push({ m, t: -(delay || 0), maxR });
   }
@@ -1996,14 +1996,15 @@
   function telegraph(x, z, yaw, sh, wind, mine) {
     if (!sh) return;
     const geo = sh.shape === 'line' ? teleGeo.line : sh.shape === 'cone' ? coneGeo(sh.arc) : teleGeo.circle;
-    const col = mine ? 0xffb300 : 0xff3b30;
-    const base = new THREE.Mesh(geo, teleMat(col, mine ? 0.16 : 0.26)), fill = new THREE.Mesh(geo, teleMat(col, mine ? 0.28 : 0.5));
+    const col = mine ? 0xeceff1 : 0xb0bec5;                                       // abu-abu transparan: milik sendiri lebih terang, lawan sedikit lebih pekat agar tetap terbaca
+    const op0 = mine ? 0.09 : 0.15, op1 = mine ? 0.2 : 0.34;
+    const base = new THREE.Mesh(geo, teleMat(col, 0)), fill = new THREE.Mesh(geo, teleMat(col, 0));
     base.renderOrder = 3; fill.renderOrder = 4;
     const y = heightAt(x, z) + 0.3;
     for (const m of [base, fill]) { m.position.set(x, y, z); m.rotation.y = yaw; scene.add(m); }
     const w = sh.shape === 'line' ? sh.width : sh.r, l = sh.shape === 'line' ? sh.len : sh.r;
     base.scale.set(sh.shape === 'line' ? w : l, 1, sh.shape === 'line' ? l : l);
-    teles.push({ base, fill, t: 0, wind: Math.max(0.15, wind), sh, w, l });
+    teles.push({ base, fill, t: 0, wind: Math.max(0.15, wind), sh, w, l, op0, op1 });
     if (teles.length > 12) removeTele(0);
   }
   function removeTele(i) { const o = teles[i]; scene.remove(o.base); scene.remove(o.fill); o.base.material.dispose(); o.fill.material.dispose(); teles.splice(i, 1); }
@@ -2012,7 +2013,8 @@
       const o = teles[i]; o.t += dt;
       const f = Math.min(1, o.t / o.wind);
       if (o.sh.shape === 'line') o.fill.scale.set(o.w, 1, Math.max(0.01, o.l * f)); else o.fill.scale.set(o.l * f, 1, o.l * f);
-      if (o.t > o.wind + 0.12) { o.base.material.opacity *= 0.8; o.fill.material.opacity *= 0.8; }
+      const fin = Math.min(1, o.t / 0.14), fout = o.t > o.wind ? Math.max(0, 1 - (o.t - o.wind) / 0.35) : 1;       // muncul & hilang halus
+      o.base.material.opacity = o.op0 * fin * fout; o.fill.material.opacity = o.op1 * fin * fout;
       if (o.t > o.wind + 0.4) removeTele(i);
     }
   }
@@ -2045,7 +2047,7 @@
     if (sk.shape === 'circle') { roarR = sk.r; roarT = 0; }
     if (sk.id === 'roar') showDmg(player.x, gy + player.y + 3.0 * scaleNow / 1.1, player.z, t('roar_pop'), 'crit', 1.3);
     if (sk.dash) dashS = { left: 0.22, dx: -Math.sin(yaw), dz: -Math.cos(yaw), v: sk.dash / 0.22 };
-    if (sk.id === 'sonic') fxRing(player.x, gy, player.z, sk.r * 0.6, 0x80d8ff);
+    if (sk.id === 'sonic') fxRing(player.x, gy, player.z, sk.r * 0.6, 0xcfd8dc);
     starBurst(player.x, gy + player.y + 1.4 * scaleNow / 1.1, player.z, 8, 'gain');
   }
   function updateSkill(dt) {
@@ -2869,12 +2871,60 @@
   // ===== layar pilih dino: statistik, ikon skill, keterangan, cara melawan =====
   // Angka skill di bawah HARUS sama dengan KITS di server/arena-room.js (dites otomatis di dex_test.mjs)
   const DEX = {
-    vosil: { icon: '📢', st: [3, 3, 3, 1], bite: { dmg: 6, cd: 550 }, sk: { id: 'roar', cd: 14000, windup: 350, dmg: 7, shape: 'circle', r: 8.2 } },
-    velo: { icon: '🐾', st: [2, 3, 1, 4], bite: { dmg: 3.5, cd: 330 }, sk: { id: 'pounce', cd: 8000, windup: 300, dmg: 12, shape: 'line', len: 7, width: 2.4 } },
-    carno: { icon: '🐂', st: [3, 5, 1, 3], bite: { dmg: 11, cd: 950 }, sk: { id: 'charge', cd: 10000, windup: 550, dmg: 18, shape: 'line', len: 7, width: 3.2 } },
-    spino: { icon: '🌀', st: [5, 3, 3, 2], bite: { dmg: 6.5, cd: 650 }, sk: { id: 'sweep', cd: 7000, windup: 450, dmg: 9, shape: 'circle', r: 5.2 } },
-    parasaur: { icon: '🔊', st: [2, 1, 5, 4], bite: { dmg: 4.5, cd: 550 }, sk: { id: 'sonic', cd: 9000, windup: 400, dmg: 5, shape: 'cone', r: 10 } }
+    vosil: { st: [3, 3, 3, 1], bite: { dmg: 6, cd: 550 }, sk: { id: 'roar', cd: 14000, windup: 350, dmg: 7, shape: 'circle', r: 8.2 } },
+    velo: { st: [2, 3, 1, 4], bite: { dmg: 3.5, cd: 330 }, sk: { id: 'pounce', cd: 8000, windup: 300, dmg: 12, shape: 'line', len: 7, width: 2.4 } },
+    carno: { st: [3, 5, 1, 3], bite: { dmg: 11, cd: 950 }, sk: { id: 'charge', cd: 10000, windup: 550, dmg: 18, shape: 'line', len: 7, width: 3.2 } },
+    spino: { st: [5, 3, 3, 2], bite: { dmg: 6.5, cd: 650 }, sk: { id: 'sweep', cd: 7000, windup: 450, dmg: 9, shape: 'circle', r: 5.2 } },
+    parasaur: { st: [2, 1, 5, 4], bite: { dmg: 4.5, cd: 550 }, sk: { id: 'sonic', cd: 9000, windup: 400, dmg: 5, shape: 'cone', r: 10 } }
   };
+
+  // ikon skill bergaya dinosaurus (SVG buatan sendiri, ringan, satu warna mengikuti tema)
+  const ICO = {
+    bite: '<path d="M6 30Q8 10 32 10Q56 10 58 30L58 34L6 34Z"/><path d="M10 34L15 46L20 34ZM22 34L27 50L32 34ZM32 34L37 50L42 34ZM44 34L49 46L54 34Z"/><path class="d" d="M20 20Q32 14 44 20" fill="none" stroke="rgba(0,0,0,.45)" stroke-width="3"/><path d="M8 54Q32 62 56 54L52 48Q32 56 12 48Z"/>',
+    roar: '<path d="M4 30Q4 10 24 8Q40 8 54 20L28 28L4 30Z"/><path d="M8 38L30 34L54 48Q36 58 18 54Q6 50 8 38Z"/><path d="M33 27L36 35L40 26ZM42 24L45 31L48 22Z"/><path d="M37 40L40 33L43 39ZM46 44L49 37L52 43Z"/><circle class="d" cx="20" cy="19" r="3"/><path d="M58 10Q66 32 58 54" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"/>',
+    pounce: '<path d="M18 6Q60 8 54 58Q50 30 18 6Z"/><path d="M18 22Q44 26 48 52Q36 36 18 22Z" opacity=".55"/><path d="M4 30L20 30M4 40L16 40M8 50L18 50" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" fill="none"/>',
+    charge: '<path d="M6 4Q4 30 22 38L26 31Q14 24 12 4Z"/><path d="M58 4Q60 30 42 38L38 31Q50 24 52 4Z"/><path d="M18 34Q32 28 46 34L43 52Q32 62 21 52Z"/><path class="d" d="M24 42L30 45L28 48ZM40 42L34 45L36 48Z"/><path d="M12 54L20 60M52 54L44 60M32 60L32 64" stroke="currentColor" stroke-width="3" stroke-linecap="round" fill="none"/>',
+    sweep: '<path d="M6 50Q8 12 56 12Q28 24 24 52Q14 56 6 50Z"/><path d="M24 20L22 8L32 16ZM36 16L38 4L46 14ZM15 30L6 24L15 22Z" /><path d="M50 36Q56 42 52 52" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"/>',
+    sonic: '<path d="M6 52Q4 24 26 10Q40 2 52 8Q36 12 30 26Q28 36 32 42L40 44L38 52Z"/><circle class="d" cx="30" cy="40" r="2.6"/><path d="M46 28Q54 36 46 46" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"/><path d="M52 22Q64 36 52 52" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>',
+    pass: '<ellipse cx="14" cy="24" rx="5.5" ry="9" transform="rotate(-25 14 24)"/><ellipse cx="32" cy="14" rx="5.5" ry="10"/><ellipse cx="50" cy="24" rx="5.5" ry="9" transform="rotate(25 50 24)"/><path d="M18 40Q32 32 46 40Q50 58 32 61Q14 58 18 40Z"/>'
+  };
+  const icon = (k) => '<svg class="ico" viewBox="0 0 64 64" aria-hidden="true">' + ICO[k] + '</svg>';
+
+  // pratinjau 3D di tengah: renderer utama dipakai lagi (tanpa WebGL kedua), digambar hanya di kolom tengah
+  const pv = { scene: new THREE.Scene(), cam: new THREE.PerspectiveCamera(32, 1, 0.1, 200), c: null, yaw: 0.6, drag: false, lastX: 0, idle: 0, dist: 8, cy: 1.2 };
+  { const cv = document.createElement('canvas'); cv.width = 4; cv.height = 128; const g = cv.getContext('2d'); const gr = g.createLinearGradient(0, 0, 0, 128); gr.addColorStop(0, '#2c3e4b'); gr.addColorStop(1, '#16212a'); g.fillStyle = gr; g.fillRect(0, 0, 4, 128); pv.scene.background = new THREE.CanvasTexture(cv); }
+  pv.scene.add(new THREE.HemisphereLight(0xffffff, 0x6a7a66, 0.95));
+  { const d = new THREE.DirectionalLight(0xfff0d2, 0.9); d.position.set(-6, 10, 8); pv.scene.add(d); }
+  { const disc = new THREE.Mesh(new THREE.CircleGeometry(1, 40), new THREE.MeshBasicMaterial({ color: 0x0e161c, transparent: true, opacity: 0.55 })); disc.rotation.x = -Math.PI / 2; disc.position.y = 0.01; disc.name = 'disc'; pv.scene.add(disc); }
+  function pvBuild(id) {
+    if (pv.c) { pv.scene.remove(pv.c.root); disposeTree(pv.c.root); pv.c = null; }
+    const c = PLAYABLES[id]; if (!c) return;
+    pv.c = makeCreature(Object.assign({ scale: c.scale, variant: c.variant }, c.pal));
+    pv.scene.add(pv.c.root);
+    const bx = new THREE.Box3().setFromObject(pv.c.root), sz = new THREE.Vector3(), ct = new THREE.Vector3(); bx.getSize(sz); bx.getCenter(ct);
+    const r = Math.max(sz.x, sz.y * 1.1, sz.z) * 0.62 + 0.6;
+    pv.dist = r / Math.tan(pv.cam.fov * Math.PI / 360); pv.cy = ct.y;
+    const disc = pv.scene.getObjectByName('disc'); if (disc) disc.scale.setScalar(Math.max(sz.x, sz.z) * 0.75);
+  }
+  const dexStage = $('dexStage');
+  dexStage.addEventListener('pointerdown', (e) => { pv.drag = true; pv.lastX = e.clientX; pv.idle = 0; try { dexStage.setPointerCapture(e.pointerId); } catch (x) { /* abaikan */ } });
+  dexStage.addEventListener('pointermove', (e) => { if (!pv.drag) return; pv.yaw += (e.clientX - pv.lastX) * 0.012; pv.lastX = e.clientX; });
+  const pvEnd = () => { pv.drag = false; pv.idle = 0; };
+  dexStage.addEventListener('pointerup', pvEnd); dexStage.addEventListener('pointercancel', pvEnd);
+  function renderDexStage(dt) {                                         // dipanggil tiap frame saat layar pilih dino terbuka
+    if (!pv.c) return;
+    pv.idle += dt; if (!pv.drag && pv.idle > 1.2) pv.yaw += dt * 0.5;       // berputar pelan jika tidak disentuh
+    pv.c.root.rotation.y = Math.PI + pv.yaw;
+    poseCreature(pv.c, clock * 1.5, 0, false, 0, -1, clock);
+    const W = window.innerWidth || 800, H = window.innerHeight || 400, r = dexStage.getBoundingClientRect();
+    const w = Math.max(10, r.width), h = Math.max(10, r.height), x = r.left, y = H - r.bottom;
+    pv.cam.aspect = w / h; pv.cam.updateProjectionMatrix();
+    pv.cam.position.set(0, pv.cy + pv.dist * 0.18, pv.dist); pv.cam.lookAt(0, pv.cy * 0.9, 0);
+    renderer.setScissorTest(false); renderer.setViewport(0, 0, W, H); renderer.setClearColor(0x16212a, 1); renderer.clear();
+    renderer.setScissorTest(true); renderer.setViewport(x, y, w, h); renderer.setScissor(x, y, w, h);
+    renderer.render(pv.scene, pv.cam);
+    renderer.setScissorTest(false); renderer.setViewport(0, 0, W, H);
+  }
   const dexEl = $('dex');
   let dexId = 'vosil', dexTab = 'sk';
   function dexArea(sk) { return t('dx_' + sk.shape, { r: sk.r, l: sk.len, w: sk.width }); }
@@ -2884,7 +2934,7 @@
     $('dexName').innerHTML = '<b>' + esc(c.name) + '</b><em>' + esc(t('dx_role_' + dexId)) + '</em>' + t('dx_tags_' + dexId).split(' · ').map((x) => '<span>' + esc(x) + '</span>').join('');
     const labels = ['dx_dur', 'dx_off', 'dx_ctl', 'dx_dif'];
     const stats = '<div class="dxs">' + labels.map((k, i) => '<label>' + t(k) + '</label><div class="bar"><b style="width:' + (d.st[i] * 20) + '%"></b></div>').join('') + '</div>';
-    const tabs = [['bite', '🦷', 'dx_s_bite'], ['sk', d.icon, 'sk_' + d.sk.id], ['pass', '✨', 'dx_s_pass']];
+    const tabs = [['bite', icon('bite'), 'dx_s_bite'], ['sk', icon(d.sk.id), 'sk_' + d.sk.id], ['pass', icon('pass'), 'dx_s_pass']];
     const keys = '<div class="dxk">' + tabs.map((x) => '<button type="button" class="' + (dexTab === x[0] ? 'sel' : '') + '" data-k="' + x[0] + '"><span>' + x[1] + '</span>' + esc(t(x[2])) + '</button>').join('') + '</div>';
     let body;
     if (dexTab === 'bite') body = '<h4>' + t('dx_s_bite') + '</h4><div class="nums"><b>' + t('dx_dmg') + ' ' + d.bite.dmg + '</b><b>' + t('dx_cd') + ' ' + t('dx_ms', { n: (d.bite.cd / 1000).toFixed(2) }) + '</b><b>' + t('dx_area') + ' ' + t('dx_single') + '</b></div><p>' + esc(t('dx_bite_' + dexId)) + '</p>';
@@ -2895,12 +2945,9 @@
     const pk = $('dexPick'), on = save.char === dexId;
     pk.textContent = t(on ? 'dx_picked' : 'dx_pick'); pk.classList.toggle('on', on);
   }
-  function dexPreview(id) { dexId = id; if (state !== 'playing') applyChar(id); renderDex(); }
-  function openDex() { dexId = save.char in PLAYABLES ? save.char : 'vosil'; dexTab = 'sk'; renderDex(); dexEl.classList.add('on'); }
-  function closeDex() {
-    dexEl.classList.remove('on');
-    if (state !== 'playing' && curChar !== PLAYABLES[save.char]) applyChar(save.char);      // batal: kembalikan pratinjau ke pilihan tersimpan
-  }
+  function dexPreview(id) { dexId = id; pv.idle = 0; pvBuild(id); renderDex(); }
+  function openDex() { dexId = save.char in PLAYABLES ? save.char : 'vosil'; dexTab = 'sk'; pv.yaw = 0.6; pv.idle = 0; dexEl.classList.add('on'); pvBuild(dexId); renderDex(); }
+  function closeDex() { dexEl.classList.remove('on'); if (pv.c) { pv.scene.remove(pv.c.root); disposeTree(pv.c.root); pv.c = null; } }
   ['dexOpen', 'dexOpen2'].forEach((id) => { const b = $(id); if (b) { b.addEventListener('pointerdown', (e) => e.stopPropagation()); b.addEventListener('click', (e) => { e.stopPropagation(); GameAudio.init(); openDex(); }); } });
   dexEl.addEventListener('pointerdown', (e) => e.stopPropagation());
   dexEl.addEventListener('click', (e) => {
@@ -3413,7 +3460,7 @@
   // ---------- Skill: Raungan (saat dikeroyok) ----------
   let roarCd = 0, roarT = 99, roarR = 8, roarHint = 0;
   const roarRingGeo = new THREE.RingGeometry(0.9, 1, 48); roarRingGeo.rotateX(-Math.PI / 2);
-  const mRoar = new THREE.MeshBasicMaterial({ color: 0xffe0b2, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide });
+  const mRoar = new THREE.MeshBasicMaterial({ color: 0xcfd8dc, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide });
   const roarRing = new THREE.Mesh(roarRingGeo, mRoar);
   roarRing.visible = false;
   scene.add(roarRing);
@@ -3456,7 +3503,7 @@
       roarRing.visible = true;
       roarRing.position.set(player.x, (player.gy || heightAt(player.x, player.z)) + 0.25, player.z);
       roarRing.scale.set(1 + f * roarR, 1, 1 + f * roarR);
-      mRoar.opacity = 0.7 * (1 - f) * (1 - f);
+      mRoar.opacity = 0.5 * (1 - f) * (1 - f);
     } else roarRing.visible = false;
     if (state !== 'playing') return;
     let swarm = 0;
@@ -4480,7 +4527,7 @@
     if (toastT > 0) { toastT -= dt; if (toastT <= 0) toastEl.classList.remove('show'); }
     if (hurtT > 0) { hurtT -= dt; hurtEl.classList.add('on'); } else hurtEl.classList.remove('on');
 
-    renderer.render(scene, camera);
+    if (dexEl.classList.contains('on')) renderDexStage(dt); else renderer.render(scene, camera);
     requestAnimationFrame(frame);
   }
 

@@ -393,8 +393,13 @@
     .chr.sel { border-color: #ffd54f; background: rgba(255, 213, 79, .25); color: #fff; }
     #charInfo { color: #ffe082; font-size: clamp(11px, 3vh, 14px); min-height: 1.3em; margin: 2px 0 4px; }
     #dex { position: fixed; inset: 0; z-index: 35; display: none; color: #eceff1; touch-action: manipulation;
-      background: linear-gradient(90deg, rgba(10,16,22,.92) 0, rgba(10,16,22,.55) 24%, rgba(10,16,22,0) 40%, rgba(10,16,22,0) 52%, rgba(10,16,22,.9) 66%); }
+      background: linear-gradient(90deg, rgba(10,16,22,.9) 0, rgba(10,16,22,.5) 19%, rgba(10,16,22,0) 24%, rgba(10,16,22,0) 60%, rgba(10,16,22,.72) 66%, rgba(10,16,22,.9) 100%); }
     #dex.on { display: block; }
+    #dexStage { position: absolute; left: 22vw; right: 38vw; top: 0; bottom: 0; touch-action: none; cursor: grab; }
+    #dexHint { position: absolute; left: 22vw; right: 38vw; top: calc(var(--st, 0px) + 12px); text-align: center; font-size: clamp(10px, 2.8vh, 12px); color: #cfd8dc; opacity: .8; pointer-events: none; }
+    .ico { width: 1em; height: 1em; display: block; margin: 0 auto; fill: currentColor; color: #ffd54f; font-size: clamp(30px, 9.5vh, 44px); overflow: visible; }
+    .ico .d { fill: rgba(0,0,0,.5); }
+    .dxk button.sel .ico { color: #fff3c4; }
     #dexList { position: absolute; left: calc(var(--sl, 0px) + 8px); top: calc(var(--st, 0px) + 44px); bottom: 8px; width: min(21vw, 190px); overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
     .dxi { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 12px; border: 2px solid rgba(255,255,255,.2); background: rgba(30,40,50,.7); color: #eceff1; text-align: left; font-weight: 800; font-size: clamp(11px, 3vh, 14px); cursor: pointer; }
     .dxi i { flex: 0 0 auto; width: clamp(22px, 6vh, 32px); height: clamp(22px, 6vh, 32px); border-radius: 50%; border: 2px solid rgba(255,255,255,.75); }
@@ -415,7 +420,7 @@
     .dxs .bar b { display: block; height: 100%; border-radius: 5px; background: linear-gradient(90deg, #ffd54f, #ff8f00); }
     .dxk { display: flex; gap: 8px; margin-bottom: 8px; }
     .dxk button { flex: 1; padding: 6px 2px; border-radius: 12px; border: 2px solid rgba(255,255,255,.25); background: rgba(30,40,50,.75); color: #eceff1; font-weight: 800; font-size: clamp(10px, 2.8vh, 12px); cursor: pointer; }
-    .dxk button span { display: block; font-size: clamp(18px, 5vh, 26px); line-height: 1.2; }
+    .dxk button span { display: block; line-height: 1.2; }
     .dxk button.sel { border-color: #ffd54f; background: rgba(255,213,79,.22); }
     .dxd { background: rgba(0,0,0,.45); border: 1px solid rgba(255,255,255,.15); border-radius: 12px; padding: 8px 10px; }
     .dxd h4 { margin: 0 0 4px; color: #ffd54f; font-size: 1.1em; }
@@ -569,7 +574,7 @@
   </div>
   </div>
 
-  <div id="dex"><div id="dexTitle" data-i18n="dx_title">PILIH DINO</div><button id="dexX" type="button" data-i18n="dx_close">✕</button><div id="dexList"></div><div id="dexName"></div><button id="dexPick" type="button"></button><div id="dexInfo"></div></div>
+  <div id="dex"><div id="dexStage"></div><div id="dexHint" data-i18n="dx_rot">↔ Geser untuk memutar</div><div id="dexTitle" data-i18n="dx_title">PILIH DINO</div><button id="dexX" type="button" data-i18n="dx_close">✕</button><div id="dexList"></div><div id="dexName"></div><button id="dexPick" type="button"></button><div id="dexInfo"></div></div>
 
   <div id="menu" class="panel">
     <img class="menuLogo" src="vosil-logo-256.png" alt="Vosil">

@@ -1992,13 +1992,53 @@
   const teleCone = {};
   const coneGeo = (arc) => { const k = Math.round(arc * 100); if (!teleCone[k]) { const g = new THREE.CircleGeometry(1, 28, Math.PI / 2 - arc, arc * 2); g.rotateX(-Math.PI / 2); teleCone[k] = g; } return teleCone[k]; };
   const teleMat = (col, op) => new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: op, depthWrite: false, depthTest: false, fog: false, side: THREE.DoubleSide });
+
+  // motif tanda skill (digambar sekali di kanvas kecil): cincin rune, garis panah, busur gelombang
+  const teleTex = (() => {
+    const mk = (w, h, draw) => { const cv = document.createElement('canvas'); cv.width = w; cv.height = h; const g = cv.getContext('2d'); g.strokeStyle = '#fff'; g.fillStyle = '#fff'; g.lineCap = 'round'; draw(g); const tx = new THREE.CanvasTexture(cv); return tx; };
+    const ring = (g, r, lw, a) => { g.globalAlpha = a; g.lineWidth = lw; g.beginPath(); g.arc(128, 128, r, 0, Math.PI * 2); g.stroke(); };
+    const spokes = (g, n, r0, r1, lw, a) => { g.globalAlpha = a; g.lineWidth = lw; for (let i = 0; i < n; i++) { const t = i / n * Math.PI * 2; g.beginPath(); g.moveTo(128 + Math.cos(t) * r0, 128 + Math.sin(t) * r0); g.lineTo(128 + Math.cos(t) * r1, 128 + Math.sin(t) * r1); g.stroke(); } };
+    const glow = (g, r0, a) => { const gr = g.createRadialGradient(128, 128, r0, 128, 128, 126); gr.addColorStop(0, 'rgba(255,255,255,0)'); gr.addColorStop(1, 'rgba(255,255,255,' + a + ')'); g.globalAlpha = 1; g.fillStyle = gr; g.fillRect(0, 0, 256, 256); g.fillStyle = '#fff'; };
+    const tri = (g, r, rot) => { g.beginPath(); for (let i = 0; i < 3; i++) { const t = rot + i * Math.PI * 2 / 3; g[i ? 'lineTo' : 'moveTo'](128 + Math.cos(t) * r, 128 + Math.sin(t) * r); } g.closePath(); g.stroke(); };
+    const T = {
+      circle: mk(256, 256, (g) => {                                              // cincin rune: lingkaran luar tebal, cincin putus-putus, jari-jari, bintang segitiga
+        glow(g, 40, 0.2); ring(g, 122, 6, 0.95); ring(g, 110, 1.5, 0.6);
+        g.setLineDash([12, 9]); ring(g, 96, 6, 0.75); g.setLineDash([]);
+        spokes(g, 16, 46, 84, 2.5, 0.5); ring(g, 42, 3, 0.8); g.globalAlpha = 0.7; g.lineWidth = 2.5; tri(g, 32, -Math.PI / 2); tri(g, 32, Math.PI / 2);
+      }),
+      cone: mk(256, 256, (g) => {                                                // busur gelombang berlapis + garis jari-jari
+        glow(g, 20, 0.16); ring(g, 122, 7, 0.95); ring(g, 94, 4, 0.7); ring(g, 66, 3.5, 0.6); ring(g, 38, 3, 0.5);
+        spokes(g, 36, 20, 118, 1.8, 0.4);
+      }),
+      line: mk(128, 256, (g) => {                                                // garis lintasan: tepi + panah chevron menunjuk ke depan (atas = depan)
+        const gr = g.createLinearGradient(0, 0, 0, 256); gr.addColorStop(0, 'rgba(255,255,255,0.16)'); gr.addColorStop(1, 'rgba(255,255,255,0.06)'); g.fillStyle = gr; g.fillRect(0, 0, 128, 256); g.fillStyle = '#fff';
+        g.globalAlpha = 0.95; g.lineWidth = 5; g.beginPath(); g.moveTo(4, 0); g.lineTo(4, 256); g.moveTo(124, 0); g.lineTo(124, 256); g.stroke();
+        g.lineWidth = 11; g.globalAlpha = 0.85; g.beginPath(); g.moveTo(20, 118); g.lineTo(64, 46); g.lineTo(108, 118); g.stroke();
+        g.lineWidth = 8; g.globalAlpha = 0.5; g.beginPath(); g.moveTo(26, 214); g.lineTo(64, 152); g.lineTo(102, 214); g.stroke();
+      }),
+    };
+    T.line.wrapT = THREE.RepeatWrapping;
+    return T;
+  })();
+  const teleLineGeo = {};
+  const lineGeoFor = (len) => {                                                    // satu bidang per panjang: motif panah berulang tiap ~2,6 m
+    const k = Math.round(len * 10);
+    if (!teleLineGeo[k]) {
+      const g = new THREE.PlaneGeometry(1, 1); g.rotateX(-Math.PI / 2); g.translate(0, 0, -0.5);
+      try { const uv = g.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setY(i, uv.getY(i) * len / 2.6); } catch (e) { /* abaikan */ }
+      teleLineGeo[k] = g;
+    }
+    return teleLineGeo[k];
+  };
+  const teleMapMat = (map, col, op) => new THREE.MeshBasicMaterial({ map, color: col, transparent: true, opacity: op, depthWrite: false, depthTest: false, fog: false, side: THREE.DoubleSide });
   const teles = [];
   function telegraph(x, z, yaw, sh, wind, mine, fxId) {
     if (!sh) return;
     const geo = sh.shape === 'line' ? teleGeo.line : sh.shape === 'cone' ? coneGeo(sh.arc) : teleGeo.circle;
-    const col = mine ? 0xeceff1 : 0xb0bec5;                                       // abu-abu transparan: milik sendiri lebih terang, lawan sedikit lebih pekat agar tetap terbaca
-    const op0 = mine ? 0.09 : 0.15, op1 = mine ? 0.2 : 0.34;
-    const base = new THREE.Mesh(geo, teleMat(col, 0)), fill = new THREE.Mesh(geo, teleMat(col, 0));
+    const col = mine ? 0xeceff1 : 0xcfd8dc;                                       // abu-abu transparan bermotif: milik sendiri lebih tipis, lawan sedikit lebih pekat agar tetap terbaca
+    const op0 = mine ? 0.5 : 0.78, op1 = mine ? 0.12 : 0.24;
+    const bgeo = sh.shape === 'line' ? lineGeoFor(sh.len) : geo;
+    const base = new THREE.Mesh(bgeo, teleMapMat(teleTex[sh.shape] || teleTex.circle, col, 0)), fill = new THREE.Mesh(geo, teleMat(col, 0));
     base.renderOrder = 3; fill.renderOrder = 4;
     const y = heightAt(x, z) + 0.3;
     for (const m of [base, fill]) { m.position.set(x, y, z); m.rotation.y = yaw; scene.add(m); }
@@ -2012,6 +2052,7 @@
     for (let i = teles.length - 1; i >= 0; i--) {
       const o = teles[i]; o.t += dt;
       if (!o.fired && o.t >= o.wind) { o.fired = true; if (o.fxId) skillFx(o.fxId, o.x, o.z, o.yaw, o.sh); }          // lawan melepas skill: efek elemen
+      if (o.sh.shape === 'circle') o.base.rotation.y = o.yaw + o.t * 0.9;                   // motif cincin berputar pelan
       const f = Math.min(1, o.t / o.wind);
       if (o.sh.shape === 'line') o.fill.scale.set(o.w, 1, Math.max(0.01, o.l * f)); else o.fill.scale.set(o.l * f, 1, o.l * f);
       const fin = Math.min(1, o.t / 0.14), fout = o.t > o.wind ? Math.max(0, 1 - (o.t - o.wind) / 0.35) : 1;       // muncul & hilang halus
@@ -2127,7 +2168,8 @@
   function arenaSkillPress(yawOv) {
     const sk = kitSkill();
     if (!sk || roarCd > 0 || player.atkCd > 0 || skillWind) return;
-    if (sk.shape !== 'circle') player.yaw = yawOv !== undefined ? yawOv : aimYaw();
+    if (yawOv !== undefined) player.yaw = yawOv; else if (sk.shape !== 'circle') player.yaw = aimYaw();
+    hero.root.rotation.y = player.yaw;                                              // langsung menghadap arah serangan (tanpa menunggu putaran halus)
     roarCd = sk.cd / 1000;
     player.atkCd = Math.max(player.atkCd, (sk.windup + sk.recover) / 1000);          // terkunci selama persiapan + pemulihan (kelemahan tiap skill)
     skillWind = { t: sk.windup / 1000, sk, yaw: player.yaw, ox: player.x, oz: player.z };
@@ -2136,17 +2178,18 @@
   }
 
   // ---------- Bidik skill: tahan tombol, geser jari untuk mengarahkan, lepas untuk meluncurkan ----------
-  const aim = { on: false, yaw: 0, moved: false, cx: 0, cy: 0, mesh: null, shape: '' };
+  const aim = { on: false, yaw: 0, moved: false, cx: 0, cy: 0, mesh: null, fill: null, shape: '' };
   const aimReady = () => state === 'playing' && arenaOn && !!kitSkill() && roarCd <= 0 && player.atkCd <= 0 && !skillWind;
-  function aimClear() { if (aim.mesh) { scene.remove(aim.mesh); aim.mesh.material.dispose(); aim.mesh = null; } aim.on = false; }
+  function aimClear() { for (const k of ['mesh', 'fill']) if (aim[k]) { scene.remove(aim[k]); aim[k].material.dispose(); aim[k] = null; } aim.on = false; }
   function aimBegin(e) {
     if (!aimReady()) return false;
     const sk = kitSkill(), r = btnRoar.getBoundingClientRect();
     aim.cx = r.left + r.width / 2; aim.cy = r.top + r.height / 2; aim.moved = false; aim.yaw = sk.shape === 'circle' ? player.yaw : aimYaw(); aim.shape = sk.shape;
     const geo = sk.shape === 'line' ? teleGeo.line : sk.shape === 'cone' ? coneGeo(sk.arc) : teleGeo.circle;
-    const m = new THREE.Mesh(geo, teleMat(0xeceff1, 0.16)); m.renderOrder = 3;
-    if (sk.shape === 'line') m.scale.set(sk.width, 1, sk.len); else m.scale.set(sk.r, 1, sk.r);
-    scene.add(m); aim.mesh = m; aim.on = true;
+    const m = new THREE.Mesh(sk.shape === 'line' ? lineGeoFor(sk.len) : geo, teleMapMat(teleTex[sk.shape] || teleTex.circle, 0xeceff1, 0.6)), f = new THREE.Mesh(geo, teleMat(0xeceff1, 0.1));
+    m.renderOrder = 4; f.renderOrder = 3;
+    for (const o of [m, f]) { if (sk.shape === 'line') o.scale.set(sk.width, 1, sk.len); else o.scale.set(sk.r, 1, sk.r); scene.add(o); }
+    aim.mesh = m; aim.fill = f; aim.on = true;
     return true;
   }
   function aimMove(e) {
@@ -2178,7 +2221,7 @@
     if (aimHintT > 0) { aimHintT -= dt; if (aimHintT <= 0) toast(t('ar_aim'), 6); }
     if (aim.on) {
       if (skillWind) aimClear();
-      else { aim.mesh.position.set(player.x, heightAt(player.x, player.z) + 0.3, player.z); aim.mesh.rotation.y = aim.yaw; aim.mesh.material.opacity = 0.13 + 0.05 * Math.sin(clock * 8); if (aim.shape !== 'circle') player.yaw = aim.yaw; }
+      else { aim.mesh.position.set(player.x, heightAt(player.x, player.z) + 0.3, player.z); aim.mesh.rotation.y = aim.yaw; const pu = Math.sin(clock * 6); aim.mesh.material.opacity = 0.6 + 0.12 * pu; aim.fill.material.opacity = 0.1 + 0.04 * pu; aim.fill.position.copy(aim.mesh.position); aim.fill.rotation.y = aim.yaw; if (aim.shape === 'circle') aim.mesh.rotation.y = clock * 0.9; }
     }
     if (skillWind) { skillWind.t -= dt; if (skillWind.t <= 0) { const w = skillWind; skillWind = null; fireSkill(w.sk, w.yaw, w.ox, w.oz); } }
     if (dashS) {
@@ -2998,11 +3041,11 @@
   // ===== layar pilih dino: statistik, ikon skill, keterangan, cara melawan =====
   // Angka skill di bawah HARUS sama dengan KITS di server/arena-room.js (dites otomatis di dex_test.mjs)
   const DEX = {
-    vosil: { st: [3, 3, 3, 1], bite: { dmg: 6, cd: 550 }, sk: { id: 'roar', cd: 14000, windup: 350, dmg: 7, shape: 'circle', r: 8.2 } },
-    velo: { st: [2, 3, 1, 4], bite: { dmg: 3.5, cd: 330 }, sk: { id: 'pounce', cd: 8000, windup: 300, dmg: 12, shape: 'line', len: 7, width: 2.4 } },
-    carno: { st: [3, 5, 1, 3], bite: { dmg: 11, cd: 950 }, sk: { id: 'charge', cd: 10000, windup: 550, dmg: 18, shape: 'line', len: 7, width: 3.2 } },
-    spino: { st: [5, 3, 3, 2], bite: { dmg: 6.5, cd: 650 }, sk: { id: 'sweep', cd: 7000, windup: 450, dmg: 9, shape: 'circle', r: 5.2 } },
-    parasaur: { st: [2, 1, 5, 4], bite: { dmg: 4.5, cd: 550 }, sk: { id: 'sonic', cd: 9000, windup: 400, dmg: 5, shape: 'cone', r: 10 } }
+    vosil: { st: [3, 3, 3, 1], bite: { dmg: 6, cd: 550 }, sk: { id: 'roar', cd: 14000, windup: 150, dmg: 7, shape: 'circle', r: 8.2 } },
+    velo: { st: [2, 3, 1, 4], bite: { dmg: 3.5, cd: 330 }, sk: { id: 'pounce', cd: 8000, windup: 130, dmg: 12, shape: 'line', len: 7, width: 2.4 } },
+    carno: { st: [3, 5, 1, 3], bite: { dmg: 11, cd: 950 }, sk: { id: 'charge', cd: 10000, windup: 250, dmg: 18, shape: 'line', len: 7, width: 3.2 } },
+    spino: { st: [5, 3, 3, 2], bite: { dmg: 6.5, cd: 650 }, sk: { id: 'sweep', cd: 7000, windup: 180, dmg: 9, shape: 'circle', r: 5.2 } },
+    parasaur: { st: [2, 1, 5, 4], bite: { dmg: 4.5, cd: 550 }, sk: { id: 'sonic', cd: 9000, windup: 160, dmg: 5, shape: 'cone', r: 10 } }
   };
 
   // ikon skill bergaya dinosaurus (SVG buatan sendiri, ringan, satu warna mengikuti tema)
@@ -4223,7 +4266,7 @@
     }
 
     const spd = Math.hypot(player.vx, player.vz);
-    if (spd > 0.4 && player.atkT < 0) player.yaw = lerpAngle(player.yaw, faceYaw(player.vx, player.vz), Math.min(1, dt * 14));
+    if (spd > 0.4 && player.atkT < 0 && !skillWind && !dashS) player.yaw = lerpAngle(player.yaw, faceYaw(player.vx, player.vz), Math.min(1, dt * 14));
 
     // lompat
     if (input.jump) {

@@ -33,15 +33,15 @@ export const HIT_GAP_MS = 300;          // satu penyerang tidak bisa mengenai ko
 //          shape circle(r) | line(len,width) | cone(r,arc), dmg, kb (dorong), dash (maju sendiri, meter), slow (0-1) & slowMs
 export const KITS = {
   vosil: { bite: { dmg: 6, cd: 550, reach: 0 },
-    skill: { id: 'roar', cd: 14000, windup: 350, recover: 250, shape: 'circle', r: 8.2, dmg: 7, kb: 3 } },
+    skill: { id: 'roar', cd: 14000, windup: 150, recover: 250, shape: 'circle', r: 8.2, dmg: 7, kb: 3 } },
   velo: { bite: { dmg: 3.5, cd: 330, reach: -0.3 },
-    skill: { id: 'pounce', cd: 8000, windup: 300, recover: 700, shape: 'line', len: 7, width: 2.4, dmg: 12, kb: 1.2, dash: 7 } },
+    skill: { id: 'pounce', cd: 8000, windup: 130, recover: 700, shape: 'line', len: 7, width: 2.4, dmg: 12, kb: 1.2, dash: 7 } },
   carno: { bite: { dmg: 11, cd: 950, reach: 0.1 },
-    skill: { id: 'charge', cd: 10000, windup: 550, recover: 900, shape: 'line', len: 7, width: 3.2, dmg: 18, kb: 5, dash: 6.5 } },
+    skill: { id: 'charge', cd: 10000, windup: 250, recover: 900, shape: 'line', len: 7, width: 3.2, dmg: 18, kb: 5, dash: 6.5 } },
   spino: { bite: { dmg: 6.5, cd: 650, reach: 0.9 },
-    skill: { id: 'sweep', cd: 7000, windup: 450, recover: 350, shape: 'circle', r: 5.2, dmg: 9, kb: 4.5 } },
+    skill: { id: 'sweep', cd: 7000, windup: 180, recover: 350, shape: 'circle', r: 5.2, dmg: 9, kb: 4.5 } },
   parasaur: { bite: { dmg: 4.5, cd: 550, reach: 0 },
-    skill: { id: 'sonic', cd: 9000, windup: 400, recover: 300, shape: 'cone', r: 10, arc: 0.85, dmg: 5, kb: 1.5, slow: 0.45, slowMs: 2500 } },
+    skill: { id: 'sonic', cd: 9000, windup: 160, recover: 300, shape: 'cone', r: 10, arc: 0.85, dmg: 5, kb: 1.5, slow: 0.45, slowMs: 2500 } },
 };
 const LAG_RANGE = 1.5, LAG_ARC = 0.25;  // toleransi karena data posisi lawan sedikit tertinggal
 const HEAL_CAP = 40, HEAL_RATE = 13;    // pemulihan yang dilaporkan klien: maks 40 nyawa, terisi 13/detik (makan buah, pulih alami)

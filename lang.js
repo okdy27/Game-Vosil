@@ -150,6 +150,8 @@ const L = (() => {
       kit_sonic: 'Skill: TERIAK — kerucut suara yang memperlambat lawan. Gigitan lemah, andalkan perlambatan.',
       dx_open: '🦖 Pilih Dino & Skill',
       dx_rot: '↔ Geser untuk memutar',
+      nm_label: 'Nama pemain',
+      nm_ph: 'Nama (maks 14)',
       ar_aim: 'Tip: tahan tombol skill lalu geser untuk membidik, lepas untuk menyerang',
       dx_no3d: '3D tidak tersedia di perangkat ini',
       dx_title: 'PILIH DINO',
@@ -377,6 +379,8 @@ const L = (() => {
       kit_sonic: 'Skill: SONIC — cone of sound that slows foes. Weak bite, relies on slowing.',
       dx_open: '🦖 Pick Dino & Skills',
       dx_rot: '↔ Drag to rotate',
+      nm_label: 'Player name',
+      nm_ph: 'Name (max 14)',
       ar_aim: 'Tip: hold the skill button and drag to aim, release to attack',
       dx_no3d: '3D is not available on this device',
       dx_title: 'CHOOSE DINO',
@@ -604,6 +608,8 @@ const L = (() => {
       kit_sonic: 'Habilidad: GRITO — cono de sonido que ralentiza. Mordida débil, se apoya en la ralentización.',
       dx_open: '🦖 Elegir Dino y Habilidades',
       dx_rot: '↔ Desliza para girar',
+      nm_label: 'Nombre del jugador',
+      nm_ph: 'Nombre (máx. 14)',
       ar_aim: 'Consejo: mantén el botón de habilidad y desliza para apuntar, suelta para atacar',
       dx_no3d: '3D no disponible en este dispositivo',
       dx_title: 'ELIGE DINO',
@@ -714,6 +720,7 @@ const L = (() => {
       document.documentElement.lang = cur;
       document.querySelectorAll('[data-i18n]').forEach((el) => { el.textContent = t(el.getAttribute('data-i18n')); });
       document.querySelectorAll('[data-i18n-aria]').forEach((el) => { el.setAttribute('aria-label', t(el.getAttribute('data-i18n-aria'))); });
+      document.querySelectorAll('[data-i18n-ph]').forEach((el) => { el.setAttribute('placeholder', t(el.getAttribute('data-i18n-ph'))); });
       const m = document.getElementById('musicBtn'), s = document.getElementById('sfxBtn');
       if (m) { m.dataset.on = t('music_on'); m.dataset.off = t('music_off'); }
       if (s) { s.dataset.on = t('sfx_on'); s.dataset.off = t('sfx_off'); }

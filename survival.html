@@ -128,6 +128,16 @@
     .bar.low .track { animation: blink .5s steps(2) infinite; }
     .bar.small .track { height: 7px; }
 
+    /* 4 bar status berbaris di tengah atas layar (lebih lega, tidak menutupi pemandangan) */
+    #bars { position: fixed; top: calc(var(--st) + 8px); left: 50%; transform: translateX(-50%); width: auto; max-width: calc(100vw - 2 * (var(--sl) + 118px)); flex-direction: row; align-items: center; gap: clamp(5px, 1.4vw, 12px); padding: 4px 10px; border: 0; border-radius: 14px; background: rgba(0, 0, 0, .36); box-shadow: none; z-index: 3; }
+    #bars::before, #bars::after, #bars .vine, #bars .roots { display: none; }
+    #bars .bar { width: clamp(54px, 11vw, 92px); gap: 4px; }
+    #bars .bar i { width: 17px; height: 17px; font-size: 11px; }
+    #bars .track, #bars .bar.small .track { height: 8px; }
+    .nameRow { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 2px 0 6px; font-size: 13px; font-weight: 700; color: #ffe0b2; }
+    .nameRow input { width: min(46vw, 180px); padding: 7px 10px; border-radius: 10px; border: 2px solid #8d6e63; background: rgba(0, 0, 0, .35); color: #fff; font-size: 15px; font-weight: 700; text-align: center; outline: none; }
+    .nameRow input:focus { border-color: #ffb300; }
+
     #stats {
       position: absolute;
       top: calc(var(--st) + 8px);
@@ -535,7 +545,7 @@
   <div id="hud" class="hidden">
     <div id="hudL">
     <div id="miniCol"><div id="miniWrap"><canvas id="miniMap" width="200" height="200"></canvas></div>
-    <div id="onlineBox" class="hidden"><i class="liveDot"></i><span data-i18n="ar_online">Online</span> : <b id="onlineN">1</b>/<span id="onlineMax">8</span><span id="onlinePing"></span></div></div>
+    <div id="onlineBox" class="hidden"><i class="liveDot"></i><span data-i18n="ar_online">Online</span> : <b id="onlineN">1</b><span id="onlineOf">/<span id="onlineMax">8</span></span><span id="onlinePing"></span></div></div>
     <div id="bars">
       <span class="vine"></span><span class="roots"></span>
       <div class="bar"><i>❤️</i><div class="track"><div id="fHp" class="fill"></div></div></div>
@@ -588,6 +598,7 @@
     <img class="menuLogo" src="vosil-logo-256.png" alt="Vosil">
     <h1>VOSIL SURVIVAL</h1>
     <p class="lead" data-i18n="menu_lead">Jelajahi lembah prasejarah, bertahan hidup, kumpulkan koin</p>
+    <div class="nameRow"><label for="nameIn" data-i18n="nm_label">Nama pemain</label><input id="nameIn" type="text" maxlength="14" autocomplete="off" autocapitalize="words" spellcheck="false" data-i18n-ph="nm_ph" placeholder="Nama (maks 14)"></div>
     <div id="charRow"></div>
     <p id="charInfo"></p>
     <button id="dexOpen" class="bBtn" type="button" style="margin:4px auto 6px;background:#ffb300;color:#3e2723;font-size:14px;padding:9px 16px" data-i18n="dx_open">🦖 Pilih Dino & Skill</button>

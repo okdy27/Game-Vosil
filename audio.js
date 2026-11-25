@@ -136,6 +136,18 @@ const GameAudio = (() => {
     src.stop(t + dur + 0.05);
   }
 
+  function skillBus(v, pan) {                                  // jalur suara skill: volume (jarak) + panning kiri-kanan
+    const g = actx.createGain(); g.gain.value = v;
+    try { if (pan && actx.createStereoPanner) { const sp = actx.createStereoPanner(); sp.pan.value = Math.max(-1, Math.min(1, pan)); g.connect(sp); sp.connect(sfxBus); return g; } } catch (e) { /* abaikan */ }
+    g.connect(sfxBus); return g;
+  }
+  function sweepNoise(bus, t, dur, vol, f0, f1, ftype, q) {    // desau: noise lewat filter yang frekuensinya bergeser
+    const src = actx.createBufferSource(); src.buffer = noiseBuf;
+    const f = actx.createBiquadFilter(); f.type = ftype; f.Q.value = q || 1; f.frequency.setValueAtTime(f0, t); f.frequency.exponentialRampToValueAtTime(f1, t + dur);
+    const g = actx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + dur * 0.25); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(f); f.connect(g); g.connect(bus); src.start(t); src.stop(t + dur + 0.05);
+  }
+
   // ----- Efek suara -----
   let footAt = 0, footN = 0;
   const sfxOk = () => !!(actx && sfxBus && noiseBuf && prefs.sfx);
@@ -255,6 +267,42 @@ const GameAudio = (() => {
       if (!sfxOk()) return;
       const t = actx.currentTime;
       [0, 0.09, 0.18].forEach((d, i) => tone(sfxBus, 420 + i * 90, t + d, 0.09, 'sine', 0.13, 760 + i * 90));
+    },
+    // suara skill elemen. v = 0..1 (kekerasan menurut jarak), pan = -1..1.
+    // Jika manifest.json memuat "skill_<id>" (roar, pounce, charge, sweep, sonic) -> file itu dipakai; kalau tidak, dibuat lewat sintesis.
+    skill(id, v, pan) {
+      if (!sfxOk()) return;
+      v = Math.max(0, Math.min(1, v == null ? 1 : v)); if (v < 0.04) return;
+      const t = actx.currentTime;
+      if (playSample('skill_' + id, '', v, pan, t)) return;
+      const d = skillBus(v, pan);
+      if (id === 'roar') {                                                   // ANGIN + auman rendah
+        sweepNoise(d, t, 0.75, 0.5, 350, 1400, 'bandpass', 1.2);
+        tone(d, 96, t, 0.65, 'sawtooth', 0.2, 52); tone(d, 144, t + 0.02, 0.6, 'sawtooth', 0.09, 78);
+      } else if (id === 'pounce') {                                          // PETIR: retakan tajam + gemuruh
+        noise(d, t, 0.09, 0.8, 'highpass', 3500); tone(d, 2300, t, 0.16, 'sawtooth', 0.26, 160);
+        noise(d, t + 0.05, 0.55, 0.5, 'lowpass', 240);
+        for (let i = 0; i < 4; i++) noise(d, t + 0.1 + i * 0.07 + Math.random() * 0.03, 0.05, 0.3, 'highpass', 4500 + Math.random() * 2500);
+      } else if (id === 'charge') {                                          // API: desir + letupan kecil + hentakan
+        sweepNoise(d, t, 0.6, 0.55, 500, 1600, 'bandpass', 0.8); tone(d, 72, t, 0.3, 'sine', 0.38, 38);
+        for (let i = 0; i < 9; i++) noise(d, t + Math.random() * 0.55, 0.035, 0.12 + Math.random() * 0.2, 'highpass', 2500 + Math.random() * 3000);
+      } else if (id === 'sweep') {                                           // AIR: deburan + tetesan
+        sweepNoise(d, t, 0.65, 0.4, 2000, 450, 'lowpass', 0.7);
+        for (let i = 0; i < 8; i++) { const f = 500 + Math.random() * 1400; tone(d, f, t + 0.1 + Math.random() * 0.5, 0.07, 'sine', 0.12, f * 0.55); }
+      } else if (id === 'sonic') {                                           // gelombang suara: nada naik bergetar + desau
+        tone(d, 420, t, 0.55, 'triangle', 0.2, 1500); tone(d, 428, t, 0.55, 'triangle', 0.14, 1520);
+        sweepNoise(d, t, 0.55, 0.16, 1500, 3200, 'bandpass', 1.5);
+      }
+    },
+    skillHit(id, power, pan) {                                               // skill mengenai target
+      if (!sfxOk()) return;
+      const t = actx.currentTime, p = Math.max(0.3, Math.min(1, power == null ? 0.6 : power));
+      if (playSample('skill_hit', '', p, pan, t)) return;
+      const d = skillBus(p, pan);
+      tone(d, 160, t, 0.2, 'sine', 0.42, 42); noise(d, t, 0.14, 0.4, 'lowpass', 1100);
+      if (id === 'pounce') noise(d, t, 0.08, 0.3, 'highpass', 4000);                    // percikan listrik
+      else if (id === 'charge') noise(d, t, 0.2, 0.25, 'bandpass', 900);                // hantaman panas
+      else if (id === 'sweep') tone(d, 700, t, 0.1, 'sine', 0.12, 280);                 // cipratan
     },
     hit() {                         // pemain terkena serangan
       if (!sfxOk()) return;

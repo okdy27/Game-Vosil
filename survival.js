@@ -1781,6 +1781,13 @@
     g.fillStyle = f > 0.5 ? '#43c85a' : f > 0.25 ? '#ffb300' : '#ef3b30'; g.fillRect(3, 3, 122 * f, 14);
     sp.material.map.needsUpdate = true;
   }
+  // nama pemain pilihan sendiri (disimpan di perangkat, maks 14 huruf/angka/spasi/_-.)
+  const NAME_KEY = 'vosil_pname_v1';
+  const cleanPName = (s) => String(s || '').replace(/[^\p{L}\p{N} _.-]/gu, '').replace(/\s+/g, ' ').trim().slice(0, 14);
+  let pname = ''; try { pname = cleanPName(localStorage.getItem(NAME_KEY)); } catch (e) { /* abaikan */ }
+  const autoName = 'Dino' + Math.floor(Math.random() * 900 + 100);
+  const playerName = () => pname || (Wallet.address ? Wallet.address.slice(2, 6) + Wallet.address.slice(-3) : autoName);
+  { const inp = $('nameIn'); if (inp) { inp.value = pname; inp.addEventListener('input', () => { pname = cleanPName(inp.value); try { localStorage.setItem(NAME_KEY, pname); } catch (e) { /* abaikan */ } }); inp.addEventListener('blur', () => { inp.value = pname; }); ['pointerdown', 'touchstart', 'keydown'].forEach((ev) => inp.addEventListener(ev, (e) => e.stopPropagation())); } }
   const pName = (id) => { const r = Arena.remotes.get(id); return r ? r.name : 'Dino'; };
   const remoteRings = [];
   function pvpHurt(m) {                                                            // aku terkena serangan pemain lain (server yang memutuskan)
@@ -1793,7 +1800,8 @@
     player.x += (dx / d) * kb; player.z += (dz / d) * kb;
     if (m.slow > 0) { slowT = (m.slowMs || 2000) / 1000; slowMul = 1 - m.slow; showDmg(player.x, (player.gy || 0) + player.y + 3.1 * scaleNow / 1.1, player.z, '🐌', 'crit', 1.1); }
     hurtT = 0.25; shake = Math.max(shake, m.kb >= 3 ? 0.85 : 0.6);
-    GameAudio.sfx.hit(); GameAudio.sfx.dino(save.char, 'hurt', 0.9);
+    if (m.k && m.k !== 'bite') GameAudio.sfx.skillHit(m.k, m.dmg / 18, sndAt(m.x, m.z).pan); else GameAudio.sfx.hit();
+    GameAudio.sfx.dino(save.char, 'hurt', 0.9);
     if (player.hp <= 0) die(t('ar_killed', { n: pName(m.by) }));
   }
   function pvpHit(m) {                                                              // seranganku mengenai pemain lain
@@ -1802,7 +1810,7 @@
     v.hitT = 0.18;                                                                  // lawan 'tersentak' sesaat
     showDmg(r.x, r.y + 2.2 * v.sc + 0.4, r.z, '-' + Math.round(m.dmg), m.k === 'roar' ? 'crit' : 'hit', m.k === 'roar' ? 1.2 : 1);
     starBurst(r.x, r.y + 1.3 * v.sc, r.z, 5, 'hit');
-    GameAudio.sfx.hit();
+    if (m.k && m.k !== 'bite') GameAudio.sfx.skillHit(m.k, m.dmg / 18, sndAt(r.x, r.z).pan); else GameAudio.sfx.hit();
   }
   function pvpKill(m) {
     if (!arenaOn) return;
@@ -1897,17 +1905,25 @@
       placeShadow(v.sh, r.x, r.z, air ? gnd : r.y, 0.75 * v.sc, 1.9 * v.sc);
     }
   }
-  const onlineBox = $('onlineBox'), onlineN = $('onlineN'), onlineMax = $('onlineMax'), onlinePing = $('onlinePing');
+  const onlineBox = $('onlineBox'), onlineN = $('onlineN'), onlineMax = $('onlineMax'), onlinePing = $('onlinePing'), onlineOf = $('onlineOf');
   let onlineShown = -1;
-  function updateOnline() {
+  // jumlah pemain online di semua mode: detak ringan ke server tiap 40 dtk (tanpa koneksi permanen)
+  let presN = 0, presT = 0;
+  const presId = (() => { let a = ''; try { a = sessionStorage.getItem('vosil_pid') || ''; } catch (e) { /* abaikan */ } if (a.length < 16) { a = ''; for (let i = 0; i < 24; i++) a += Math.floor(Math.random() * 16).toString(16); try { sessionStorage.setItem('vosil_pid', a); } catch (e) { /* abaikan */ } } return a; })();
+  function presBeat() {
+    try { fetch('/api/presence', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: presId }) }).then((r) => r.json()).then((j) => { if (j && j.ok) presN = j.n | 0; }).catch(() => {}); } catch (e) { /* abaikan */ }
+  }
+  function updateOnline(dt) {
     if (!onlineBox) return;
-    const n = arenaOn && typeof Arena !== 'undefined' ? Arena.st.count : 0, pg = n && Arena.st.rtt ? Math.round(Arena.st.rtt / 10) * 10 : 0, key = n * 100000 + pg;
+    if (dt) { presT -= dt; if (presT <= 0 && !(typeof document !== 'undefined' && document.hidden)) { presT = 40; presBeat(); } }
+    const n = arenaOn && typeof Arena !== 'undefined' ? Arena.st.count : 0, pg = n && Arena.st.rtt ? Math.round(Arena.st.rtt / 10) * 10 : 0, shownN = n || (state === 'playing' ? presN : 0), key = n * 100000 + pg + shownN * 7 + (n ? 1 : 0);
     if (key === onlineShown) return;
     onlineShown = key;
     if (onlinePing) onlinePing.textContent = pg ? ' · ' + pg + ' ms' : '';
-    onlineBox.classList.toggle('hidden', n === 0);
+    onlineBox.classList.toggle('hidden', shownN === 0);
+    if (onlineOf) onlineOf.style.display = n ? '' : 'none';
     if (emoteBar) { emoteBar.classList.toggle('hidden', n === 0); if (n === 0) emoOpen(false); }
-    if (n) { onlineN.textContent = n; onlineMax.textContent = Arena.st.max; }
+    if (shownN) { onlineN.textContent = shownN; if (n) onlineMax.textContent = Arena.st.max; }
   }
   // ---------- Efek serangan ringan & emote ----------
   // goresan cakar/gigitan: busur cahaya singkat di depan penyerang (pool 8 mesh, tanpa partikel berat)
@@ -1965,11 +1981,13 @@
     sp.scale.set(1.5, 1.5, 1); sp.renderOrder = 11;
     return sp;
   }
-  const emoteOff = (e, el) => {                                                        // el = detik sejak emote mulai -> {dy, dyaw}
+  // pantulan seperti bola: tiap pantulan lebih rendah & lebih singkat (gravitasi + kehilangan energi); selalu kembali tepat ke tanah
+  const hopY = (el, h0, T0, k) => { let t = el, h = h0, T = T0; for (let i = 0; i < 8; i++) { if (t < T) { const u = t / T; return 4 * h * u * (1 - u); } t -= T; h *= k; T *= Math.sqrt(k); } return 0; };
+  const emoteOff = (e, el) => {                                                        // el = detik sejak emote mulai -> {dy, dyaw}; semua gerak mulus (tanpa patah)
     if (el > 2.2) return null;
-    if (e === 2) return { dy: Math.abs(Math.sin(el * 9)) * 0.3, dyaw: Math.sin(el * 13) * 0.4 };       // joget meledek
-    if (e === 0) return el < 1.2 ? { dy: Math.abs(Math.sin(el * 6)) * 0.18, dyaw: Math.sin(el * 9) * 0.15 } : null;   // lambai
-    if (e === 3) return el < 0.9 ? { dy: Math.sin(Math.min(1, el / 0.9) * Math.PI) * 0.35, dyaw: 0 } : null;          // menantang: melompat sekali
+    if (e === 2) return { dy: hopY(el, 0.42, 0.52, 0.62), dyaw: 0.38 * Math.sin(el * 11) * Math.exp(-el * 1.1) };      // joget: memantul + goyang meredam seperti pegas
+    if (e === 0) { if (el >= 1.2) return null; const env = Math.sin(Math.PI * el / 1.2); return { dy: 0.14 * env * (0.5 - 0.5 * Math.cos(el * 10.5)), dyaw: 0.14 * env * Math.sin(el * 5.2) }; }   // lambai: naik-turun halus
+    if (e === 3) { if (el >= 0.8) return null; const u = el / 0.8; return { dy: 4 * 0.5 * u * (1 - u), dyaw: 0 }; }   // menantang: satu lompatan parabola
     return null;
   };
   function addBubble(ch, id) {
@@ -1977,9 +1995,9 @@
     bubbles.push({ sp, t: 0, id });
   }
   function emoteFx(e, x, y, z, sc, onceOnly) {                                         // efek visual di kaki (mirip "recall" tapi tidak berpindah)
-    if (e === 2) { fxRing(x, y, z, 3.2 * sc, 0xffd54f); fxRing(x, y, z, 3.6 * sc, 0xffa726, 0.35); fxRing(x, y, z, 4 * sc, 0xffd54f, 0.7); }
-    else if (e === 3) fxRing(x, y, z, 3.4 * sc, 0xff5252);
-    else if (e === 4) fxRing(x, y, z, 3 * sc, 0xffffff);
+    if (e === 2) { ringWave(x, z, 0.6, 3.4 * sc, 0.9, 0.8, 0.65, 0.2); ringWave(x, z, 0.6, 3.9 * sc, 1.1, 0.75, 0.45, 0.1); }
+    else if (e === 3) ringWave(x, z, 0.6, 3.6 * sc, 0.9, 0.85, 0.25, 0.22);
+    else if (e === 4) ringWave(x, z, 0.6, 3.2 * sc, 0.9, 0.7, 0.7, 0.7);
     if (e === 2 || e === 3) starBurst(x, y + 1.2 * sc, z, 8, 'gain');
   }
   let myEmote = { e: -1, t: 99 }, emoteCd = 0;
@@ -2091,12 +2109,12 @@
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
     const pts = new THREE.Points(geo, new THREE.PointsMaterial({ size, map: softTex, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: true, fog: false }));
     pts.frustumCulled = false; pts.renderOrder = 6; scene.add(pts);
-    return { n, pos, col, geo, p: Array.from({ length: n }, () => ({ l: 0, m: 1, vx: 0, vy: 0, vz: 0, r: 0, g: 0, b: 0, gr: 0, dr: 0 })), i: 0, alive: 0 };
+    return { n, pos, col, geo, p: Array.from({ length: n }, () => ({ l: 0, m: 1, vx: 0, vy: 0, vz: 0, r: 0, g: 0, b: 0, gr: 0, dr: 0, sn: 0 })), i: 0, alive: 0 };
   }
   const FX = { big: mkPool(220, 1.9), small: mkPool(360, 0.6) };
-  function emit(pool, x, y, z, vx, vy, vz, life, r, g, b, gr, dr) {
+  function emit(pool, x, y, z, vx, vy, vz, life, r, g, b, gr, dr, sn) {
     const o = pool.p[pool.i], k = pool.i * 3; pool.i = (pool.i + 1) % pool.n;
-    o.l = o.m = life; o.vx = vx; o.vy = vy; o.vz = vz; o.r = r; o.g = g; o.b = b; o.gr = gr || 0; o.dr = dr || 0;
+    o.l = o.m = life; o.vx = vx; o.vy = vy; o.vz = vz; o.r = r; o.g = g; o.b = b; o.gr = gr || 0; o.dr = dr || 0; o.sn = sn ? 1 : 0;
     pool.pos[k] = x; pool.pos[k + 1] = y; pool.pos[k + 2] = z; pool.alive++;
   }
   function updateFx(dt) {
@@ -2112,12 +2130,18 @@
         const d = Math.max(0, 1 - o.dr * dt);
         o.vx *= d; o.vz *= d; o.vy = o.vy * d - o.gr * dt;
         pool.pos[k] += o.vx * dt; pool.pos[k + 1] += o.vy * dt; pool.pos[k + 2] += o.vz * dt;
+        if (o.sn) pool.pos[k + 1] = heightAt(pool.pos[k], pool.pos[k + 2]) + 0.25;                 // gelombang menempel di permukaan tanah (tidak tertanam di tebing)
         const f = o.l / o.m, a = f * Math.min(1, (1 - f) * 7);                    // muncul cepat, hilang halus
         pool.col[k] = o.r * a; pool.col[k + 1] = o.g * a; pool.col[k + 2] = o.b * a;
       }
       pool.alive = live;
       pool.geo.attributes.position.needsUpdate = true; pool.geo.attributes.color.needsUpdate = true;
     }
+  }
+  // gelombang cincin yang menjalar di atas tanah: tiap titik mengikuti tinggi tanah, melambat oleh gesekan (fisika sederhana)
+  function ringWave(x, z, r0, r1, life, cr, cg, cb) {
+    const n = Math.min(40, Math.max(18, Math.round(r1 * 5))), dr = 2.4, v0 = (r1 - r0) * dr / (1 - Math.exp(-dr * life));
+    for (let i = 0; i < n; i++) { const a = i / n * 6.283185, c = Math.cos(a), s = Math.sin(a); emit(FX.big, x + c * r0, heightAt(x + c * r0, z + s * r0) + 0.25, z + s * r0, c * v0, 0, s * v0, life, cr, cg, cb, 0, dr, true); }
   }
   const bolts = [];
   function boltBuild(o) {
@@ -2147,8 +2171,13 @@
       o.m.material.opacity = Math.min(1, o.life / o.max * 2.2) * 0.85;
     }
   }
+  function sndAt(x, z) {                                                         // volume menurut jarak + panning kiri/kanan menurut kamera
+    const dx = x - player.x, dz = z - player.z, d = Math.hypot(dx, dz);
+    return { v: clamp(1 - d / 45, 0.12, 1), pan: clamp((Math.cos(camYaw) * dx - Math.sin(camYaw) * dz) / 18, -1, 1) };
+  }
   function skillFx(id, x, z, yaw, sh) {
     if (!sh) return;
+    { const sd = sndAt(x, z); GameAudio.sfx.skill(id, sd.v, sd.pan); }                  // suara animasi skill
     const gy = heightAt(x, z), dx = -Math.sin(yaw), dz = -Math.cos(yaw), sx = Math.cos(yaw), sz = -Math.sin(yaw), R = Math.random, big = FX.big, sm = FX.small;
     if (id === 'roar') {                                                          // ANGIN: gelombang & pusaran keluar ke segala arah
       for (let i = 0; i < 40; i++) { const a = i / 40 * 6.283 + R() * 0.12, sp = sh.r / 0.55 * (0.8 + R() * 0.3); emit(big, x + Math.cos(a) * 1.2, gy + 0.6 + R() * 0.5, z + Math.sin(a) * 1.2, Math.cos(a) * sp, 0.6, Math.sin(a) * sp, 0.55, 0.55, 0.6, 0.62, 0, 0); }
@@ -2257,7 +2286,7 @@
     if (state === 'playing' || arenaBusy) return;
     arenaBusy = true; toast(t('ar_connecting'), 8);
     try {
-      const r = await Arena.join({ name: (Wallet.address ? Wallet.address.slice(2, 6) + '…' + Wallet.address.slice(-3) : 'Dino' + Math.floor(Math.random() * 900 + 100)), char: save.char, level: 1 });
+      const r = await Arena.join({ name: playerName(), char: save.char, level: 1 });
       startGame({ arena: true, seed: r.seed, x: r.x, z: r.z });
       const sk = kitSkill(); toast(sk ? t('kit_' + sk.id) : t('ar_old'), sk ? 6 : 9); aimHintT = sk ? 7 : 0;
     } catch (e) { toast(t(e && e.message === 'full' ? 'ar_full' : 'ar_fail'), 4); }
@@ -2335,7 +2364,7 @@
   let bagOpen = false, lastStepIdx = 0, climbLocked = false, climbToastCd = 0, biomeCd = 0, drinkCd = 0, toastT = 0, saveT = 0, hurtT = 0, shake = 0;
   let camGy = 0, lvDay = 0;
   let camYaw = 0, camPitch = 0.71, camLift = 0;
-  let camX = 0, camZ = 0, camLead = { x: 0, z: 0 }, lastWet = false, shown = {};
+  let camX = 0, camZ = 0, camLead = { x: 0, z: 0 }, lastWet = false, shown = {}, camZoom = 1, camBx = 0, camBz = 0;
 
   GameAudio.setIntensity(() => (chased ? 0.95 : isNight ? 0.4 : 0.1));
 
@@ -2908,7 +2937,7 @@
     });
     roarCd = 0; hordeCd = 70; horde = null; dangerNow = 0; waryNow = 0; swimming = false; swimBlend = 0; time = 0; runTime = 0; runCoins = 0; kills = 0; powerLeft = 0; scaleNow = baseScale(); shake = 0; lvDay = 0;
     spawnCd = 8; animalCd = 2; chased = false; lastBiome = null; biomeCd = 0; drinkCd = 0; deathReason = '';
-    camX = 0; camZ = 0; camLead = { x: 0, z: 0 }; shown = {};
+    camX = 0; camZ = 0; camLead = { x: 0, z: 0 }; shown = {}; camZoom = 1; camBx = 0; camBz = 0;
     if (AR) { player.x = AR.x; player.z = AR.z; }
     state = 'playing';
     if (AR) { runTime = Arena.worldTime(); lvDay = Math.floor(runTime / DAY_LEN); }
@@ -4668,7 +4697,21 @@
     const k = Math.min(1, dt * 5);
     camLead.x += (player.vx * 0.35 - camLead.x) * k;
     camLead.z += (player.vz * 0.35 - camLead.z) * k;
-    const tx = player.x + camLead.x * 0.6, tz = player.z + camLead.z * 0.6;
+    // kamera otomatis melebar & bergeser agar skill (milik sendiri / lawan di sekitar) terlihat penuh
+    let zt = 1, bx = 0, bz = 0;
+    if (arenaOn && state === 'playing') {
+      if (aim.on || skAnim) zt = 1.32;
+      let best = 1e9;
+      for (const [id, v] of remoteViews) {
+        if (!v.skA) continue;
+        const r = Arena.remotes.get(id); if (!r) continue;
+        const d = Math.hypot(r.x - player.x, r.z - player.z);
+        if (d < 40) { zt = Math.max(zt, 1.2 + Math.min(0.55, d / 26)); if (d < best) { best = d; bx = (r.x - player.x) * 0.3; bz = (r.z - player.z) * 0.3; } }
+      }
+    }
+    camZoom += (zt - camZoom) * Math.min(1, dt * (zt > camZoom ? 4 : 1.1));
+    camBx += (bx - camBx) * Math.min(1, dt * 3); camBz += (bz - camBz) * Math.min(1, dt * 3);
+    const tx = player.x + camLead.x * 0.6 + camBx, tz = player.z + camLead.z * 0.6 + camBz;
     camX += (tx - camX) * Math.min(1, dt * 8);
     camZ += (tz - camZ) * Math.min(1, dt * 8);
     const grow = Math.max(0.9, scaleNow / 1.1);
@@ -4682,7 +4725,7 @@
     const fy = (player.gy || 0) + (player.y || 0);
     camGy += (fy - camGy) * Math.min(1, dt * ((player.y > 0.05 || player.vy) ? 10 : 4));
     if (state === 'menu') { camYaw = clock * 0.45; camPitch = 0.5; }     // menu: kamera memutari dino pilihan
-    const R = 12.6 * grow, ce = Math.cos(camPitch), se = Math.sin(camPitch);
+    const R = 12.6 * grow * camZoom, ce = Math.cos(camPitch), se = Math.sin(camPitch);
     const sy0 = Math.sin(camYaw), cy0 = Math.cos(camYaw);
     const tgx = camX - 1.2 * sy0, tgz = camZ - 1.2 * cy0, tgy = camGy + 0.9;     // titik yang dilihat
     let cxp = camX + R * ce * sy0, czp = camZ + R * ce * cy0, cyp = camGy + R * se;
@@ -4713,7 +4756,7 @@
     updateRemotes(dt);
     updateRemoteRings(dt);
     updateSlashes(dt); updateRingFx(dt); updateBubbles(dt); updateTele(dt); updateSkill(dt); updateFx(dt); updateBolts(dt);
-    updateOnline();
+    updateOnline(dt);
     if (arenaOn && state === 'playing') Arena.send({ x: player.x, z: player.z, y: hero.root.position.y, yaw: player.yaw, vx: player.vx, vz: player.vz, atk: player.atkT, sw: swimming, hp: player.hp }, now);
     updateCamera(dt);
     updateDmg(dt);

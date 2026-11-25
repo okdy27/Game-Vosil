@@ -15,6 +15,8 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS devices (device_hash TEXT NOT NULL, address TEXT NOT NULL, PRIMARY KEY (device_hash, address))`,
   `CREATE TABLE IF NOT EXISTS links (code TEXT PRIMARY KEY, secret_hash TEXT NOT NULL, status TEXT NOT NULL, address TEXT, token TEXT, expires INTEGER NOT NULL, ip_hash TEXT)`,
   `CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, kind TEXT NOT NULL, detail TEXT)`,
+  `CREATE TABLE IF NOT EXISTS presence (id TEXT PRIMARY KEY, ts INTEGER NOT NULL)`,
+  `CREATE INDEX IF NOT EXISTS presence_ts ON presence (ts)`,
 ];
 
 // ---- pengaturan (bisa diubah lewat "vars" di wrangler.jsonc) ----
@@ -395,6 +397,19 @@ export function createApp(deps) {
     return out;
   }
 
+  // jumlah pemain online (semua mode): tiap pemain mengirim detak ~40 dtk sekali; dihitung yang aktif 90 dtk terakhir
+  async function routePresence(env, request) {
+    const origin = request.headers.get('Origin');
+    if (origin) { let ok = false; try { ok = new URL(origin).host === new URL(request.url).host; } catch (e) { /* abaikan */ } if (!ok) throw new HttpError(403, 'forbidden'); }
+    const b = await readBody(request), id = String(b.id || '').replace(/[^a-f0-9]/gi, '').toLowerCase().slice(0, 32);
+    if (id.length < 12) throw new HttpError(400, 'bad_request');
+    const t = nowFn();
+    await run(env, 'INSERT INTO presence (id, ts) VALUES (?,?) ON CONFLICT(id) DO UPDATE SET ts = excluded.ts', id, t);
+    const r = await first(env, 'SELECT COUNT(*) AS n FROM presence WHERE ts > ?', t - 90e3);
+    if (Math.random() < 0.03) await run(env, 'DELETE FROM presence WHERE ts < ?', t - 600e3).catch(() => {});      // bersih-bersih baris lama
+    return J({ ok: true, n: Math.max(1, (r && r.n) || 1) });
+  }
+
   async function fetchHandler(request, env) {
     const url = new URL(request.url), path = url.pathname.replace(/\/+$/, '');
     try {
@@ -409,6 +424,7 @@ export function createApp(deps) {
       if (m === 'POST' && path === '/api/link/start') return await routeLinkStart(env, request);
       if (m === 'POST' && path === '/api/link/complete') return await routeLinkComplete(env, request);
       if (m === 'POST' && path === '/api/link/poll') return await routeLinkPoll(env, request);
+      if (m === 'POST' && path === '/api/presence') return await routePresence(env, request);
       if (m === 'POST' && path === '/api/beat') return await routeBeat(env, request);
       if (m === 'POST' && path === '/api/credit') return await routeCredit(env, request);
       if (m === 'POST' && path === '/api/redeem') return await routeRedeem(env, request);

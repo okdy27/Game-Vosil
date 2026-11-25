@@ -134,7 +134,7 @@
     #bars .bar { width: clamp(54px, 11vw, 92px); gap: 4px; }
     #bars .bar i { width: 17px; height: 17px; font-size: 11px; }
     #bars .track, #bars .bar.small .track { height: 8px; }
-    .nameRow { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 2px 0 6px; font-size: 13px; font-weight: 700; color: #ffe0b2; }
+    .nameRow { pointer-events: auto; display: flex; align-items: center; justify-content: center; gap: 8px; margin: 2px 0 6px; font-size: 13px; font-weight: 700; color: #ffe0b2; }
     .nameRow input { width: min(46vw, 180px); padding: 7px 10px; border-radius: 10px; border: 2px solid #8d6e63; background: rgba(0, 0, 0, .35); color: #fff; font-size: 15px; font-weight: 700; text-align: center; outline: none; }
     .nameRow input:focus { border-color: #ffb300; }
 
@@ -183,7 +183,7 @@
     #emoteBar.cd #emoteRow button { opacity: .4; }
     #toast {
       position: absolute;
-      top: calc(var(--st) + 14px);
+      top: calc(var(--st) + 50px);
       left: calc(50% + 70px);
       transform: translateX(-50%);
       max-width: 36vw;
@@ -408,7 +408,7 @@
     .chr.sel { border-color: #ffd54f; background: rgba(255, 213, 79, .25); color: #fff; }
     #charInfo { color: #ffe082; font-size: clamp(11px, 3vh, 14px); min-height: 1.3em; margin: 2px 0 4px; }
     #dex { position: fixed; inset: 0; z-index: 35; display: none; color: #eceff1; touch-action: manipulation;
-      background: linear-gradient(90deg, rgba(10,16,22,.9) 0, rgba(10,16,22,.5) 19%, rgba(10,16,22,0) 24%, rgba(10,16,22,0) 60%, rgba(10,16,22,.72) 66%, rgba(10,16,22,.9) 100%); }
+      background: linear-gradient(90deg, #0b1217 0, #131f28 18%, #1b2a34 24%, #1b2a34 60%, #131f28 68%, #0b1217 100%); }
     #dex.on { display: block; }
     #dexStage { position: absolute; left: 22vw; right: 38vw; top: 0; bottom: 0; touch-action: none; cursor: grab; }
     #dexHint { position: absolute; left: 22vw; right: 38vw; top: calc(var(--st, 0px) + 12px); text-align: center; font-size: clamp(10px, 2.8vh, 12px); color: #cfd8dc; opacity: .8; pointer-events: none; }

@@ -2301,6 +2301,7 @@
   }
   if (typeof Arena !== 'undefined') {
     Arena.onFix = (x, z) => { player.x = x; player.z = z; };                       // server mengembalikan posisi (gerak tidak wajar)
+    Arena.onHp = (h) => { if (arenaOn && state === 'playing') player.hp = Math.max(0, Math.min(100, h)); };
     Arena.onDamaged = pvpHurt; Arena.onHit = pvpHit; Arena.onKill = pvpKill; Arena.onRoar = pvpRoar; Arena.onEmote = remoteEmote;
     Arena.onSkill = (m) => { telegraph(m.x, m.z, m.yaw, m.sh, m.w / 1000, false, m.s); const v = remoteViews.get(m.id); if (v) v.skA = { id: m.s, t: 0, dur: m.w / 1000 + 0.32 }; };
     Arena.onJoin = (c) => { if (arenaOn) toast(t('ar_joined', { n: c.name }), 2); };
@@ -3114,7 +3115,7 @@
 
   // pratinjau 3D di tengah: kanvas + renderer sendiri di dalam kolom tengah (selalu di atas panel lain)
   const pv = { scene: new THREE.Scene(), cam: new THREE.PerspectiveCamera(32, 1, 0.1, 200), c: null, yaw: 0.6, drag: false, lastX: 0, idle: 0, dist: 8, cy: 1.2, r: null, cv: null, w: 0, h: 0, fail: false };
-  pv.scene.background = new THREE.Color(0x22313c);
+  pv.scene.background = new THREE.Color(0x1b2a34);
   pv.scene.add(new THREE.HemisphereLight(0xffffff, 0x6a7a66, 0.95));
   { const d = new THREE.DirectionalLight(0xfff0d2, 0.9); d.position.set(-6, 10, 8); pv.scene.add(d); }
   { const disc = new THREE.Mesh(new THREE.CircleGeometry(1, 40), new THREE.MeshBasicMaterial({ color: 0x0e161c, transparent: true, opacity: 0.55 })); disc.rotation.x = -Math.PI / 2; disc.position.y = 0.01; disc.name = 'disc'; pv.scene.add(disc); }
@@ -4358,7 +4359,8 @@
     // lapar, haus, nyawa
     player.hunger = Math.max(0, player.hunger - HUNGER_RATE * dt);
     player.thirst = Math.max(0, player.thirst - THIRST_RATE * curChar.thirst * dt);
-    if (player.hunger <= 0 || player.thirst <= 0) {
+    if (arenaOn) { /* arena: nyawa diatur server (lihat Arena.onHp) */ }
+    else if (player.hunger <= 0 || player.thirst <= 0) {
       player.hp -= STARVE_DMG * dt;
       hurtT = Math.max(hurtT, 0.05);
       if (player.hp <= 0) { player.hp = 0; die(player.thirst <= 0 ? t('r_thirst') : t('r_hunger')); return; }
@@ -4757,7 +4759,7 @@
     updateRemoteRings(dt);
     updateSlashes(dt); updateRingFx(dt); updateBubbles(dt); updateTele(dt); updateSkill(dt); updateFx(dt); updateBolts(dt);
     updateOnline(dt);
-    if (arenaOn && state === 'playing') Arena.send({ x: player.x, z: player.z, y: hero.root.position.y, yaw: player.yaw, vx: player.vx, vz: player.vz, atk: player.atkT, sw: swimming, hp: player.hp }, now);
+    if (arenaOn && state === 'playing') Arena.send({ x: player.x, z: player.z, y: hero.root.position.y, yaw: player.yaw, vx: player.vx, vz: player.vz, atk: player.atkT, sw: swimming }, now);
     updateCamera(dt);
     updateDmg(dt);
     updateStars(dt);

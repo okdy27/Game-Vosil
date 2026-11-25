@@ -1,7 +1,7 @@
 /* arena-client.js - klien arena online (JALAN DI HP PEMAIN; folder utama) (TAHAP UJI 1). Menyambung ke /api/arena/ws, mengirim posisi sendiri,
  * menerima posisi pemain lain. Tidak menggambar apa pun: survival.js yang menggambar pemain lain dari Arena.remotes. */
 const Arena = (() => {
-  const st = { ws: null, id: 0, on: false, seed: 0, x: 0, z: 0, room: 0, remotes: new Map(), onFix: null, onEnd: null, lastSend: 0, skew: 0, t0: 0, count: 1, max: 8, rtt: 0, jit: 0, lastPing: 0, ds: 0, lastKey: '', onDamaged: null, onHit: null, onKill: null, onRoar: null, onEmote: null, onSkill: null, kits: null, onJoin: null, onLeave: null };
+  const st = { ws: null, id: 0, on: false, seed: 0, x: 0, z: 0, room: 0, remotes: new Map(), onFix: null, onEnd: null, lastSend: 0, skew: 0, t0: 0, count: 1, max: 8, rtt: 0, jit: 0, lastPing: 0, ds: 0, lastKey: '', onDamaged: null, onHit: null, onKill: null, onRoar: null, onEmote: null, onSkill: null, onHp: null, kits: null, onJoin: null, onLeave: null };
   const nowMs = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
   const wsUrl = (room) => (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/api/arena/ws?room=' + room;
   const WS = () => (typeof WebSocket !== 'undefined' ? WebSocket : null);
@@ -63,6 +63,7 @@ const Arena = (() => {
     else if (m.t === 'kick') leave();
     else if (m.t === 'p') {
       if (typeof m.n === 'number') st.count = m.n;
+      if (typeof m.hp === 'number' && st.onHp) st.onHp(m.hp);                 // nyawaku menurut server
       if (m.ts) { const d = Date.now() - m.ts; if (st.off === undefined) st.off = d; else { st.jit += (Math.abs(d - st.off) - st.jit) * 0.1; st.off = Math.min(d, st.off + 1); } }     // selisih jam terkecil = paket tercepat
       const seen = new Set();
       for (const a of m.p) {
@@ -82,12 +83,12 @@ const Arena = (() => {
   function send(p, now) {
     if (!st.on || !st.ws || st.ws.readyState !== 1) return;
     if (now - st.lastSend < 50) return;
-    const key = [p.x.toFixed(2), p.z.toFixed(2), p.y.toFixed(2), p.yaw.toFixed(2), p.vx.toFixed(1), p.vz.toFixed(1), (p.atk === undefined ? -1 : p.atk).toFixed(2), p.sw ? 1 : 0, Math.round(p.hp === undefined ? 100 : p.hp)].join('|');
+    const key = [p.x.toFixed(2), p.z.toFixed(2), p.y.toFixed(2), p.yaw.toFixed(2), p.vx.toFixed(1), p.vz.toFixed(1), (p.atk === undefined ? -1 : p.atk).toFixed(2), p.sw ? 1 : 0, 0].join('|');
     if (key === st.lastKey && now - st.lastSend < 1000) return;       // tidak ada perubahan: hemat kuota (cukup 1x per detik)
     st.lastKey = key;
     st.lastSend = now;
     if (now - st.lastPing > 2000) { st.lastPing = now; st.ws.send(JSON.stringify({ t: 'q', c: Date.now() })); }
-    st.ws.send(JSON.stringify({ t: 's', x: +p.x.toFixed(2), z: +p.z.toFixed(2), y: +p.y.toFixed(2), yaw: +p.yaw.toFixed(2), vx: +p.vx.toFixed(1), vz: +p.vz.toFixed(1), atk: +(p.atk === undefined ? -1 : p.atk).toFixed(2), sw: p.sw ? 1 : 0, lv: 1, hp: +(p.hp === undefined ? 100 : p.hp).toFixed(1), ds: st.ds }));
+    st.ws.send(JSON.stringify({ t: 's', x: +p.x.toFixed(2), z: +p.z.toFixed(2), y: +p.y.toFixed(2), yaw: +p.yaw.toFixed(2), vx: +p.vx.toFixed(1), vz: +p.vz.toFixed(1), atk: +(p.atk === undefined ? -1 : p.atk).toFixed(2), sw: p.sw ? 1 : 0, lv: 1, ds: st.ds }));
   }
 
   // waktu dunia bersama (detik sejak arena dimulai) -> semua pemain melihat siang/malam yang sama
@@ -103,6 +104,6 @@ const Arena = (() => {
 
   function leave() { const ws = st.ws; reset(); try { ws && ws.close(); } catch (e) { /* abaikan */ } }
 
-  return { st, join, send, attack, roar, skill, emote, leave, worldTime, nowMs, renderTime, delayMs, get on() { return st.on; }, get remotes() { return st.remotes; }, set onFix(f) { st.onFix = f; }, set onEnd(f) { st.onEnd = f; }, set onDamaged(f) { st.onDamaged = f; }, set onHit(f) { st.onHit = f; }, set onKill(f) { st.onKill = f; }, set onRoar(f) { st.onRoar = f; }, set onEmote(f) { st.onEmote = f; }, set onSkill(f) { st.onSkill = f; }, get kits() { return st.kits; }, set onJoin(f) { st.onJoin = f; }, set onLeave(f) { st.onLeave = f; } };
+  return { st, join, send, attack, roar, skill, emote, leave, worldTime, nowMs, renderTime, delayMs, get on() { return st.on; }, get remotes() { return st.remotes; }, set onFix(f) { st.onFix = f; }, set onEnd(f) { st.onEnd = f; }, set onDamaged(f) { st.onDamaged = f; }, set onHit(f) { st.onHit = f; }, set onKill(f) { st.onKill = f; }, set onRoar(f) { st.onRoar = f; }, set onEmote(f) { st.onEmote = f; }, set onSkill(f) { st.onSkill = f; }, set onHp(f) { st.onHp = f; }, get kits() { return st.kits; }, set onJoin(f) { st.onJoin = f; }, set onLeave(f) { st.onLeave = f; } };
 })();
 if (typeof module !== 'undefined') module.exports = Arena;

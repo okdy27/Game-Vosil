@@ -6,7 +6,9 @@ export const MAX_PLAYERS = 8;           // pemain per arena
 export const TICK_MS = 50;              // 20 siaran per detik (hanya jika ada perubahan)
 export const RADIUS = 140;              // hanya pemain dalam jarak ini yang dikirim (interest management)
 const KEEPALIVE_MS = 1000;              // tanpa perubahan: tetap kirim 1x per detik (jumlah online, sinkron jam)
-const MAX_SPEED = 32;                   // m/detik; di atas ini dianggap teleport -> dikembalikan (lari 10, lompat jauh sekitar 20)
+// batas kecepatan per dino (m/detik): lari 10.2 x kecepatan dino x dorongan lompat-lari 1.35 x kelonggaran jaringan 1.15
+export const SPEED = { vosil: 1, velo: 1.2, carno: 0.95, spino: 0.88, parasaur: 1.05 };
+export const maxSpeed = (c) => 10.2 * (SPEED[c] || 1) * 1.35 * 1.15;
 const WORLD_LIM = 4000;
 const MSG_MAX = 400;                    // byte per pesan
 const RATE = 40;                        // pesan per detik per pemain
@@ -44,7 +46,7 @@ export const KITS = {
     skill: { id: 'sonic', cd: 9000, windup: 160, recover: 300, shape: 'cone', r: 10, arc: 0.85, dmg: 5, kb: 1.5, slow: 0.45, slowMs: 2500 } },
 };
 const LAG_RANGE = 1.5, LAG_ARC = 0.25;  // toleransi karena data posisi lawan sedikit tertinggal
-const HEAL_CAP = 40, HEAL_RATE = 13;    // pemulihan yang dilaporkan klien: maks 40 nyawa, terisi 13/detik (makan buah, pulih alami)
+const REGEN_DELAY = 6000, REGEN_RATE = 1.2;   // nyawa dipulihkan SERVER: setelah 6 detik tidak terkena serangan, +1.2/detik (klien tidak bisa menambah nyawa)
 
 const num = (v, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
 const r1 = (v) => Math.round(v * 10) / 10;
@@ -72,7 +74,7 @@ export class ArenaCore {
       id, send, name: 'Dino', char: 'vosil', level: 1, ready: false, alive: true,
       x: Math.cos(ang) * d, y: 0, z: Math.sin(ang) * d, yaw: 0, vx: 0, vz: 0, atk: -1, sw: 0,
       lastT: this.now(), bucket: RATE, bucketT: this.now(), strikes: 0,
-      emReady: 0, hp: HP_MAX, dseq: 0, heal: HEAL_CAP, hitGap: new Map(), atkReady: 0, skReady: 0, lockUntil: 0, dashUntil: 0, kills: 0,
+      emReady: 0, hp: HP_MAX, dseq: 0, lastHurt: 0, kbUntil: 0, hitGap: new Map(), atkReady: 0, skReady: 0, lockUntil: 0, dashUntil: 0, kills: 0,
     };
     this.players.set(id, p);
     this.dirty = true;
@@ -116,24 +118,18 @@ export class ArenaCore {
   onState(p, m, t) {
     const x = num(m.x, p.x), z = num(m.z, p.z), y = num(m.y, p.y);
     const dt = Math.max(0.05, Math.min(1, (t - p.lastT) / 1000));
-    if (Math.abs(x) > WORLD_LIM || Math.abs(z) > WORLD_LIM || Math.hypot(x - p.x, z - p.z) > MAX_SPEED * dt + 2 + (t < p.dashUntil ? 9 : 0)) {
+    if (Math.abs(x) > WORLD_LIM || Math.abs(z) > WORLD_LIM || Math.hypot(x - p.x, z - p.z) > maxSpeed(p.char) * dt + 2 + (t < p.dashUntil ? 9 : 0) + (t < p.kbUntil ? 6 : 0) || Math.abs(y - p.y) > 40 + 40 * dt) {
       p.strikes++;                                                 // loncat terlalu jauh -> kembalikan ke posisi terakhir yang sah
       p.send(JSON.stringify({ t: 'f', x: r1(p.x), z: r1(p.z) }));
       if (p.strikes > 30) p.send(JSON.stringify({ t: 'kick' }));
       return;
     }
-    p.heal = Math.min(HEAL_CAP, p.heal + HEAL_RATE * dt);
     p.lastT = t;
     const moved = x !== p.x || z !== p.z || y !== p.y || num(m.yaw, p.yaw) !== p.yaw || num(m.atk, -1) !== p.atk || (m.sw ? 1 : 0) !== p.sw;
     p.x = x; p.z = z; p.y = Math.max(-50, Math.min(400, y));
     p.yaw = num(m.yaw, p.yaw); p.vx = Math.max(-30, Math.min(30, num(m.vx))); p.vz = Math.max(-30, Math.min(30, num(m.vz)));
     p.atk = num(m.atk, -1); p.sw = m.sw ? 1 : 0;
-    // nyawa yang dilaporkan klien: boleh turun (lapar/haus), naik dibatasi; abaikan laporan yang belum menerima serangan terakhir
-    if (m.hp !== undefined && num(m.ds, 0) >= p.dseq) {
-      const h = Math.max(0, Math.min(HP_MAX, num(m.hp, p.hp)));
-      if (h <= p.hp) p.hp = h;
-      else { const inc = Math.min(h - p.hp, p.heal); p.hp += inc; p.heal -= inc; }
-    }
+    // nyawa SELURUHNYA diatur server: laporan 'hp' dari klien diabaikan
     if (moved) this.dirty = true;
   }
 
@@ -145,7 +141,7 @@ export class ArenaCore {
     if ((q.hitGap.get(a.id) || 0) > t) return false;               // baru saja dikenai penyerang yang sama
     q.hitGap.set(a.id, t + HIT_GAP_MS);
     const real = dmg * this.armor(q);
-    q.hp = Math.max(0, q.hp - real); q.dseq++;
+    q.hp = Math.max(0, q.hp - real); q.dseq++; q.lastHurt = t; q.kbUntil = t + 600;
     q.send(JSON.stringify({ t: 'd', by: a.id, k: kind, dmg: r1(real), hp: r1(q.hp), seq: q.dseq, x: r1(a.x), z: r1(a.z), kb: (ex && ex.kb) || 0, slow: (ex && ex.slow) || 0, slowMs: (ex && ex.slowMs) || 0 }));
     a.send(JSON.stringify({ t: 'h', to: q.id, k: kind, dmg: r1(real), hp: r1(q.hp) }));
     this.dirty = true;
@@ -230,6 +226,8 @@ export class ArenaCore {
     if (!this.dirty && ts - this.lastSnap < KEEPALIVE_MS) return;
     this.dirty = false; this.lastSnap = ts;
     const ps = [...this.players.values()].filter((p) => p.ready && p.alive);
+    const rdt = Math.min(1, (ts - (this.lastRegen || ts)) / 1000); this.lastRegen = ts;
+    for (const p of ps) if (p.hp < HP_MAX && ts - p.lastHurt > REGEN_DELAY) { p.hp = Math.min(HP_MAX, p.hp + REGEN_RATE * rdt); }
     for (const a of ps) {
       const list = [];
       for (const b of ps) {
@@ -237,7 +235,7 @@ export class ArenaCore {
         if (Math.hypot(b.x - a.x, b.z - a.z) > RADIUS) continue;
         list.push([b.id, r1(b.x), r1(b.y), r1(b.z), Math.round(b.yaw * 100) / 100, r1(b.vx), r1(b.vz), Math.round(b.atk * 100) / 100, b.sw, b.level, Math.round(b.hp), b.kills]);
       }
-      try { a.send(JSON.stringify({ t: 'p', ts: ts, n: ps.length, p: list })); } catch (e) { /* abaikan */ }
+      try { a.send(JSON.stringify({ t: 'p', ts: ts, n: ps.length, hp: r1(a.hp), p: list })); } catch (e) { /* abaikan */ }
     }
   }
   size() { return this.players.size; }

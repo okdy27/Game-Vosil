@@ -1339,7 +1339,7 @@
     root.scale.setScalar(p.scale);
     mergeTree(root);
     outlineTree(root);
-    return { root, body, headPivot, jaw, arms, legs, tail1, tail2, tail3, mats: [green, dark, light] };
+    return { root, body, headPivot, jaw, arms, legs, tail1, tail2, tail3, mats: [green, dark, light], variant: v };
   }
 
   function setGlow(c, v, hex) {
@@ -1365,7 +1365,7 @@
     root.rotation.x = ud.tp;
     root.rotation.z = ud.tr * 0.6;
   }
-  function poseCreature(c, phase, run, air, vy, atk, t) {
+  function poseCreature(c, phase, run, air, vy, atk, t, sk) {
     // nilai dihaluskan supaya perpindahan diam <-> lari <-> lompat tidak patah-patah
     const r = c.runS = approach(c.runS === undefined ? run : c.runS, run, 9);
     const a = c.airS = approach(c.airS === undefined ? 0 : c.airS, air ? 1 : 0, 14);
@@ -1394,17 +1394,50 @@
     c.tail1.rotation.x = -0.25 * a + Math.sin(phase) * 0.03 * r;
     if (c.tail3) c.tail3.rotation.x = Math.sin(phase + 1) * 0.08 * r;
     for (let i = 0; i < 2; i++) c.arms[i].rotation.x = Math.sin(phase * 2 + i * Math.PI) * 0.4 * r - 0.2 * a;
-    if (atk >= 0) {                                   // gigitan: kepala menyodok, rahang membuka lalu menutup
+    let hy = -c.body.rotation.y * 0.7;                                                // arah kepala (default: melawan putaran badan)
+    const b0 = c.body.rotation.x, v = c.variant;
+    if (sk) {                                                                         // gerak skill khas: tiap dino berbeda
+      const s = Math.sin(Math.PI * clamp(sk.p, 0, 1));
+      c.headPivot.position.z = -0.85; c.headPivot.rotation.x = 0; let jaw = -0.06, bx = b0;
+      if (sk.id === 'roar') { c.headPivot.rotation.x = -0.75 * s; c.headPivot.position.z = -0.7; jaw = -1.0 * s; bx = b0 - 0.18 * s; }
+      else if (sk.id === 'pounce') { bx = b0 + 0.38 * s; c.headPivot.position.z = -0.85 - 0.5 * s; c.headPivot.rotation.x = 0.3 * s; jaw = -0.8 * s; for (let i = 0; i < 2; i++) c.arms[i].rotation.x = -1.2 * s; }
+      else if (sk.id === 'charge') { bx = b0 + 0.3 * s; c.headPivot.rotation.x = 0.65 * s; c.headPivot.position.z = -0.85 - 0.4 * s; jaw = -0.3 * s; c.tail1.rotation.x = -0.5 * s; }
+      else if (sk.id === 'sweep') { const e = clamp(sk.p, 0, 1); c.body.rotation.y = Math.PI * 2 * e * e * (3 - 2 * e); hy = 0; jaw = -0.5 * s; bx = b0 + 0.1 * s; }
+      else if (sk.id === 'sonic') { c.headPivot.rotation.x = -0.55 * s + Math.sin(sk.p * 40) * 0.05 * s; c.headPivot.position.z = -0.85 - 0.25 * s; jaw = -0.7 * s; bx = b0 - 0.1 * s; }
+      c.body.rotation.x = bx; if (c.jaw) c.jaw.rotation.x = jaw;
+    } else if (atk >= 0) {                            // gigitan: tiap dino punya gaya sendiri
       const s = Math.sin(Math.PI * atk);
-      c.headPivot.position.z = -0.85 - 0.5 * s;
-      c.headPivot.rotation.x = 0.4 * s;
-      if (c.jaw) c.jaw.rotation.x = -0.7 * Math.sin(Math.PI * Math.min(1, atk * 1.15));
+      if (v === 'velo') {                             // gigit cepat dua kali + cakar menebas
+        const q = Math.abs(Math.sin(Math.PI * 2 * atk));
+        c.headPivot.position.z = -0.85 - 0.42 * q; c.headPivot.rotation.x = 0.3 * q;
+        if (c.jaw) c.jaw.rotation.x = -0.85 * q;
+        c.body.rotation.x = b0 + 0.16 * s;
+        for (let i = 0; i < 2; i++) c.arms[i].rotation.x = -0.9 * s * (i ? 0.7 : 1);
+      } else if (v === 'carno') {                     // angkat kepala tinggi lalu membanting ke bawah
+        const raise = atk < 0.4 ? atk / 0.4 : Math.max(0, 1 - (atk - 0.4) / 0.2), dn = atk < 0.4 ? 0 : Math.sin(Math.PI * Math.min(1, (atk - 0.4) / 0.6) * 0.9);
+        c.headPivot.rotation.x = -0.75 * raise + 0.8 * dn; c.headPivot.position.z = -0.85 - 0.7 * dn + 0.1 * raise;
+        if (c.jaw) c.jaw.rotation.x = -1.0 * Math.sin(Math.PI * clamp((atk - 0.15) / 0.75, 0, 1));
+        c.body.rotation.x = b0 - 0.12 * raise + 0.3 * dn;
+      } else if (v === 'spino') {                     // leher memanjang, kepala menyapu dari kiri ke kanan
+        c.headPivot.position.z = -0.85 - 1.0 * s; c.headPivot.rotation.x = 0.12 * s;
+        if (c.jaw) c.jaw.rotation.x = -0.8 * Math.sin(Math.PI * Math.min(1, atk * 1.15));
+        hy = (atk - 0.5) * 1.6; c.body.rotation.y += (atk - 0.5) * -0.35;
+      } else if (v === 'parasaur') {                  // tarik kepala ke belakang, lalu menyundul dengan jambul
+        const pull = atk < 0.35 ? atk / 0.35 : Math.max(0, 1 - (atk - 0.35) / 0.15), th = atk < 0.35 ? 0 : Math.sin(Math.PI * Math.min(1, (atk - 0.35) / 0.65));
+        c.headPivot.position.z = -0.85 + 0.35 * pull - 0.55 * th; c.headPivot.rotation.x = -0.35 * pull + 0.65 * th;
+        if (c.jaw) c.jaw.rotation.x = -0.18 * th;
+        c.body.rotation.x = b0 - 0.1 * pull + 0.12 * th;
+      } else {                                        // Vosil: sodokan lurus standar
+        c.headPivot.position.z = -0.85 - 0.5 * s;
+        c.headPivot.rotation.x = 0.4 * s;
+        if (c.jaw) c.jaw.rotation.x = -0.7 * Math.sin(Math.PI * Math.min(1, atk * 1.15));
+      }
     } else {
       c.headPivot.position.z = -0.85;
       c.headPivot.rotation.x = -c.body.rotation.x * 0.8 + Math.sin(phase * 2) * 0.04 * r;       // kepala menyeimbangkan badan
       if (c.jaw) c.jaw.rotation.x = approach(c.jaw.rotation.x, -0.06 - 0.04 * Math.sin(t * 2.1), 12);
     }
-    c.headPivot.rotation.y = -c.body.rotation.y * 0.7;
+    c.headPivot.rotation.y = hy;
   }
 
   // Triceratops: berkaki empat, berkepala berpelindung dengan tiga tanduk (menghadap -Z)
@@ -1809,7 +1842,7 @@
     for (const o of ringFx) { scene.remove(o.m); o.m.material.dispose(); }
     ringFx.length = 0;
     myEmote = { e: -1, t: 99 };
-    while (teles.length) removeTele(0);
+    teles.length = 0;
     skillWind = null; dashS = null; slowT = 0; slowMul = 1;
   }
   function updateRemotes(dt) {
@@ -1852,7 +1885,8 @@
       v.c.root.scale.setScalar(v.sc);
       v.c.root.position.set(r.x, r.y, r.z);
       v.c.root.rotation.z = 0; v.c.root.rotation.y = r.dyaw !== undefined ? r.dyaw : r.yaw;
-      poseCreature(v.c, v.phase, clamp(spd / 6, 0, 1.3), air, 0, r.atk >= 0 ? clamp(r.atk / 0.35, 0, 1) : -1, clock);
+      if (v.skA) { v.skA.t += dt; if (v.skA.t >= v.skA.dur) v.skA = null; }
+      poseCreature(v.c, v.phase, clamp(spd / 6, 0, 1.3), air, 0, r.atk >= 0 ? clamp(r.atk / 0.35, 0, 1) : -1, clock, v.skA ? { id: v.skA.id, p: v.skA.t / v.skA.dur } : null);
       if (r.atk >= 0 && (v.lastAtk === undefined || v.lastAtk < 0)) spawnSlash(r.x, r.y, r.z, v.c.root.rotation.y, v.sc);   // lawan menyerang
       v.lastAtk = r.atk;
       if (v.em) { v.em.t += dt; const o = emoteOff(v.em.e, v.em.t); if (o) { v.c.root.position.y += o.dy * v.sc; v.c.root.rotation.y += o.dyaw; } else if (v.em.t > 2.2) v.em = null; }
@@ -1872,7 +1906,7 @@
     onlineShown = key;
     if (onlinePing) onlinePing.textContent = pg ? ' · ' + pg + ' ms' : '';
     onlineBox.classList.toggle('hidden', n === 0);
-    if (emoteBar) emoteBar.classList.toggle('hidden', n === 0);
+    if (emoteBar) { emoteBar.classList.toggle('hidden', n === 0); if (n === 0) emoOpen(false); }
     if (n) { onlineN.textContent = n; onlineMax.textContent = Arena.st.max; }
   }
   // ---------- Efek serangan ringan & emote ----------
@@ -1978,10 +2012,15 @@
       b.sp.scale.setScalar(1.5 * (0.5 + 0.5 * pop)); b.sp.material.opacity = fade;
     }
     if (emoteBar) emoteBar.classList.toggle('cd', emoteCd > 0);
+    if (emoOpenT > 0) { emoOpenT -= dt; if (emoOpenT <= 0) emoOpen(false); }          // menutup sendiri bila tidak dipakai
   }
   const emoteBar = $('emoteBar');
+  let emoOpen = () => {}, emoOpenT = 0;
   if (emoteBar) {
-    for (let i = 0; i < EMOTES.length; i++) bindBtn($('em' + i), () => doEmote(i));
+    const emoBtn = $('emoteBtn');
+    emoOpen = (on) => { emoOpenT = on ? 5 : 0; emoteBar.classList.toggle('open', on); };       // satu tombol 💬: ketuk -> emote berbaris -> pilih
+    if (emoBtn) bindBtn(emoBtn, () => emoOpen(!emoteBar.classList.contains('open')));
+    for (let i = 0; i < EMOTES.length; i++) bindBtn($('em' + i), () => { doEmote(i); emoOpen(false); });
   }
   // ---------- Skill khas tiap dino (arena) ----------
   // tanda bahaya di tanah (merah = lawan, oranye = milikku): bentuk area + bilah isi yang menunjukkan sisa waktu persiapan
@@ -2032,35 +2071,18 @@
   };
   const teleMapMat = (map, col, op) => new THREE.MeshBasicMaterial({ map, color: col, transparent: true, opacity: op, depthWrite: false, depthTest: false, fog: false, side: THREE.DoubleSide });
   const teles = [];
-  function telegraph(x, z, yaw, sh, wind, mine, fxId) {
+  function telegraph(x, z, yaw, sh, wind, mine, fxId) {                           // tanpa gambar di tanah: hanya penjadwal efek elemen lawan (tanda abu-abu hanya muncul saat membidik)
     if (!sh) return;
-    const geo = sh.shape === 'line' ? teleGeo.line : sh.shape === 'cone' ? coneGeo(sh.arc) : teleGeo.circle;
-    const col = mine ? 0xeceff1 : 0xcfd8dc;                                       // abu-abu transparan bermotif: milik sendiri lebih tipis, lawan sedikit lebih pekat agar tetap terbaca
-    const op0 = mine ? 0.5 : 0.78, op1 = mine ? 0.12 : 0.24;
-    const bgeo = sh.shape === 'line' ? lineGeoFor(sh.len) : geo;
-    const base = new THREE.Mesh(bgeo, teleMapMat(teleTex[sh.shape] || teleTex.circle, col, 0)), fill = new THREE.Mesh(geo, teleMat(col, 0));
-    base.renderOrder = 3; fill.renderOrder = 4;
-    const y = heightAt(x, z) + 0.3;
-    for (const m of [base, fill]) { m.position.set(x, y, z); m.rotation.y = yaw; scene.add(m); }
-    const w = sh.shape === 'line' ? sh.width : sh.r, l = sh.shape === 'line' ? sh.len : sh.r;
-    base.scale.set(sh.shape === 'line' ? w : l, 1, sh.shape === 'line' ? l : l);
-    teles.push({ base, fill, t: 0, wind: Math.max(0.15, wind), sh, w, l, op0, op1, x, z, yaw, fxId, fired: false });
-    if (teles.length > 12) removeTele(0);
+    teles.push({ t: 0, wind: Math.max(0.08, wind), sh, x, z, yaw, fxId, fired: false });
+    if (teles.length > 12) teles.shift();
   }
-  function removeTele(i) { const o = teles[i]; scene.remove(o.base); scene.remove(o.fill); o.base.material.dispose(); o.fill.material.dispose(); teles.splice(i, 1); }
   function updateTele(dt) {
     for (let i = teles.length - 1; i >= 0; i--) {
       const o = teles[i]; o.t += dt;
       if (!o.fired && o.t >= o.wind) { o.fired = true; if (o.fxId) skillFx(o.fxId, o.x, o.z, o.yaw, o.sh); }          // lawan melepas skill: efek elemen
-      if (o.sh.shape === 'circle') o.base.rotation.y = o.yaw + o.t * 0.9;                   // motif cincin berputar pelan
-      const f = Math.min(1, o.t / o.wind);
-      if (o.sh.shape === 'line') o.fill.scale.set(o.w, 1, Math.max(0.01, o.l * f)); else o.fill.scale.set(o.l * f, 1, o.l * f);
-      const fin = Math.min(1, o.t / 0.14), fout = o.t > o.wind ? Math.max(0, 1 - (o.t - o.wind) / 0.35) : 1;       // muncul & hilang halus
-      o.base.material.opacity = o.op0 * fin * fout; o.fill.material.opacity = o.op1 * fin * fout;
-      if (o.t > o.wind + 0.4) removeTele(i);
+      if (o.t > o.wind + 0.05) teles.splice(i, 1);
     }
   }
-
   // ---------- Efek elemen skill: petir, api, air, angin (partikel ringan, mengikuti garis/area tanda abu-abu) ----------
   const softTex = (() => { const cv = document.createElement('canvas'); cv.width = cv.height = 64; const g = cv.getContext('2d'); const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.4, 'rgba(255,255,255,0.45)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 64, 64); return new THREE.CanvasTexture(cv); })();
   function mkPool(n, size) {
@@ -2153,7 +2175,7 @@
       for (let i = 0; i < 18; i++) { const ang = yaw + (R() * 2 - 1) * sh.arc, ax = -Math.sin(ang), az = -Math.cos(ang), sp = 8 + R() * 10; emit(sm, x + ax, gy + 0.9 + R(), z + az, ax * sp, R() * 2, az * sp, 0.5, 0.85, 0.95, 1, 0, 0); }
     }
   }
-  let skillWind = null, dashS = null, slowT = 0, slowMul = 1, aimHintT = 0;
+  let skillWind = null, dashS = null, slowT = 0, slowMul = 1, aimHintT = 0, skAnim = null;
   const kitSkill = () => (typeof Arena !== 'undefined' && Arena.kits && Arena.kits[save.char] ? Arena.kits[save.char].skill : null);
   const skLabel = () => { const sk = arenaOn ? kitSkill() : null; return t('sk_' + (sk ? sk.id : 'roar')); };
   function aimYaw() {                                                              // bidik otomatis ke lawan terdekat (jika dekat)
@@ -2174,7 +2196,7 @@
     player.atkCd = Math.max(player.atkCd, (sk.windup + sk.recover) / 1000);          // terkunci selama persiapan + pemulihan (kelemahan tiap skill)
     skillWind = { t: sk.windup / 1000, sk, yaw: player.yaw, ox: player.x, oz: player.z };
     Arena.skill(player.yaw);
-    telegraph(player.x, player.z, player.yaw, { shape: sk.shape, r: sk.r || 0, len: sk.len || 0, width: sk.width || 0, arc: sk.arc || 0 }, sk.windup / 1000, true);
+    skAnim = { id: sk.id, t: 0, dur: sk.windup / 1000 + 0.32 };                  // gerak serangan dino (pose khas tiap skill)
   }
 
   // ---------- Bidik skill: tahan tombol, geser jari untuk mengarahkan, lepas untuk meluncurkan ----------
@@ -2217,6 +2239,7 @@
   }
   function updateSkill(dt) {
     slowT = Math.max(0, slowT - dt); if (slowT <= 0) slowMul = 1;
+    if (skAnim) { skAnim.t += dt; if (skAnim.t >= skAnim.dur) skAnim = null; }
     if (state !== 'playing' || !arenaOn) { skillWind = null; dashS = null; if (aim.on) aimClear(); return; }
     if (aimHintT > 0) { aimHintT -= dt; if (aimHintT <= 0) toast(t('ar_aim'), 6); }
     if (aim.on) {
@@ -2250,7 +2273,7 @@
   if (typeof Arena !== 'undefined') {
     Arena.onFix = (x, z) => { player.x = x; player.z = z; };                       // server mengembalikan posisi (gerak tidak wajar)
     Arena.onDamaged = pvpHurt; Arena.onHit = pvpHit; Arena.onKill = pvpKill; Arena.onRoar = pvpRoar; Arena.onEmote = remoteEmote;
-    Arena.onSkill = (m) => telegraph(m.x, m.z, m.yaw, m.sh, m.w / 1000, false, m.s);
+    Arena.onSkill = (m) => { telegraph(m.x, m.z, m.yaw, m.sh, m.w / 1000, false, m.s); const v = remoteViews.get(m.id); if (v) v.skA = { id: m.s, t: 0, dur: m.w / 1000 + 0.32 }; };
     Arena.onJoin = (c) => { if (arenaOn) toast(t('ar_joined', { n: c.name }), 2); };
     Arena.onLeave = (c) => { if (arenaOn) toast(t('ar_left', { n: c.name }), 2); };
     Arena.onEnd = () => { if (arenaOn) { arenaOn = false; clearRemotes(); if (state === 'playing') die(t('ar_lost')); } };
@@ -4572,7 +4595,7 @@
     } else {
       hero.root.rotation.z = 0;
       hero.root.rotation.y = player.yaw;
-      poseCreature(hero, phase, run, air, player.vy, player.atkT >= 0 ? clamp(player.atkT / 0.35, 0, 1) : -1, clock);
+      poseCreature(hero, phase, run, air, player.vy, player.atkT >= 0 ? clamp(player.atkT / 0.35, 0, 1) : -1, clock, skAnim ? { id: skAnim.id, p: skAnim.t / skAnim.dur } : null);
       if (swimBlend > 0.01) applySwim(hero, swimBlend, spd, clock);
       tiltToGround(hero.root, player.x, player.z, player.yaw, 0.9 * scaleNow / 1.1, dt, swimBlend > 0.3 || lastWet || air || onPlat);
       if (myEmote.e >= 0 && arenaOn) { const o = emoteOff(myEmote.e, myEmote.t); if (o) { hero.root.position.y += o.dy * scaleNow / 1.1; hero.root.rotation.y += o.dyaw; } }

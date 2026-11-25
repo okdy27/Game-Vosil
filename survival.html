@@ -161,11 +161,16 @@
     }
 
     /* emote: di tingkat atas (bukan di dalam #hud) supaya tidak tertutup area sentuh joystick/kamera */
-    #emoteBar { position: fixed; z-index: 8; pointer-events: auto; top: calc(var(--st) + 102px); right: calc(var(--sr) + 12px); display: flex; gap: 4px; opacity: .78; }
+    #emoteBar { position: fixed; z-index: 8; pointer-events: auto; top: calc(var(--st) + 102px); right: calc(var(--sr) + 12px); display: flex; align-items: center; gap: 6px; opacity: .85; }
+    #emoteRow { display: none; gap: 5px; padding: 4px 6px; border-radius: 22px; background: rgba(0, 0, 0, .4); }
+    #emoteBar.open #emoteRow { display: flex; animation: emoPop .18s ease-out; }
+    @keyframes emoPop { from { opacity: 0; transform: translateX(14px) scale(.9); } to { opacity: 1; transform: none; } }
+    #emoteBtn { width: 40px; height: 40px; font-size: 20px !important; }
+    #emoteBar.open #emoteBtn { border-color: #ffd54f; background: rgba(255, 213, 79, .3); }
     #emoteBar.hidden { display: none; }
     #emoteBar button { width: 35px; height: 35px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, .45); background: rgba(0, 0, 0, .45); color: #fff; font-size: 18px; line-height: 1; padding: 0; touch-action: none; }
     #emoteBar button.on { transform: scale(.88); background: rgba(255, 255, 255, .3); }
-    #emoteBar.cd button { opacity: .4; }
+    #emoteBar.cd #emoteRow button { opacity: .4; }
     #toast {
       position: absolute;
       top: calc(var(--st) + 14px);
@@ -570,7 +575,10 @@
     <button id="btnJump" class="abtn" type="button"><svg viewBox="0 0 48 48" fill="currentColor" aria-hidden="true"><g transform="translate(24 38) rotate(0) scale(0.9)"><circle cx="0" cy="2" r="5.2"/><path transform="rotate(-40)" d="M-3.2 0L0 -15L3.2 0Z" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/><path transform="rotate(0)" d="M-3.2 0L0 -20L3.2 0Z" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/><path transform="rotate(40)" d="M-3.2 0L0 -15L3.2 0Z" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/></g><path d="M13 15l11-8 11 8" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" opacity=".6"/></svg><span data-i18n="sk_jump">LOMPAT</span></button>
     <button id="btnAttack" class="abtn" type="button">🦖<span data-i18n="sk_bite">GIGIT</span></button>
   <div id="emoteBar" class="hidden">
+    <div id="emoteRow">
     <button id="em0" type="button" aria-label="Emote">👋</button><button id="em1" type="button" aria-label="Emote">👍</button><button id="em2" type="button" aria-label="Emote">😂</button><button id="em3" type="button" aria-label="Emote">⚔️</button><button id="em4" type="button" aria-label="Emote">🏳️</button><button id="em5" type="button" aria-label="Emote">😱</button>
+    </div>
+    <button id="emoteBtn" type="button" aria-label="Emote">💬</button>
   </div>
   </div>
 

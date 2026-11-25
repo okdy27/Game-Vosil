@@ -1993,7 +1993,7 @@
   const coneGeo = (arc) => { const k = Math.round(arc * 100); if (!teleCone[k]) { const g = new THREE.CircleGeometry(1, 28, Math.PI / 2 - arc, arc * 2); g.rotateX(-Math.PI / 2); teleCone[k] = g; } return teleCone[k]; };
   const teleMat = (col, op) => new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: op, depthWrite: false, depthTest: false, fog: false, side: THREE.DoubleSide });
   const teles = [];
-  function telegraph(x, z, yaw, sh, wind, mine) {
+  function telegraph(x, z, yaw, sh, wind, mine, fxId) {
     if (!sh) return;
     const geo = sh.shape === 'line' ? teleGeo.line : sh.shape === 'cone' ? coneGeo(sh.arc) : teleGeo.circle;
     const col = mine ? 0xeceff1 : 0xb0bec5;                                       // abu-abu transparan: milik sendiri lebih terang, lawan sedikit lebih pekat agar tetap terbaca
@@ -2004,13 +2004,14 @@
     for (const m of [base, fill]) { m.position.set(x, y, z); m.rotation.y = yaw; scene.add(m); }
     const w = sh.shape === 'line' ? sh.width : sh.r, l = sh.shape === 'line' ? sh.len : sh.r;
     base.scale.set(sh.shape === 'line' ? w : l, 1, sh.shape === 'line' ? l : l);
-    teles.push({ base, fill, t: 0, wind: Math.max(0.15, wind), sh, w, l, op0, op1 });
+    teles.push({ base, fill, t: 0, wind: Math.max(0.15, wind), sh, w, l, op0, op1, x, z, yaw, fxId, fired: false });
     if (teles.length > 12) removeTele(0);
   }
   function removeTele(i) { const o = teles[i]; scene.remove(o.base); scene.remove(o.fill); o.base.material.dispose(); o.fill.material.dispose(); teles.splice(i, 1); }
   function updateTele(dt) {
     for (let i = teles.length - 1; i >= 0; i--) {
       const o = teles[i]; o.t += dt;
+      if (!o.fired && o.t >= o.wind) { o.fired = true; if (o.fxId) skillFx(o.fxId, o.x, o.z, o.yaw, o.sh); }          // lawan melepas skill: efek elemen
       const f = Math.min(1, o.t / o.wind);
       if (o.sh.shape === 'line') o.fill.scale.set(o.w, 1, Math.max(0.01, o.l * f)); else o.fill.scale.set(o.l * f, 1, o.l * f);
       const fin = Math.min(1, o.t / 0.14), fout = o.t > o.wind ? Math.max(0, 1 - (o.t - o.wind) / 0.35) : 1;       // muncul & hilang halus
@@ -2018,7 +2019,100 @@
       if (o.t > o.wind + 0.4) removeTele(i);
     }
   }
-  let skillWind = null, dashS = null, slowT = 0, slowMul = 1;
+
+  // ---------- Efek elemen skill: petir, api, air, angin (partikel ringan, mengikuti garis/area tanda abu-abu) ----------
+  const softTex = (() => { const cv = document.createElement('canvas'); cv.width = cv.height = 64; const g = cv.getContext('2d'); const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.4, 'rgba(255,255,255,0.45)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 64, 64); return new THREE.CanvasTexture(cv); })();
+  function mkPool(n, size) {
+    const geo = new THREE.BufferGeometry(), pos = new Float32Array(n * 3), col = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) pos[i * 3 + 1] = -999;
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    const pts = new THREE.Points(geo, new THREE.PointsMaterial({ size, map: softTex, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: true, fog: false }));
+    pts.frustumCulled = false; pts.renderOrder = 6; scene.add(pts);
+    return { n, pos, col, geo, p: Array.from({ length: n }, () => ({ l: 0, m: 1, vx: 0, vy: 0, vz: 0, r: 0, g: 0, b: 0, gr: 0, dr: 0 })), i: 0, alive: 0 };
+  }
+  const FX = { big: mkPool(220, 1.9), small: mkPool(360, 0.6) };
+  function emit(pool, x, y, z, vx, vy, vz, life, r, g, b, gr, dr) {
+    const o = pool.p[pool.i], k = pool.i * 3; pool.i = (pool.i + 1) % pool.n;
+    o.l = o.m = life; o.vx = vx; o.vy = vy; o.vz = vz; o.r = r; o.g = g; o.b = b; o.gr = gr || 0; o.dr = dr || 0;
+    pool.pos[k] = x; pool.pos[k + 1] = y; pool.pos[k + 2] = z; pool.alive++;
+  }
+  function updateFx(dt) {
+    for (const pool of [FX.big, FX.small]) {
+      if (!pool.alive) continue;
+      let live = 0;
+      for (let i = 0; i < pool.n; i++) {
+        const o = pool.p[i], k = i * 3;
+        if (o.l <= 0) continue;
+        o.l -= dt;
+        if (o.l <= 0) { pool.pos[k + 1] = -999; pool.col[k] = pool.col[k + 1] = pool.col[k + 2] = 0; continue; }
+        live++;
+        const d = Math.max(0, 1 - o.dr * dt);
+        o.vx *= d; o.vz *= d; o.vy = o.vy * d - o.gr * dt;
+        pool.pos[k] += o.vx * dt; pool.pos[k + 1] += o.vy * dt; pool.pos[k + 2] += o.vz * dt;
+        const f = o.l / o.m, a = f * Math.min(1, (1 - f) * 7);                    // muncul cepat, hilang halus
+        pool.col[k] = o.r * a; pool.col[k + 1] = o.g * a; pool.col[k + 2] = o.b * a;
+      }
+      pool.alive = live;
+      pool.geo.attributes.position.needsUpdate = true; pool.geo.attributes.color.needsUpdate = true;
+    }
+  }
+  const bolts = [];
+  function boltBuild(o) {
+    const a = o.geo.attributes.position.array, n = o.n, dx = o.x1 - o.x0, dz = o.z1 - o.z0, len = Math.hypot(dx, o.y1 - o.y0, dz) || 1;
+    const hx = Math.hypot(dx, dz), px = hx > 0.01 ? -dz / hx : 1, pz = hx > 0.01 ? dx / hx : 0;       // tegak lurus arah (datar)
+    for (let i = 0; i < n; i++) {
+      const f = i / (n - 1), j = (i === 0 || i === n - 1) ? 0 : (Math.random() - 0.5) * 2 * o.amp * Math.sin(Math.PI * f);
+      a[i * 3] = o.x0 + dx * f + px * j; a[i * 3 + 1] = o.y0 + (o.y1 - o.y0) * f + (Math.random() - 0.5) * o.amp * 0.4; a[i * 3 + 2] = o.z0 + dz * f + pz * j;
+      if (i % 2 === 0) emit(FX.small, a[i * 3], a[i * 3 + 1], a[i * 3 + 2], 0, 0, 0, 0.18, o.r, o.g, o.b, 0, 0);       // kilau di tiap sambungan
+    }
+    o.geo.attributes.position.needsUpdate = true; o.len = len;
+  }
+  function removeBolt(i) { const o = bolts[i]; scene.remove(o.m); o.geo.dispose(); o.m.material.dispose(); bolts.splice(i, 1); }
+  function bolt(x0, y0, z0, x1, y1, z1, life, amp, r, g, b) {
+    if (bolts.length >= 12) removeBolt(0);
+    const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(13 * 3), 3));
+    const m = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: new THREE.Color(r, g, b), transparent: true, opacity: 0.9, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
+    m.frustumCulled = false; m.renderOrder = 7; scene.add(m);
+    const o = { m, geo, n: 13, x0, y0, z0, x1, y1, z1, life, max: life, amp, tick: 0, r, g, b };
+    boltBuild(o); bolts.push(o);
+  }
+  function updateBolts(dt) {
+    for (let i = bolts.length - 1; i >= 0; i--) {
+      const o = bolts[i]; o.life -= dt; o.tick -= dt;
+      if (o.life <= 0) { removeBolt(i); continue; }
+      if (o.tick <= 0) { o.tick = 0.06; boltBuild(o); }                           // berkedip: bentuk zig-zag diacak ulang
+      o.m.material.opacity = Math.min(1, o.life / o.max * 2.2) * 0.85;
+    }
+  }
+  function skillFx(id, x, z, yaw, sh) {
+    if (!sh) return;
+    const gy = heightAt(x, z), dx = -Math.sin(yaw), dz = -Math.cos(yaw), sx = Math.cos(yaw), sz = -Math.sin(yaw), R = Math.random, big = FX.big, sm = FX.small;
+    if (id === 'roar') {                                                          // ANGIN: gelombang & pusaran keluar ke segala arah
+      for (let i = 0; i < 40; i++) { const a = i / 40 * 6.283 + R() * 0.12, sp = sh.r / 0.55 * (0.8 + R() * 0.3); emit(big, x + Math.cos(a) * 1.2, gy + 0.6 + R() * 0.5, z + Math.sin(a) * 1.2, Math.cos(a) * sp, 0.6, Math.sin(a) * sp, 0.55, 0.55, 0.6, 0.62, 0, 0); }
+      for (let i = 0; i < 30; i++) { const a = i / 30 * 6.283, sp = sh.r / 0.6 * 0.55; emit(sm, x, gy + 0.8 + R() * 0.8, z, Math.cos(a) * sp - Math.sin(a) * 7, 1.2, Math.sin(a) * sp + Math.cos(a) * 7, 0.6, 0.75, 0.8, 0.85, 0, 1.2); }
+    } else if (id === 'pounce') {                                                 // PETIR: sambaran zig-zag di sepanjang garis
+      const L = sh.len, ex = x + dx * L, ez = z + dz * L;
+      for (let k = -1; k <= 1; k++) bolt(x + sx * k * sh.width * 0.25, gy + 0.8, z + sz * k * sh.width * 0.25, ex + sx * k * sh.width * 0.25, gy + 0.8, ez + sz * k * sh.width * 0.25, 0.38, 0.55, 0.62, 0.82, 1);
+      for (let k = 0; k < 3; k++) { const f = 0.3 + 0.28 * k + R() * 0.1, px = x + dx * L * f, pz = z + dz * L * f; bolt(px, gy + 9, pz, px, gy, pz, 0.3, 0.9, 0.75, 0.9, 1); emit(big, px, gy + 0.4, pz, 0, 0, 0, 0.3, 0.5, 0.7, 1, 0, 0); }
+      for (let i = 0; i < 34; i++) { const f = R(); emit(sm, x + dx * L * f + sx * (R() - 0.5) * sh.width, gy + 0.4, z + dz * L * f + sz * (R() - 0.5) * sh.width, (R() - 0.5) * 3, 2 + R() * 4, (R() - 0.5) * 3, 0.4 + R() * 0.3, 0.7, 0.88, 1, 9, 0); }
+    } else if (id === 'charge') {                                                 // API: jejak nyala di sepanjang garis
+      const L = sh.len;
+      for (let i = 0; i < 70; i++) { const f = R(); emit(big, x + dx * L * f + sx * (R() - 0.5) * sh.width * 0.8, gy + 0.3, z + dz * L * f + sz * (R() - 0.5) * sh.width * 0.8, (R() - 0.5) * 1.2, 2 + R() * 3, (R() - 0.5) * 1.2, 0.45 + R() * 0.4, 1, 0.42 + R() * 0.25, 0.1, -1.5, 0.5); }
+      for (let i = 0; i < 36; i++) { const f = R(); emit(sm, x + dx * L * f + sx * (R() - 0.5) * sh.width, gy + 0.5, z + dz * L * f + sz * (R() - 0.5) * sh.width, (R() - 0.5) * 3, 3 + R() * 4, (R() - 0.5) * 3, 0.5 + R() * 0.4, 1, 0.8, 0.3, 9, 0); }
+      for (let i = 0; i < 14; i++) emit(big, x + dx * L + (R() - 0.5) * 1.5, gy + 0.4, z + dz * L + (R() - 0.5) * 1.5, dx * 3 + (R() - 0.5) * 3, 2 + R() * 2, dz * 3 + (R() - 0.5) * 3, 0.5, 1, 0.5, 0.12, -1, 0.4);
+    } else if (id === 'sweep') {                                                  // AIR: pusaran ekor & percikan di sekeliling lingkaran
+      for (let i = 0; i < 40; i++) { const a = i / 40 * 6.283, rr = 1 + sh.r * 0.85 * (i / 40), sp = 8; emit(big, x + Math.cos(a) * rr, gy + 0.5, z + Math.sin(a) * rr, -Math.sin(a) * sp, 0.8, Math.cos(a) * sp, 0.5, 0.3, 0.6, 0.9, 0, 1.5); }
+      for (let i = 0; i < 60; i++) { const a = R() * 6.283, sp = 4 + R() * 5; emit(sm, x + Math.cos(a) * sh.r * 0.5, gy + 0.6, z + Math.sin(a) * sh.r * 0.5, Math.cos(a) * sp - Math.sin(a) * 6, 4 + R() * 4, Math.sin(a) * sp + Math.cos(a) * 6, 0.6 + R() * 0.3, 0.4, 0.72, 1, 13, 0); }
+      for (let i = 0; i < 24; i++) { const a = i / 24 * 6.283; emit(big, x + Math.cos(a) * sh.r * 0.9, gy + 0.4, z + Math.sin(a) * sh.r * 0.9, 0, 1.5, 0, 0.5, 0.25, 0.5, 0.8, 0, 0); }
+    } else if (id === 'sonic') {                                                  // ANGIN + kilau: gelombang suara berlapis di dalam kerucut
+      for (let k = 0; k < 5; k++) for (let j = -6; j <= 6; j++) {
+        const ang = yaw + (j / 6) * sh.arc * 0.95, ax = -Math.sin(ang), az = -Math.cos(ang), d0 = 0.8 + k * 1.1, sp = (sh.r - d0) / 0.5;
+        emit(big, x + ax * d0, gy + 1 + k * 0.1, z + az * d0, ax * sp, 0.4, az * sp, 0.5, 0.55, 0.78, 1, 0, 0);
+      }
+      for (let i = 0; i < 18; i++) { const ang = yaw + (R() * 2 - 1) * sh.arc, ax = -Math.sin(ang), az = -Math.cos(ang), sp = 8 + R() * 10; emit(sm, x + ax, gy + 0.9 + R(), z + az, ax * sp, R() * 2, az * sp, 0.5, 0.85, 0.95, 1, 0, 0); }
+    }
+  }
+  let skillWind = null, dashS = null, slowT = 0, slowMul = 1, aimHintT = 0;
   const kitSkill = () => (typeof Arena !== 'undefined' && Arena.kits && Arena.kits[save.char] ? Arena.kits[save.char].skill : null);
   const skLabel = () => { const sk = arenaOn ? kitSkill() : null; return t('sk_' + (sk ? sk.id : 'roar')); };
   function aimYaw() {                                                              // bidik otomatis ke lawan terdekat (jika dekat)
@@ -2030,30 +2124,63 @@
     }
     return best ? faceYaw(best.x - player.x, best.z - player.z) : player.yaw;
   }
-  function arenaSkillPress() {
+  function arenaSkillPress(yawOv) {
     const sk = kitSkill();
     if (!sk || roarCd > 0 || player.atkCd > 0 || skillWind) return;
-    if (sk.shape !== 'circle') player.yaw = aimYaw();
+    if (sk.shape !== 'circle') player.yaw = yawOv !== undefined ? yawOv : aimYaw();
     roarCd = sk.cd / 1000;
     player.atkCd = Math.max(player.atkCd, (sk.windup + sk.recover) / 1000);          // terkunci selama persiapan + pemulihan (kelemahan tiap skill)
     skillWind = { t: sk.windup / 1000, sk, yaw: player.yaw, ox: player.x, oz: player.z };
     Arena.skill(player.yaw);
     telegraph(player.x, player.z, player.yaw, { shape: sk.shape, r: sk.r || 0, len: sk.len || 0, width: sk.width || 0, arc: sk.arc || 0 }, sk.windup / 1000, true);
   }
-  function fireSkill(sk, yaw) {                                                    // efek di sisi saya saat persiapan selesai (kerusakan ditentukan server)
+
+  // ---------- Bidik skill: tahan tombol, geser jari untuk mengarahkan, lepas untuk meluncurkan ----------
+  const aim = { on: false, yaw: 0, moved: false, cx: 0, cy: 0, mesh: null, shape: '' };
+  const aimReady = () => state === 'playing' && arenaOn && !!kitSkill() && roarCd <= 0 && player.atkCd <= 0 && !skillWind;
+  function aimClear() { if (aim.mesh) { scene.remove(aim.mesh); aim.mesh.material.dispose(); aim.mesh = null; } aim.on = false; }
+  function aimBegin(e) {
+    if (!aimReady()) return false;
+    const sk = kitSkill(), r = btnRoar.getBoundingClientRect();
+    aim.cx = r.left + r.width / 2; aim.cy = r.top + r.height / 2; aim.moved = false; aim.yaw = sk.shape === 'circle' ? player.yaw : aimYaw(); aim.shape = sk.shape;
+    const geo = sk.shape === 'line' ? teleGeo.line : sk.shape === 'cone' ? coneGeo(sk.arc) : teleGeo.circle;
+    const m = new THREE.Mesh(geo, teleMat(0xeceff1, 0.16)); m.renderOrder = 3;
+    if (sk.shape === 'line') m.scale.set(sk.width, 1, sk.len); else m.scale.set(sk.r, 1, sk.r);
+    scene.add(m); aim.mesh = m; aim.on = true;
+    return true;
+  }
+  function aimMove(e) {
+    if (!aim.on) return;
+    const dxs = e.clientX - aim.cx, dys = e.clientY - aim.cy;
+    if (Math.hypot(dxs, dys) < 16) return;                                          // zona mati di tengah tombol
+    aim.moved = true;
+    const sn = Math.sin(camYaw), cs = Math.cos(camYaw);
+    aim.yaw = faceYaw(cs * dxs + sn * dys, -sn * dxs + cs * dys);                   // layar atas = arah kamera
+  }
+  function aimEnd(fire) {
+    if (!aim.on) return;
+    const y = aim.yaw; aimClear();
+    if (fire) arenaSkillPress(y);
+  }
+  function fireSkill(sk, yaw, ox, oz) {                                                    // efek di sisi saya saat persiapan selesai (kerusakan ditentukan server)
     const gy = player.gy || 0;
     shake = Math.max(shake, 0.6);
     GameAudio.sfx.dino(save.char === 'vosil' ? 'carno' : save.char, sk.id === 'sonic' ? 'call' : 'attack', 1.5);
     if (sk.shape === 'circle') { roarR = sk.r; roarT = 0; }
     if (sk.id === 'roar') showDmg(player.x, gy + player.y + 3.0 * scaleNow / 1.1, player.z, t('roar_pop'), 'crit', 1.3);
     if (sk.dash) dashS = { left: 0.22, dx: -Math.sin(yaw), dz: -Math.cos(yaw), v: sk.dash / 0.22 };
-    if (sk.id === 'sonic') fxRing(player.x, gy, player.z, sk.r * 0.6, 0xcfd8dc);
+    skillFx(sk.id, ox !== undefined ? ox : player.x, oz !== undefined ? oz : player.z, yaw, { shape: sk.shape, r: sk.r || 0, len: sk.len || 0, width: sk.width || 0, arc: sk.arc || 0 });
     starBurst(player.x, gy + player.y + 1.4 * scaleNow / 1.1, player.z, 8, 'gain');
   }
   function updateSkill(dt) {
     slowT = Math.max(0, slowT - dt); if (slowT <= 0) slowMul = 1;
-    if (state !== 'playing' || !arenaOn) { skillWind = null; dashS = null; return; }
-    if (skillWind) { skillWind.t -= dt; if (skillWind.t <= 0) { const w = skillWind; skillWind = null; fireSkill(w.sk, w.yaw); } }
+    if (state !== 'playing' || !arenaOn) { skillWind = null; dashS = null; if (aim.on) aimClear(); return; }
+    if (aimHintT > 0) { aimHintT -= dt; if (aimHintT <= 0) toast(t('ar_aim'), 6); }
+    if (aim.on) {
+      if (skillWind) aimClear();
+      else { aim.mesh.position.set(player.x, heightAt(player.x, player.z) + 0.3, player.z); aim.mesh.rotation.y = aim.yaw; aim.mesh.material.opacity = 0.13 + 0.05 * Math.sin(clock * 8); if (aim.shape !== 'circle') player.yaw = aim.yaw; }
+    }
+    if (skillWind) { skillWind.t -= dt; if (skillWind.t <= 0) { const w = skillWind; skillWind = null; fireSkill(w.sk, w.yaw, w.ox, w.oz); } }
     if (dashS) {
       const step = Math.min(dashS.left, dt); dashS.left -= dt;
       player.x += dashS.dx * dashS.v * step; player.z += dashS.dz * dashS.v * step;
@@ -2066,7 +2193,7 @@
     try {
       const r = await Arena.join({ name: (Wallet.address ? Wallet.address.slice(2, 6) + '…' + Wallet.address.slice(-3) : 'Dino' + Math.floor(Math.random() * 900 + 100)), char: save.char, level: 1 });
       startGame({ arena: true, seed: r.seed, x: r.x, z: r.z });
-      const sk = kitSkill(); toast(sk ? t('kit_' + sk.id) : t('ar_old'), sk ? 6 : 9);
+      const sk = kitSkill(); toast(sk ? t('kit_' + sk.id) : t('ar_old'), sk ? 6 : 9); aimHintT = sk ? 7 : 0;
     } catch (e) { toast(t(e && e.message === 'full' ? 'ar_full' : 'ar_fail'), 4); }
     arenaBusy = false;
   }
@@ -2080,7 +2207,7 @@
   if (typeof Arena !== 'undefined') {
     Arena.onFix = (x, z) => { player.x = x; player.z = z; };                       // server mengembalikan posisi (gerak tidak wajar)
     Arena.onDamaged = pvpHurt; Arena.onHit = pvpHit; Arena.onKill = pvpKill; Arena.onRoar = pvpRoar; Arena.onEmote = remoteEmote;
-    Arena.onSkill = (m) => telegraph(m.x, m.z, m.yaw, m.sh, m.w / 1000, false);
+    Arena.onSkill = (m) => telegraph(m.x, m.z, m.yaw, m.sh, m.w / 1000, false, m.s);
     Arena.onJoin = (c) => { if (arenaOn) toast(t('ar_joined', { n: c.name }), 2); };
     Arena.onLeave = (c) => { if (arenaOn) toast(t('ar_left', { n: c.name }), 2); };
     Arena.onEnd = () => { if (arenaOn) { arenaOn = false; clearRemotes(); if (state === 'playing') die(t('ar_lost')); } };
@@ -2890,12 +3017,22 @@
   };
   const icon = (k) => '<svg class="ico" viewBox="0 0 64 64" aria-hidden="true">' + ICO[k] + '</svg>';
 
-  // pratinjau 3D di tengah: renderer utama dipakai lagi (tanpa WebGL kedua), digambar hanya di kolom tengah
-  const pv = { scene: new THREE.Scene(), cam: new THREE.PerspectiveCamera(32, 1, 0.1, 200), c: null, yaw: 0.6, drag: false, lastX: 0, idle: 0, dist: 8, cy: 1.2 };
-  { const cv = document.createElement('canvas'); cv.width = 4; cv.height = 128; const g = cv.getContext('2d'); const gr = g.createLinearGradient(0, 0, 0, 128); gr.addColorStop(0, '#2c3e4b'); gr.addColorStop(1, '#16212a'); g.fillStyle = gr; g.fillRect(0, 0, 4, 128); pv.scene.background = new THREE.CanvasTexture(cv); }
+  // pratinjau 3D di tengah: kanvas + renderer sendiri di dalam kolom tengah (selalu di atas panel lain)
+  const pv = { scene: new THREE.Scene(), cam: new THREE.PerspectiveCamera(32, 1, 0.1, 200), c: null, yaw: 0.6, drag: false, lastX: 0, idle: 0, dist: 8, cy: 1.2, r: null, cv: null, w: 0, h: 0, fail: false };
+  pv.scene.background = new THREE.Color(0x22313c);
   pv.scene.add(new THREE.HemisphereLight(0xffffff, 0x6a7a66, 0.95));
   { const d = new THREE.DirectionalLight(0xfff0d2, 0.9); d.position.set(-6, 10, 8); pv.scene.add(d); }
   { const disc = new THREE.Mesh(new THREE.CircleGeometry(1, 40), new THREE.MeshBasicMaterial({ color: 0x0e161c, transparent: true, opacity: 0.55 })); disc.rotation.x = -Math.PI / 2; disc.position.y = 0.01; disc.name = 'disc'; pv.scene.add(disc); }
+  const dexStage = $('dexStage');
+  function pvEnsure() {
+    if (pv.r) return true; if (pv.fail) return false;
+    try {
+      pv.cv = document.createElement('canvas'); dexStage.appendChild(pv.cv);
+      pv.r = new THREE.WebGLRenderer({ canvas: pv.cv, antialias: true });
+      pv.r.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      return true;
+    } catch (e) { pv.fail = true; pv.r = null; try { $('dexHint').textContent = t('dx_no3d'); } catch (x) { /* abaikan */ } return false; }
+  }
   function pvBuild(id) {
     if (pv.c) { pv.scene.remove(pv.c.root); disposeTree(pv.c.root); pv.c = null; }
     const c = PLAYABLES[id]; if (!c) return;
@@ -2906,24 +3043,20 @@
     pv.dist = r / Math.tan(pv.cam.fov * Math.PI / 360); pv.cy = ct.y;
     const disc = pv.scene.getObjectByName('disc'); if (disc) disc.scale.setScalar(Math.max(sz.x, sz.z) * 0.75);
   }
-  const dexStage = $('dexStage');
   dexStage.addEventListener('pointerdown', (e) => { pv.drag = true; pv.lastX = e.clientX; pv.idle = 0; try { dexStage.setPointerCapture(e.pointerId); } catch (x) { /* abaikan */ } });
   dexStage.addEventListener('pointermove', (e) => { if (!pv.drag) return; pv.yaw += (e.clientX - pv.lastX) * 0.012; pv.lastX = e.clientX; });
   const pvEnd = () => { pv.drag = false; pv.idle = 0; };
   dexStage.addEventListener('pointerup', pvEnd); dexStage.addEventListener('pointercancel', pvEnd);
   function renderDexStage(dt) {                                         // dipanggil tiap frame saat layar pilih dino terbuka
-    if (!pv.c) return;
+    if (!pv.c || !pvEnsure()) return;
     pv.idle += dt; if (!pv.drag && pv.idle > 1.2) pv.yaw += dt * 0.5;       // berputar pelan jika tidak disentuh
     pv.c.root.rotation.y = Math.PI + pv.yaw;
     poseCreature(pv.c, clock * 1.5, 0, false, 0, -1, clock);
-    const W = window.innerWidth || 800, H = window.innerHeight || 400, r = dexStage.getBoundingClientRect();
-    const w = Math.max(10, r.width), h = Math.max(10, r.height), x = r.left, y = H - r.bottom;
+    const r = dexStage.getBoundingClientRect(), w = Math.max(10, Math.round(r.width)), h = Math.max(10, Math.round(r.height));
+    if (w !== pv.w || h !== pv.h) { pv.w = w; pv.h = h; pv.r.setSize(w, h, false); pv.cv.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:100%;display:block'; }
     pv.cam.aspect = w / h; pv.cam.updateProjectionMatrix();
     pv.cam.position.set(0, pv.cy + pv.dist * 0.18, pv.dist); pv.cam.lookAt(0, pv.cy * 0.9, 0);
-    renderer.setScissorTest(false); renderer.setViewport(0, 0, W, H); renderer.setClearColor(0x16212a, 1); renderer.clear();
-    renderer.setScissorTest(true); renderer.setViewport(x, y, w, h); renderer.setScissor(x, y, w, h);
-    renderer.render(pv.scene, pv.cam);
-    renderer.setScissorTest(false); renderer.setViewport(0, 0, W, H);
+    try { pv.r.render(pv.scene, pv.cam); } catch (e) { pv.fail = true; try { $('dexHint').textContent = t('dx_no3d'); } catch (x) { /* abaikan */ } }
   }
   const dexEl = $('dex');
   let dexId = 'vosil', dexTab = 'sk';
@@ -2975,7 +3108,13 @@
   }
   bindBtn(btnAttack, () => { input.attack = true; });
   bindBtn(btnJump, () => { input.jump = true; });
-  if (btnRoar) bindBtn(btnRoar, () => { doRoar(); });
+  if (btnRoar) {                                                  // skill: ketuk = langsung (bidik otomatis); tahan + geser = bidik manual, lepas = luncurkan
+    btnRoar.addEventListener('contextmenu', (e) => e.preventDefault());
+    btnRoar.addEventListener('pointerdown', (e) => { e.preventDefault(); GameAudio.init(); try { btnRoar.setPointerCapture(e.pointerId); } catch (err) { /* abaikan */ } btnRoar.classList.add('on'); if (!aimBegin(e)) doRoar(); });
+    btnRoar.addEventListener('pointermove', aimMove);
+    btnRoar.addEventListener('pointerup', () => { btnRoar.classList.remove('on'); aimEnd(true); });
+    btnRoar.addEventListener('pointercancel', () => { btnRoar.classList.remove('on'); aimEnd(false); });
+  }
   bindBtn(btnSprint, () => { input.sprint = true; }, () => { input.sprint = false; });
 
   canvas.addEventListener('pointerup', autoFs);             // gesture sentuh yang sah untuk layar penuh
@@ -4507,7 +4646,7 @@
     animate(dt);
     updateRemotes(dt);
     updateRemoteRings(dt);
-    updateSlashes(dt); updateRingFx(dt); updateBubbles(dt); updateTele(dt); updateSkill(dt);
+    updateSlashes(dt); updateRingFx(dt); updateBubbles(dt); updateTele(dt); updateSkill(dt); updateFx(dt); updateBolts(dt);
     updateOnline();
     if (arenaOn && state === 'playing') Arena.send({ x: player.x, z: player.z, y: hero.root.position.y, yaw: player.yaw, vx: player.vx, vz: player.vz, atk: player.atkT, sw: swimming, hp: player.hp }, now);
     updateCamera(dt);

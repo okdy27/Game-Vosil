@@ -1,3 +1,4 @@
+import { makeTerrain } from './terrain.js';
 // arena-room.js (FOLDER server/, jalan di Cloudflare) - Arena online (TAHAP UJI 2): pemain saling melihat DAN saling menyerang. Belum ada poin/VOS.
 // Server yang memutuskan: siapa kena, berapa kerusakan, siapa kalah. Klien hanya meminta ("aku menggigit", "aku meraung").
 // ArenaCore = logika murni (bisa diuji tanpa Cloudflare). Arena = pembungkus Durable Object (WebSocket).
@@ -98,7 +99,7 @@ export class ArenaCore {
     this.now = now; this.rnd = rnd;
     this.players = new Map();
     this.nextId = 1;
-    this.seed = this.newSeed(); this.t0 = this.now();            // t0 = awal "hari pertama" arena (jam siang-malam bersama)
+    this.seed = this.newSeed(); this.terr = makeTerrain(this.seed); this.t0 = this.now();            // t0 = awal "hari pertama" arena (jam siang-malam bersama)
     this.dirty = true; this.lastSnap = 0; this.pending = [];
     this.npcOn = true; this.npcs = new Map(); this.nextNpc = 1; this.npcSpawnAt = 0; this.lastNpc = 0; this.packAt = 0; this.born = 0;
   }
@@ -108,7 +109,7 @@ export class ArenaCore {
   // send(str) mengirim teks ke pemain itu. Mengembalikan id, atau null jika penuh.
   join(send) {
     if (this.players.size >= MAX_PLAYERS) return null;
-    if (this.players.size === 0) { this.seed = this.newSeed(); this.t0 = this.now(); }      // arena kosong -> dunia & jam baru
+    if (this.players.size === 0) { this.seed = this.newSeed(); this.terr = makeTerrain(this.seed); this.t0 = this.now(); }      // arena kosong -> dunia & jam baru
     const id = this.nextId++;
     const ang = (id * 2.399963) % (Math.PI * 2), d = 18;           // titik awal melingkar, tersebar
     const p = {
@@ -155,7 +156,6 @@ export class ArenaCore {
     else if (m.t === 'k' || m.t === 'r') this.onSkill(p, m, t);
     else if (m.t === 'e') this.onEmote(p, m, t);
     else if (m.t === 'tp') this.onTeleport(p, m, t);
-    else if (m.t === 'nb') this.onBadSpot(p, m, t);
   }
 
   // teleport resmi dari game (pintu pulau harta / jatuh ke jurang): dibatasi supaya tidak bisa dipakai curang
@@ -165,13 +165,6 @@ export class ArenaCore {
     if (k === 'door') { if (Math.hypot(x - 2.5, z - 2.5) > 1) { p.send(JSON.stringify({ t: 'f', x: r1(p.x), z: r1(p.z) })); return; } p.tpReady = t + 8000; }
     else { if (Math.hypot(x - p.x, z - p.z) > 80) { p.send(JSON.stringify({ t: 'f', x: r1(p.x), z: r1(p.z) })); return; } p.tpReady = t + 5000; }
     p.x = x; p.z = z; p.lastT = t; this.dirty = true;
-  }
-  // klien memiliki data medan; server tidak. NPC yang berdiri di air / jurang / area lompat dilaporkan lalu dihapus (dibatasi supaya tidak disalahgunakan)
-  onBadSpot(p, m, t) {
-    if (t < (p.nbReady || 0)) return; p.nbReady = t + 1200;
-    const n = this.npcs.get(String(m.id)); if (!n || Math.hypot(n.x - p.x, n.z - p.z) > RADIUS) return;
-    this.npcSpawnAt = Math.min(this.npcSpawnAt, this.now() + 1500);
-    this.dropNpc(n);
   }
   onState(p, m, t) {
     const x = num(m.x, p.x), z = num(m.z, p.z), y = num(m.y, p.y);
@@ -297,6 +290,7 @@ export class ArenaCore {
     const d = o.d !== undefined ? o.d : NPC.spawnMin + this.rnd() * (NPC.spawnMax - NPC.spawnMin);
     const x = base.x + Math.cos(ang) * d + (o.jx || 0), z = base.z + Math.sin(ang) * d + (o.jz || 0);
     if (!o.force && ps.some((p) => Math.hypot(p.x - x, p.z - z) < NPC.spawnMin - 8)) return null;
+    if (this.terr && !this.terr.walkable(x, z)) return null;                 // tidak muncul di air / jurang / area lompat
     const id = 'n' + (this.nextNpc++), hpm = Math.round(sp.hp * (1 + this.diff() * 0.5));
     const n = { id, npc: true, type, kind: sp.kind, sp, name: sp.name, char: type, level: sp.lv, fr: ['scav', 'healer', 'sentinel'].includes(sp.kind), ready: true, alive: true, x, y: base.y, z, yaw: 0, vx: 0, vz: 0, atk: -1, sw: 0, hp: hpm, maxHp: hpm,
       dseq: 0, lastHurt: 0, kbUntil: 0, hitGap: new Map(), kills: 0, send: () => {}, atkReady: t + 1200, wanderT: 0, wyaw: ang, hx: x, hz: z, phase: 'idle', until: 0, anger: 0, alertAt: 0, pack: o.pack || 0, idx: o.idx || 0 };
@@ -405,7 +399,12 @@ export class ArenaCore {
         if (tg) { const dd = Math.hypot(tg.x - n.x, tg.z - n.z); if (dd > 3.5) toward(tg.x, tg.z, sp.speed); else { wander(1.2); } }
         for (const p of ps) if (p.hp < HP_MAX && Math.hypot(p.x - n.x, p.z - n.z) < 6) { p.hp = Math.min(HP_MAX, p.hp + sp.heal * dt); this.dirty = true; }
       }
-      n.x += dx * spd * dt; n.z += dz * spd * dt; n.vx = dx * spd; n.vz = dz * spd;
+      { // gerak hanya di tanah yang wajar: air, jurang sungai & area lompat adalah dinding; coba geser per sumbu
+        let mx = dx * spd * dt, mz = dz * spd * dt;
+        const W = this.terr ? (x, z) => this.terr.walkable(x, z) : () => true;
+        if (!W(n.x + mx, n.z + mz)) { if (W(n.x + mx, n.z)) mz = 0; else if (W(n.x, n.z + mz)) mx = 0; else { mx = 0; mz = 0; } }
+        n.x += mx; n.z += mz; n.vx = dt > 0 ? mx / dt : 0; n.vz = dt > 0 ? mz / dt : 0;
+      }
       if (n.atk >= 0) { n.atk += dt; if (n.atk > 0.35) n.atk = -1; }
       this.dirty = true;
     }

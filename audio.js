@@ -98,6 +98,25 @@ const GameAudio = (() => {
   applyPrefs();
 
   // diam saat tab / aplikasi tidak aktif
+  // ---- suara hujan: derau tersaring yang berputar, volume mengikuti intensitas hujan (0..1) ----
+  const rain = { src: null, g: null };
+  function rainAmbience(level) {
+    if (!actx || !sfxBus) return;
+    const want = prefs.sfx ? Math.max(0, Math.min(1, level)) : 0, t = actx.currentTime;
+    if (!rain.src) {
+      if (want <= 0.01 || !noiseBuf) return;
+      try {
+        const src = actx.createBufferSource(); src.buffer = noiseBuf; src.loop = true;
+        const bp = actx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 2400; bp.Q.value = 0.5;
+        const lp = actx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 7000;
+        const g = actx.createGain(); g.gain.value = 0.0001;
+        src.connect(bp); bp.connect(lp); lp.connect(g); g.connect(sfxBus); src.start(t);
+        rain.src = src; rain.g = g;
+      } catch (err) { rain.src = null; return; }
+    }
+    try { rain.g.gain.setTargetAtTime(0.0001 + 0.09 * want, t, 0.8); } catch (err) { /* abaikan */ }
+  }
+
   document.addEventListener('visibilitychange', () => {
     if (!actx) return;
     try { if (document.hidden) actx.suspend(); else actx.resume(); } catch (e) { /* abaikan */ }
@@ -794,6 +813,7 @@ const GameAudio = (() => {
   return {
     init,
     nightAmbience,
+    rainAmbience,
     refreshLabels() { try { applyPrefs(); } catch (e) { /* abaikan */ } },
     sfx,
     music,

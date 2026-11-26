@@ -1947,13 +1947,7 @@
         const k = Math.min(1, dt * 10);
         r.x += (r.tx - r.x) * k; r.y += (r.ty - r.y) * k; r.z += (r.tz - r.z) * k; r.dyaw = r.yaw;
       }
-      if (r.npc) {
-        r.y = heightAt(r.x, r.z);                                       // NPC server: tinggi tanah dihitung di sini
-        // NPC tidak boleh berdiri di air, jurang sungai, atau area lompat: laporkan ke server agar dihapus (server tidak punya data medan)
-        const bad = r.y < WL + 0.35 || riverT(r.x, r.z) > 0.12 || !!zoneNear(r.x, r.z, 8);
-        if (bad) { r.badT = (r.badT || 0) + dt; if (r.badT > 0.35 && (!r.nbAt || clock - r.nbAt > 2)) { r.nbAt = clock; try { Arena.nb(r.id); } catch (e) { /* abaikan */ } } if (r.badT > 0.35) { const vv = remoteViews.get(r.id); if (vv) vv.c.root.visible = false; } }
-        else { if (r.badT) { const vv = remoteViews.get(r.id); if (vv) vv.c.root.visible = true; } r.badT = 0; }
-      }
+      if (r.npc) r.y = heightAt(r.x, r.z);                              // NPC server: tinggi tanah dihitung di sini
       const want = r.npc ? v.pl.scale : v.pl.scale * lvScale(r.level);
       v.sc += (want - v.sc) * Math.min(1, dt * 5);
       const spd = Math.hypot(r.vx, r.vz);
@@ -3049,6 +3043,44 @@
     $('menuBest').textContent = save.bestDays;
   }
 
+  // ---------- Hujan (jarang & sebentar; jadwal ditentukan jam dunia, jadi di arena semua pemain mengalaminya bersamaan) ----------
+  const RAIN_CYC = 280, RAIN_N = 280;
+  function rainTarget(tm) {
+    const c = Math.floor(tm / RAIN_CYC); if (c < 1) return 0;
+    if (hash(c, 7, worldSeed + 4242) / 4294967296 > 0.4) return 0;                      // ~40% siklus ada hujan
+    const st = RAIN_CYC * c + 30 + (hash(c, 8, worldSeed + 4242) / 4294967296) * 100, du = 50 + (hash(c, 9, worldSeed + 4242) / 4294967296) * 70;
+    const u = tm - st; if (u < 0 || u > du) return 0;
+    return Math.min(1, u / 6, (du - u) / 6);                                            // masuk & keluar perlahan
+  }
+  let rainK = 0, rainWas = false;
+  const rainPos = new Float32Array(RAIN_N * 6), rainOff = new Float32Array(RAIN_N * 3);
+  const rainGeo = new THREE.BufferGeometry();
+  rainGeo.setAttribute('position', new THREE.BufferAttribute(rainPos, 3));
+  const rainMat = new THREE.LineBasicMaterial({ color: 0xc6dcef, transparent: true, opacity: 0, depthWrite: false, fog: false });
+  const rainMesh = new THREE.LineSegments(rainGeo, rainMat); rainMesh.frustumCulled = false; rainMesh.visible = false; scene.add(rainMesh);
+  for (let i = 0; i < RAIN_N; i++) { rainOff[i * 3] = (Math.random() - 0.5) * 30; rainOff[i * 3 + 1] = Math.random() * 14; rainOff[i * 3 + 2] = (Math.random() - 0.5) * 30; }
+  function updateRain(dt) {
+    const tgt = state === 'playing' ? rainTarget(runTime) : 0;
+    rainK += (tgt - rainK) * Math.min(1, dt * 1.5);
+    if (rainK < 0.004) rainK = 0;
+    const on = rainK > 0;
+    if (on !== rainWas) { rainWas = on; if (on && state === 'playing') toast(t('rain_on'), 2.6); }
+    rainMesh.visible = on;
+    try { GameAudio.rainAmbience(rainK); } catch (e) { /* abaikan */ }
+    if (!on) return;
+    rainMat.opacity = 0.5 * rainK;
+    const gy = player.gy || 0, wind = 0.12, L = 0.95;
+    for (let i = 0; i < RAIN_N; i++) {
+      const o = i * 3, k = i * 6;
+      rainOff[o + 1] -= (24 + (i % 5) * 1.5) * dt;
+      if (rainOff[o + 1] < -1) { rainOff[o + 1] += 14; rainOff[o] = (Math.random() - 0.5) * 30; rainOff[o + 2] = (Math.random() - 0.5) * 30; }
+      const x = player.x + rainOff[o], y = gy + rainOff[o + 1], z = player.z + rainOff[o + 2];
+      rainPos[k] = x; rainPos[k + 1] = y; rainPos[k + 2] = z;
+      rainPos[k + 3] = x + wind * L; rainPos[k + 4] = y + L; rainPos[k + 5] = z;
+    }
+    rainGeo.attributes.position.needsUpdate = true;
+  }
+
   // ---------- Siklus siang-malam ----------
   const SKY_DAY = [0.62, 0.85, 0.96], SKY_NIGHT = [0.03, 0.06, 0.16], SKY_NIGHT_LIT = [0.26, 0.34, 0.55], SKY_DUSK = [0.95, 0.58, 0.38];
   const nightBoost = () => [0.3, 0.65, 1][save.nb === undefined ? 1 : save.nb] || 0.65;      // 0 = Normal, 1 = Terang (bawaan), 2 = Sangat terang (di luar ruangan)
@@ -3069,6 +3101,13 @@
     mShadow.opacity = 0.14 + 0.42 * k;               // siang: bayangan tegas, malam: nyaris tak terlihat
     hemi.intensity = lerp(0.3 + 0.62 * nb, 0.72, k);        // malam: cahaya bulan lembut, makin terang bila pengaturan dinaikkan
     sunLight.intensity = lerp(0.12 + 0.5 * nb, 1.07, k);
+    if (rainK > 0) {                                                  // hujan: langit kelabu, pandangan lebih pendek, cahaya meredup
+      const r = rainK * 0.75;
+      for (let i = 0; i < 3; i++) rgb[i] = lerp(rgb[i], rgb[i] * 0.55 + 0.1, r);
+      scene.background.setRGB(rgb[0], rgb[1], rgb[2]); scene.fog.color.setRGB(rgb[0], rgb[1], rgb[2]);
+      scene.fog.near *= 1 - 0.3 * rainK; scene.fog.far *= 1 - 0.25 * rainK;
+      hemi.intensity *= 1 - 0.12 * rainK; sunLight.intensity *= 1 - 0.4 * rainK; mShadow.opacity *= 1 - 0.7 * rainK;
+    }
     isNight = k < 0.4;
     try { GameAudio.nightAmbience(isNight && state === 'playing'); } catch (e) { /* abaikan */ }
   }
@@ -3651,7 +3690,7 @@
   $('tabChr').addEventListener('click', () => { tabWanted = 'chr'; showTab('chr'); });
   // Layar sentuh: jari kedua (mis. saat analog sedang ditahan) tidak memicu 'click' di sebagian browser -> klik disusulkan dari pointerup
   {
-    const SEL = '#bag button, #topBtns button';
+    const SEL = '#bag button, #topBtns button, #coinBox, #onlineBox, #plistX';
     let downEl = null, synthEl = null, synthT = 0, inSynth = false;
     const find = (e) => (e.target && e.target.closest ? e.target.closest(SEL) : null);
     document.addEventListener('pointerdown', (e) => { downEl = find(e); }, true);
@@ -5028,7 +5067,7 @@
     animate(dt);
     updateRemotes(dt);
     updateRemoteRings(dt);
-    updateSlashes(dt); updateRingFx(dt); updateBubbles(dt); updateTele(dt); updateSkill(dt); updateFx(dt); updateBolts(dt); updateDrift(dt); updateSurprise(dt);
+    updateSlashes(dt); updateRingFx(dt); updateBubbles(dt); updateTele(dt); updateSkill(dt); updateFx(dt); updateBolts(dt); updateDrift(dt); updateSurprise(dt); updateRain(dt);
     updateOnline(dt);
     if (arenaOn && state === 'playing') Arena.send({ x: player.x, z: player.z, y: hero.root.position.y, yaw: player.yaw, vx: player.vx, vz: player.vz, atk: player.atkT, sw: swimming }, now);
     updateCamera(dt);

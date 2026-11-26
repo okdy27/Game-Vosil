@@ -22,7 +22,10 @@ export const STATS = {
   carno: { scale: 1.25, bite: 1.4, armor: 0.9 },
   spino: { scale: 1.4, bite: 1.3, armor: 0.75 },
   parasaur: { scale: 1.25, bite: 0.6, armor: 1.1 },
-  raptor: { scale: 0.85, bite: 1, armor: 1 },          // NPC pemburu yang dijalankan server
+  raptor: { scale: 0.85, bite: 1, armor: 1 },          // NPC yang dijalankan server (ukuran badan untuk hitungan kena)
+  deino: { scale: 0.9, bite: 1, armor: 1 }, compy: { scale: 0.5, bite: 1, armor: 1 }, micro: { scale: 0.4, bite: 1, armor: 1 },
+  anky: { scale: 1.3, bite: 1, armor: 0.6 }, spinoa: { scale: 1.6, bite: 1, armor: 0.8 }, allo: { scale: 1.5, bite: 1, armor: 0.8 },
+  argen: { scale: 2.6, bite: 1, armor: 0.5 }, para: { scale: 1.2, bite: 1, armor: 1 },
 };
 export const EMOTES = 6, EMOTE_CD_MS = 2000;
 const LV1 = 0.72;                       // skala level 1 (lvScale(1))
@@ -46,8 +49,21 @@ export const KITS = {
   parasaur: { bite: { dmg: 4.5, cd: 550, reach: 0 },
     skill: { id: 'sonic', cd: 9000, windup: 160, recover: 300, shape: 'cone', r: 10, arc: 0.85, dmg: 5, kb: 1.5, slow: 0.45, slowMs: 2500 } },
 };
-// ---- NPC pemburu (dunia bersama): dijalankan server, sama untuk semua pemain ----
-export const NPC = { hp: 40, chase: 6.2, wander: 1.8, detect: 26, bite: 7, biteCd: 1100, reach: 2.4, spawnMin: 45, spawnMax: 70, despawn: 170, respawnMs: 8000, max: 5 };
+// ---- NPC dunia bersama: dijalankan server, sama untuk semua pemain ----
+// kind: hunter (pemburu tunggal) | pack (berkelompok, mengincar yang nyawanya paling tipis) | guard (menjaga titik, membalas keras) | ambush (diam lalu menerkam)
+//       territory (menantang di wilayahnya) | giant (berjalan lurus, bahaya injakan) | sentinel (berseru jika ada predator) | scav (pengintai sisa makanan) | healer (memulihkan pemain)
+export const NPCT = {
+  raptor: { name: 'Raptor', kind: 'hunter', hp: 60, chase: 7.6, wander: 2, detect: 32, dmg: 9, cd: 850, reach: 2.3, lv: 2 },
+  deino: { name: 'Deinonychus', kind: 'pack', hp: 55, chase: 8.8, wander: 2.2, detect: 36, dmg: 8, cd: 650, reach: 2.2, lv: 3 },
+  compy: { name: 'Compsognathus', kind: 'scav', hp: 14, wander: 2.4, flee: 7.5, lv: 1 },
+  micro: { name: 'Microraptor', kind: 'healer', hp: 18, speed: 7, heal: 2.2, lv: 1 },
+  anky: { name: 'Ankylosaurus', kind: 'guard', hp: 220, chase: 4.8, wander: 1.4, dmg: 13, cd: 1300, reach: 3.2, kb: 8, leash: 24, lv: 3 },
+  spinoa: { name: 'Spinosaurus', kind: 'ambush', hp: 160, dash: 15, dmg: 17, cd: 2600, reach: 3.2, trig: 11, lv: 5 },
+  allo: { name: 'Allosaurus', kind: 'territory', hp: 190, chase: 8.4, wander: 1.6, detect: 24, dmg: 17, cd: 1150, reach: 3.0, leash: 55, lv: 5 },
+  argen: { name: 'Argentinosaurus', kind: 'giant', hp: 520, wander: 2.3, dmg: 12, cd: 1100, reach: 5.6, kb: 6, lv: 6 },
+  para: { name: 'Parasaurolophus', kind: 'sentinel', hp: 40, wander: 1.8, flee: 7, lv: 1 },
+};
+export const NPC = { spawnMin: 45, spawnMax: 70, despawn: 170, respawnMs: 6000, cap: 14, packEveryMs: [40000, 65000], packFirstMs: 25000 };
 const LAG_RANGE = 1.5, LAG_ARC = 0.25;  // toleransi karena data posisi lawan sedikit tertinggal
 const REGEN_DELAY = 6000, REGEN_RATE = 1.2;   // nyawa dipulihkan SERVER: setelah 6 detik tidak terkena serangan, +1.2/detik (klien tidak bisa menambah nyawa)
 
@@ -64,7 +80,7 @@ export class ArenaCore {
     this.nextId = 1;
     this.seed = this.newSeed(); this.t0 = this.now();            // t0 = awal "hari pertama" arena (jam siang-malam bersama)
     this.dirty = true; this.lastSnap = 0; this.pending = [];
-    this.npcOn = true; this.npcs = new Map(); this.nextNpc = 1; this.npcSpawnAt = 0; this.lastNpc = 0;
+    this.npcOn = true; this.npcs = new Map(); this.nextNpc = 1; this.npcSpawnAt = 0; this.lastNpc = 0; this.packAt = 0; this.born = 0;
   }
   everyone() { return [...this.players.values(), ...this.npcs.values()]; }
   newSeed() { return 1 + Math.floor(this.rnd() * 1e6); }
@@ -118,8 +134,17 @@ export class ArenaCore {
     else if (m.t === 'a') this.onBite(p, m, t);
     else if (m.t === 'k' || m.t === 'r') this.onSkill(p, m, t);
     else if (m.t === 'e') this.onEmote(p, m, t);
+    else if (m.t === 'tp') this.onTeleport(p, m, t);
   }
 
+  // teleport resmi dari game (pintu pulau harta / jatuh ke jurang): dibatasi supaya tidak bisa dipakai curang
+  onTeleport(p, m, t) {
+    if (t < (p.tpReady || 0) || t - p.lastHurt < 4000) { p.send(JSON.stringify({ t: 'f', x: r1(p.x), z: r1(p.z) })); return; }
+    const x = num(m.x, p.x), z = num(m.z, p.z), k = m.k === 'door' ? 'door' : 'fall';
+    if (k === 'door') { if (Math.hypot(x - 2.5, z - 2.5) > 1) { p.send(JSON.stringify({ t: 'f', x: r1(p.x), z: r1(p.z) })); return; } p.tpReady = t + 20000; }
+    else { if (Math.hypot(x - p.x, z - p.z) > 80) { p.send(JSON.stringify({ t: 'f', x: r1(p.x), z: r1(p.z) })); return; } p.tpReady = t + 5000; }
+    p.x = x; p.z = z; p.lastT = t; this.dirty = true;
+  }
   onState(p, m, t) {
     const x = num(m.x, p.x), z = num(m.z, p.z), y = num(m.y, p.y);
     const dt = Math.max(0.05, Math.min(1, (t - p.lastT) / 1000));
@@ -147,6 +172,7 @@ export class ArenaCore {
     q.hitGap.set(a.id, t + HIT_GAP_MS);
     const real = dmg * this.armor(q);
     q.hp = Math.max(0, q.hp - real); q.dseq++; q.lastHurt = t; q.kbUntil = t + 600;
+    if (q.npc) { q.anger = t + 9000; q.lastAtt = a; }
     q.send(JSON.stringify({ t: 'd', by: a.id, k: kind, dmg: r1(real), hp: r1(q.hp), seq: q.dseq, x: r1(a.x), z: r1(a.z), kb: (ex && ex.kb) || 0, slow: (ex && ex.slow) || 0, slowMs: (ex && ex.slowMs) || 0 }));
     a.send(JSON.stringify({ t: 'h', to: q.id, k: kind, dmg: r1(real), hp: r1(q.hp) }));
     this.dirty = true;
@@ -155,7 +181,7 @@ export class ArenaCore {
   }
   kill(q, a) {
     q.alive = false; a.kills++;
-    if (q.npc) { this.npcSpawnAt = this.now() + NPC.respawnMs; this.broadcast({ t: 'k', id: q.id, by: a.id, nm: q.name, bn: a.name }); this.dropNpc(q); return; }
+    if (q.npc) { this.npcSpawnAt = Math.max(this.npcSpawnAt, this.now() + (q.pack ? 0 : NPC.respawnMs)); this.broadcast({ t: 'k', id: q.id, by: a.id, nm: q.name, bn: a.name }); this.dropNpc(q); return; }
     this.broadcast({ t: 'k', id: q.id, by: a.id, nm: q.name, bn: a.name });
   }
   onBite(a, m, t) {
@@ -219,42 +245,128 @@ export class ArenaCore {
   strike(p) { p.strikes++; if (p.strikes > 60) { try { p.send(JSON.stringify({ t: 'kick' })); } catch (e) { /* abaikan */ } } }
   shouldKick(id) { const p = this.players.get(id); return !!p && p.strikes > 60; }
 
-  card(p) { return p.npc ? { id: p.id, name: p.name, char: p.char, level: 1, npc: 1 } : { id: p.id, name: p.name, char: p.char, level: p.level }; }
+  card(p) { return p.npc ? { id: p.id, name: p.name, char: p.char, level: p.level, npc: 1, fr: p.fr ? 1 : 0 } : { id: p.id, name: p.name, char: p.char, level: p.level }; }
   broadcast(obj, exceptId) {
     const s = JSON.stringify(obj);
     for (const q of this.players.values()) if (q.id !== exceptId && q.ready) { try { q.send(s); } catch (e) { /* abaikan */ } }
   }
 
   dropNpc(n) { if (!this.npcs.delete(n.id)) return; this.broadcast({ t: 'l', id: n.id, npc: 1 }); this.dirty = true; }
-  spawnNpc(t) {
-    const ps = [...this.players.values()].filter((p) => p.ready && p.alive); if (!ps.length) return;
-    const base = ps[Math.floor(this.rnd() * ps.length)], ang = this.rnd() * Math.PI * 2, d = NPC.spawnMin + this.rnd() * (NPC.spawnMax - NPC.spawnMin);
-    const x = base.x + Math.cos(ang) * d, z = base.z + Math.sin(ang) * d;
-    if (ps.some((p) => Math.hypot(p.x - x, p.z - z) < NPC.spawnMin - 5)) return;
-    const id = 'n' + (this.nextNpc++);
-    const n = { id, npc: true, name: 'Raptor', char: 'raptor', level: 1, ready: true, alive: true, x, y: base.y, z, yaw: 0, vx: 0, vz: 0, atk: -1, sw: 0, hp: NPC.hp, dseq: 0, lastHurt: 0, kbUntil: 0, hitGap: new Map(), kills: 0, send: () => {}, atkReady: t + 1500, wanderT: 0, wyaw: ang };
-    this.npcs.set(id, n); this.broadcast({ t: 'j', p: this.card(n) }); this.dirty = true;
+  spawnNpc(t, type, o = {}) {
+    const ps = [...this.players.values()].filter((p) => p.ready && p.alive); if (!ps.length || this.npcs.size >= NPC.cap) return null;
+    const sp = NPCT[type], base = o.base || ps[Math.floor(this.rnd() * ps.length)], ang = o.ang !== undefined ? o.ang : this.rnd() * Math.PI * 2;
+    const d = o.d !== undefined ? o.d : NPC.spawnMin + this.rnd() * (NPC.spawnMax - NPC.spawnMin);
+    const x = base.x + Math.cos(ang) * d + (o.jx || 0), z = base.z + Math.sin(ang) * d + (o.jz || 0);
+    if (!o.force && ps.some((p) => Math.hypot(p.x - x, p.z - z) < NPC.spawnMin - 8)) return null;
+    const id = 'n' + (this.nextNpc++), hpm = Math.round(sp.hp * (1 + this.diff() * 0.5));
+    const n = { id, npc: true, type, kind: sp.kind, sp, name: sp.name, char: type, level: sp.lv, fr: ['scav', 'healer', 'sentinel'].includes(sp.kind), ready: true, alive: true, x, y: base.y, z, yaw: 0, vx: 0, vz: 0, atk: -1, sw: 0, hp: hpm, maxHp: hpm,
+      dseq: 0, lastHurt: 0, kbUntil: 0, hitGap: new Map(), kills: 0, send: () => {}, atkReady: t + 1200, wanderT: 0, wyaw: ang, hx: x, hz: z, phase: 'idle', until: 0, anger: 0, alertAt: 0, pack: o.pack || 0, idx: o.idx || 0 };
+    this.npcs.set(id, n); this.broadcast({ t: 'j', p: this.card(n) }); this.dirty = true; return n;
+  }
+  diff() { return Math.min(1, Math.max(0, (this.now() - this.born) / 360000)); }       // 0 -> 1 selama 6 menit: musuh makin tangguh
+  startPack(t, ps) {
+    const base = ps[Math.floor(this.rnd() * ps.length)], ang = this.rnd() * Math.PI * 2, n = 3 + Math.min(3, Math.floor(ps.length / 2) + Math.floor(this.diff() * 2));
+    const pid = this.nextNpc; let made = 0;
+    for (let i = 0; i < n; i++) {
+      const type = i % 3 === 2 ? 'deino' : 'raptor';
+      if (this.spawnNpc(t, type, { base, ang: ang + (i - n / 2) * 0.12, d: 52 + (i % 2) * 4, pack: pid, idx: i, force: true })) made++;
+    }
+    if (made) this.broadcast({ t: 'W', n: made, x: r1(base.x + Math.cos(ang) * 52), z: r1(base.z + Math.sin(ang) * 52) });
+  }
+  count(type) { let c = 0; for (const n of this.npcs.values()) if (n.type === type) c++; return c; }
+  manageNpcs(t, ps) {
+    const P = ps.length, el = t - this.born, d = this.diff();
+    if (!this.packAt) this.packAt = t + NPC.packFirstMs;
+    if (t >= this.packAt) { this.packAt = t + NPC.packEveryMs[0] + this.rnd() * (NPC.packEveryMs[1] - NPC.packEveryMs[0]) * (1 - d * 0.4); this.startPack(t, ps); }
+    if (t < this.npcSpawnAt) return;
+    this.npcSpawnAt = t + 1200;
+    const want = { raptor: Math.min(5, 1 + P + Math.floor(d * 2)), compy: 2, micro: 1, para: 1, anky: 1, spinoa: el > 30000 ? 1 : 0, allo: el > 60000 ? 1 : 0, argen: el > 90000 ? 1 : 0 };
+    for (const type of Object.keys(want)) if (this.count(type) < want[type]) { const o = (NPCT[type].kind === 'scav' || NPCT[type].kind === 'healer' || NPCT[type].kind === 'sentinel') ? { d: 28 + this.rnd() * 14 } : {}; if (this.spawnNpc(t, type, o)) break; }
   }
   stepNpcs(t) {
     const dt = Math.min(0.2, Math.max(0, (t - (this.lastNpc || t)) / 1000)); this.lastNpc = t;
     const ps = [...this.players.values()].filter((p) => p.ready && p.alive);
-    if (!ps.length) { for (const n of [...this.npcs.values()]) this.dropNpc(n); return; }
-    const want = this.npcOn ? Math.min(NPC.max, 1 + Math.floor(ps.length * 1.5)) : 0;
-    if (this.npcs.size < want && t >= this.npcSpawnAt) { this.spawnNpc(t); this.npcSpawnAt = t + 1500; }
+    if (!ps.length) { for (const n of [...this.npcs.values()]) this.dropNpc(n); this.packAt = 0; this.born = 0; return; }
+    if (!this.born) this.born = t;
+    if (this.npcOn) this.manageNpcs(t, ps);
+    const hostile = [...this.npcs.values()].filter((n) => ['hunter', 'pack', 'territory', 'ambush'].includes(n.kind));
+    const diff = this.diff();
     for (const n of [...this.npcs.values()]) {
-      let tgt = null, bd = NPC.detect, nearest = 1e9;
-      for (const p of ps) { const d = Math.hypot(p.x - n.x, p.z - n.z); if (d < bd) { bd = d; tgt = p; } if (d < nearest) { nearest = d; n.y = p.y; } }
-      if (nearest > NPC.despawn) { this.dropNpc(n); continue; }
-      let mvx = 0, mvz = 0, sp = 0;
-      if (tgt) {
-        const dx = tgt.x - n.x, dz = tgt.z - n.z, d = Math.max(0.001, Math.hypot(dx, dz)); n.yaw = faceYaw(dx, dz);
-        if (d > NPC.reach * 0.8) { sp = NPC.chase; mvx = dx / d; mvz = dz / d; }
-        if (d <= NPC.reach && t >= n.atkReady) { n.atkReady = t + NPC.biteCd; n.atk = 0; this.strikeTarget(n, tgt, NPC.bite, t, 'bite', { kb: 1 }); }
-      } else {
-        if (t >= n.wanderT) { n.wanderT = t + 2000 + this.rnd() * 3000; n.wyaw += (this.rnd() - 0.5) * 2.2; n.wmove = this.rnd() < 0.7; }
-        if (n.wmove) { sp = NPC.wander; mvx = Math.cos(n.wyaw); mvz = Math.sin(n.wyaw); n.yaw = faceYaw(mvx, mvz); }
+      const sp = n.sp;
+      let nearest = 1e9, np = null;
+      for (const p of ps) { const dd = Math.hypot(p.x - n.x, p.z - n.z); if (dd < nearest) { nearest = dd; np = p; } }
+      if (np) n.y = np.y;
+      if (nearest > NPC.despawn && !n.pack) { this.dropNpc(n); continue; }
+      if (nearest > NPC.despawn * 1.6) { this.dropNpc(n); continue; }
+      let dx = 0, dz = 0, spd = 0;
+      const toward = (x, z, v) => { const ex = x - n.x, ez = z - n.z, dd = Math.max(0.001, Math.hypot(ex, ez)); dx = ex / dd; dz = ez / dd; spd = v; n.yaw = faceYaw(ex, ez); return dd; };
+      const away = (x, z, v) => { const ex = n.x - x, ez = n.z - z, dd = Math.max(0.001, Math.hypot(ex, ez)); dx = ex / dd; dz = ez / dd; spd = v; n.yaw = faceYaw(dx, dz); };
+      const wander = (v, hx, hz, rad) => {
+        if (t >= n.wanderT) { n.wanderT = t + 2000 + this.rnd() * 3000; n.wyaw += (this.rnd() - 0.5) * 2.4; n.wmove = this.rnd() < 0.7; if (hx !== undefined && Math.hypot(n.x - hx, n.z - hz) > rad) n.wyaw = Math.atan2(hz - n.z, hx - n.x); }
+        if (n.wmove) { spd = v; dx = Math.cos(n.wyaw); dz = Math.sin(n.wyaw); n.yaw = faceYaw(dx, dz); }
+      };
+      const bite = (tg, dmg, kb) => { if (t >= n.atkReady && tg) { n.atkReady = t + sp.cd; n.atk = 0; this.strikeTarget(n, tg, dmg * (1 + diff * 0.35), t, 'bite', { kb }); } };
+      const k = n.kind;
+      if (k === 'hunter' || k === 'pack') {
+        let tg = null, bd = sp.detect * (1 + diff * 0.25);
+        for (const p of ps) {
+          const dd = Math.hypot(p.x - n.x, p.z - n.z);
+          if (dd > bd) continue;
+          if (k === 'pack') { if (!tg || p.hp < tg.hp - 5 || (Math.abs(p.hp - tg.hp) <= 5 && dd < Math.hypot(tg.x - n.x, tg.z - n.z))) tg = p; }
+          else if (!tg || dd < Math.hypot(tg.x - n.x, tg.z - n.z)) tg = p;
+        }
+        if (n.pack && !tg) tg = np;                                   // anggota kawanan terus mencari pemain terdekat
+        if (tg) {
+          const sideways = (n.idx % 3 - 1) * 4, ex = tg.x - n.x, ez = tg.z - n.z, dd = Math.max(0.001, Math.hypot(ex, ez));
+          const px = tg.x + (-ez / dd) * sideways * (dd > 7 ? 1 : 0), pz = tg.z + (ex / dd) * sideways * (dd > 7 ? 1 : 0);     // mengepung dari sisi berbeda
+          const real = toward(px, pz, sp.chase * (1 + diff * 0.15));
+          if (dd <= sp.reach * 0.8) spd = 0;
+          if (dd <= sp.reach) bite(tg, sp.dmg, 1);
+        } else wander(sp.wander);
+      } else if (k === 'guard') {
+        const prov = t < n.anger && n.lastAtt && n.lastAtt.alive ? n.lastAtt : null;
+        if (prov && Math.hypot(n.x - n.hx, n.z - n.hz) < sp.leash + 8) { const dd = toward(prov.x, prov.z, sp.chase); if (dd <= sp.reach) { spd = 0; bite(prov, sp.dmg, sp.kb); } }
+        else {
+          const close = ps.find((p) => Math.hypot(p.x - n.x, p.z - n.z) < 3.4);
+          if (close) { n.yaw = faceYaw(close.x - n.x, close.z - n.z); bite(close, sp.dmg * 0.7, sp.kb); }
+          else wander(sp.wander, n.hx, n.hz, 10);
+        }
+      } else if (k === 'ambush') {
+        if (n.phase === 'idle') { if (np && nearest < sp.trig && t >= n.atkReady) { n.phase = 'wind'; n.until = t + 550; n.tgt = np; n.yaw = faceYaw(np.x - n.x, np.z - n.z); } }
+        else if (n.phase === 'wind') { if (n.tgt) n.yaw = faceYaw(n.tgt.x - n.x, n.tgt.z - n.z); if (t >= n.until) { n.phase = 'dash'; n.until = t + 1000; } }
+        else if (n.phase === 'dash') {
+          spd = sp.dash; dx = -Math.sin(n.yaw); dz = -Math.cos(n.yaw);
+          const hit = ps.find((p) => Math.hypot(p.x - n.x, p.z - n.z) < sp.reach);
+          if (hit) { n.atk = 0; this.strikeTarget(n, hit, sp.dmg * (1 + diff * 0.35), t, 'bite', { kb: 5 }); n.phase = 'rest'; n.until = t + 1500; n.atkReady = t + sp.cd; }
+          else if (t >= n.until) { n.phase = 'rest'; n.until = t + 1500; n.atkReady = t + sp.cd; }
+        } else if (t >= n.until) n.phase = 'idle';
+      } else if (k === 'territory') {
+        const inT = np && nearest < sp.detect && Math.hypot(np.x - n.hx, np.z - n.hz) < sp.leash;
+        if (inT && n.phase !== 'chase') {
+          if (n.phase !== 'roar') { n.phase = 'roar'; n.until = t + 700; this.broadcast({ t: 'R', id: n.id }); n.yaw = faceYaw(np.x - n.x, np.z - n.z); }
+          else if (t >= n.until) n.phase = 'chase';
+        } else if (n.phase === 'chase') {
+          if (np && Math.hypot(n.x - n.hx, n.z - n.hz) < sp.leash && nearest < sp.detect * 1.6) { const dd = toward(np.x, np.z, sp.chase * (1 + diff * 0.1)); if (dd <= sp.reach * 0.8) spd = 0; if (dd <= sp.reach) bite(np, sp.dmg, 2); }
+          else n.phase = 'idle';
+        } else if (n.phase === 'idle' || n.phase === 'roar') { n.phase = 'idle'; wander(sp.wander, n.hx, n.hz, 14); }
+      } else if (k === 'giant') {
+        if (t >= n.wanderT) { n.wanderT = t + 12000 + this.rnd() * 8000; n.wyaw += (this.rnd() - 0.5) * 1.4; }
+        spd = sp.wander; dx = Math.cos(n.wyaw); dz = Math.sin(n.wyaw); n.yaw = faceYaw(dx, dz);
+        for (const p of ps) if (Math.hypot(p.x - n.x, p.z - n.z) < sp.reach && t >= n.atkReady) { n.atkReady = t + sp.cd; n.atk = 0; this.strikeTarget(n, p, sp.dmg * (1 + diff * 0.3), t, 'bite', { kb: sp.kb }); }     // injakan
+      } else if (k === 'sentinel') {
+        const h = hostile.find((q) => Math.hypot(q.x - n.x, q.z - n.z) < 38);
+        if (h) {
+          if (t >= n.alertAt) { n.alertAt = t + 9000; this.broadcast({ t: 'A', id: n.id, x: r1(h.x), z: r1(h.z), nm: h.name }); }
+          if (Math.hypot(h.x - n.x, h.z - n.z) < 22) away(h.x, h.z, sp.flee); else wander(sp.wander);
+        } else wander(sp.wander);
+      } else if (k === 'scav') {
+        if (np && nearest < 9) away(np.x, np.z, sp.flee); else wander(sp.wander, n.hx, n.hz, 12);
+      } else if (k === 'healer') {
+        let tg = null; for (const p of ps) if (!tg || p.hp < tg.hp - 8) tg = p;
+        if (tg) { const dd = Math.hypot(tg.x - n.x, tg.z - n.z); if (dd > 3.5) toward(tg.x, tg.z, sp.speed); else { wander(1.2); } }
+        for (const p of ps) if (p.hp < HP_MAX && Math.hypot(p.x - n.x, p.z - n.z) < 6) { p.hp = Math.min(HP_MAX, p.hp + sp.heal * dt); this.dirty = true; }
       }
-      n.x += mvx * sp * dt; n.z += mvz * sp * dt; n.vx = mvx * sp; n.vz = mvz * sp;
+      n.x += dx * spd * dt; n.z += dz * spd * dt; n.vx = dx * spd; n.vz = dz * spd;
       if (n.atk >= 0) { n.atk += dt; if (n.atk > 0.35) n.atk = -1; }
       this.dirty = true;
     }
@@ -276,7 +388,7 @@ export class ArenaCore {
       for (const b of everyone) {
         if (b.id === a.id) continue;
         if (Math.hypot(b.x - a.x, b.z - a.z) > RADIUS) continue;
-        list.push([b.id, r1(b.x), r1(b.y), r1(b.z), Math.round(b.yaw * 100) / 100, r1(b.vx), r1(b.vz), Math.round(b.atk * 100) / 100, b.sw, b.level, Math.round(b.hp), b.kills]);
+        list.push([b.id, r1(b.x), r1(b.y), r1(b.z), Math.round(b.yaw * 100) / 100, r1(b.vx), r1(b.vz), Math.round(b.atk * 100) / 100, b.sw, b.level, b.npc ? Math.round(100 * b.hp / b.maxHp) : Math.round(b.hp), b.kills]);
       }
       try { a.send(JSON.stringify({ t: 'p', ts: ts, n: ps.length, hp: r1(a.hp), p: list })); } catch (e) { /* abaikan */ }
     }

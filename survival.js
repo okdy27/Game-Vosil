@@ -1760,6 +1760,20 @@
   let arenaOn = false;
   const addC = (n) => { if (!arenaOn) save.coins += n; };              // di arena uji koin tidak masuk dompet/poin
   const remoteViews = new Map();
+  // tampilan NPC server: dasar model dari PTYPES, ukuran & warna disesuaikan
+  const NPC_LOOK = {
+    raptor: { pt: 'raptor' }, para: { pt: 'parasaur' }, anky: { pt: 'anky' }, spinoa: { pt: 'spino' },
+    deino: { pt: 'velo', sc: 1.0, pal: { body: 0x8d3b2f, dark: 0x4e1f18, light: 0xe8b9a5, spike: 0xffca28, eye: 0xff5252, pupil: 0x111111 } },
+    compy: { pt: 'velo', sc: 0.5, pal: { body: 0x9ccc65, dark: 0x558b2f, light: 0xf0f4c3, spike: 0xff7043, eye: 0xffee58, pupil: 0x111111 } },
+    micro: { pt: 'velo', sc: 0.45, pal: { body: 0x283593, dark: 0x1a237e, light: 0x90caf9, spike: 0x4dd0e1, eye: 0xffee58, pupil: 0x111111 } },
+    allo: { pt: 'carno', sc: 1.7, pal: { body: 0xb5651d, dark: 0x5d3410, light: 0xf3d9b1, spike: 0x3e2723, eye: 0xffc107, pupil: 0x111111 } },
+    argen: { pt: 'brachio', sc: 2.4 }
+  };
+  function npcModel(char) {
+    const L = NPC_LOOK[char] || NPC_LOOK.raptor, def = PTYPES[L.pt], pal = L.pal || def.pal, sc = L.sc || def.scale;
+    const c = def.model === 'trike' ? makeTrike(pal, sc) : def.model ? makeQuad(pal, sc, def.model) : makeCreature(Object.assign({ scale: sc, variant: def.variant }, pal));
+    return { c, sc };
+  }
   function nameSprite(txt) {
     const cv = document.createElement('canvas'); cv.width = 256; cv.height = 64;
     const g = cv.getContext('2d'); g.font = 'bold 30px sans-serif'; g.textAlign = 'center';
@@ -1879,15 +1893,15 @@
       let v = remoteViews.get(r.id);
       if (!r.seen || !r.near) { if (v) { v.c.root.visible = false; v.sp.visible = false; v.hb.visible = false; if (v.sh) v.sh.visible = false; } continue; }
       if (!v) {
-        const pl = PLAYABLES[r.char] || (r.char === 'raptor' ? { scale: PTYPES.raptor.scale, variant: PTYPES.raptor.variant, pal: PTYPES.raptor.pal } : PLAYABLES.vosil);
-        const c = makeCreature(Object.assign({ scale: pl.scale, variant: pl.variant }, pl.pal));
+        const pl = r.npc ? { scale: (NPC_LOOK[r.char] ? (NPC_LOOK[r.char].sc || PTYPES[NPC_LOOK[r.char].pt].scale) : 1) } : (PLAYABLES[r.char] || PLAYABLES.vosil);
+        const c = r.npc ? npcModel(r.char).c : makeCreature(Object.assign({ scale: pl.scale, variant: pl.variant }, pl.pal));
         const sp = nameSprite(r.name), sh = makeDynShadow(), hb = hpSprite();
         scene.add(c.root); scene.add(sp); scene.add(sh); scene.add(hb);
-        v = { c, sp, sh, hb, hp: -1, pl, phase: 0, sc: pl.scale * lvScale(r.level), name: r.name };
+        v = { c, sp, sh, hb, hp: -1, pl, phase: 0, sc: r.npc ? pl.scale : pl.scale * lvScale(r.level), name: r.name };
         remoteViews.set(r.id, v);
       }
       v.c.root.visible = true; v.sp.visible = true; v.sh.visible = true; v.hb.visible = true;
-      if (r.hp !== undefined && r.hp !== v.hp) { v.hp = r.hp; drawHp(v.hb, r.npc ? r.hp * 2.5 : r.hp, false, r.level); }
+      if (r.hp !== undefined && r.hp !== v.hp) { v.hp = r.hp; drawHp(v.hb, r.hp, !!(r.npc && r.fr), r.level); }
       if (r.buf && r.buf.length >= 1) {                              // tampilkan posisi sedikit di masa lalu (110-260 ms, menyesuaikan kestabilan jaringan), diinterpolasi antar data jaringan
         const rt = Arena.renderTime(), b = r.buf;
         let i = b.length - 1; while (i > 0 && b[i].at > rt) i--;
@@ -1905,7 +1919,7 @@
         r.x += (r.tx - r.x) * k; r.y += (r.ty - r.y) * k; r.z += (r.tz - r.z) * k; r.dyaw = r.yaw;
       }
       if (r.npc) r.y = heightAt(r.x, r.z);                              // NPC server: tinggi tanah dihitung di sini
-      const want = v.pl.scale * lvScale(r.level);
+      const want = r.npc ? v.pl.scale : v.pl.scale * lvScale(r.level);
       v.sc += (want - v.sc) * Math.min(1, dt * 5);
       const spd = Math.hypot(r.vx, r.vz);
       v.phase += (spd * 1.5 + 1.2) * dt * (spd > 0.4 ? 1 : 0.3);
@@ -1914,7 +1928,8 @@
       v.c.root.position.set(r.x, r.y, r.z);
       v.c.root.rotation.z = 0; v.c.root.rotation.y = r.dyaw !== undefined ? r.dyaw : r.yaw;
       if (v.skA) { v.skA.t += dt; if (v.skA.t >= v.skA.dur) v.skA = null; }
-      poseCreature(v.c, v.phase, clamp(spd / 6, 0, 1.3), air, 0, r.atk >= 0 ? clamp(r.atk / 0.35, 0, 1) : -1, clock, v.skA ? { id: v.skA.id, p: v.skA.t / v.skA.dur } : null);
+      if (v.c.isTrike) poseTrike(v.c, v.phase, clamp(spd / 6, 0, 1.3), r.atk >= 0 ? clamp(r.atk / 0.35, 0, 1) : -1, clock);
+      else poseCreature(v.c, v.phase, clamp(spd / 6, 0, 1.3), air, 0, r.atk >= 0 ? clamp(r.atk / 0.35, 0, 1) : -1, clock, v.skA ? { id: v.skA.id, p: v.skA.t / v.skA.dur } : null);
       if (r.atk >= 0 && (v.lastAtk === undefined || v.lastAtk < 0)) spawnSlash(r.x, r.y, r.z, v.c.root.rotation.y, v.sc);   // lawan menyerang
       v.lastAtk = r.atk;
       if (v.em) { v.em.t += dt; const o = emoteOff(v.em.e, v.em.t); if (o) { v.c.root.position.y += o.dy * v.sc; v.c.root.rotation.y += o.dyaw; } else if (v.em.t > 2.2) v.em = null; }
@@ -2322,6 +2337,8 @@
   if (typeof Arena !== 'undefined') {
     Arena.onFix = (x, z) => { player.x = x; player.z = z; };                       // server mengembalikan posisi (gerak tidak wajar)
     Arena.onHp = (h) => { if (arenaOn && state === 'playing') player.hp = Math.max(0, Math.min(100, h)); };
+    Arena.onAlert = (m) => { if (!arenaOn) return; toast(t('ar_alert', { n: m.nm || '?' }), 2.6); GameAudio.sfx.alarm ? GameAudio.sfx.alarm() : GameAudio.sfx.record(); shake = Math.max(shake, 0.12); };
+    Arena.onWave = (m) => { if (!arenaOn) return; toast(t('ar_wave', { n: m.n }), 3.2); try { GameAudio.sfx.horde ? GameAudio.sfx.horde() : GameAudio.sfx.power(); } catch (e) { /* abaikan */ } shake = Math.max(shake, 0.25); hurtT = Math.max(hurtT, 0.12); };
     Arena.onDamaged = pvpHurt; Arena.onHit = pvpHit; Arena.onKill = pvpKill; Arena.onRoar = pvpRoar; Arena.onEmote = remoteEmote;
     Arena.onSkill = (m) => { telegraph(m.x, m.z, m.yaw, m.sh, m.w / 1000, false, m.s); const v = remoteViews.get(m.id); if (v) v.skA = { id: m.s, t: 0, dur: m.w / 1000 + 0.32 }; };
     Arena.onJoin = (c) => { if (arenaOn) toast(t('ar_joined', { n: c.name }), 2); };
@@ -2584,10 +2601,12 @@
     camX = player.x; camZ = player.z; camGy = player.gnd;
     hurtT = 0.15; shake = Math.max(shake, 0.4);
     GameAudio.sfx.splash();
+    if (arenaOn) { try { Arena.tp('fall', player.x, player.z); } catch (e) { /* abaikan */ } }
     toast(t('fall_chasm'), 2.6);
   }
   function useDoor() {
     player.x = 2.5; player.z = 2.5;
+    if (arenaOn) { try { Arena.tp('door', 2.5, 2.5); } catch (e) { /* abaikan */ } }
     player.vx = player.vz = 0; player.y = 0; player.vy = 0;
     player.gnd = heightAt(player.x, player.z);
     player.invuln = Math.max(player.invuln, 1.0);
@@ -2627,7 +2646,7 @@
       if (O.door) {
         O.door.disc.rotation.z += dt * 1.6;
         O.door.disc.material.opacity = 0.5 + 0.15 * Math.sin(clock * 3);
-        if (doorCd <= 0 && Math.hypot(player.x - O.door.x, player.z - O.door.z) < 1.5 && player.y < 1.5) { doorCd = 2; useDoor(); }
+        if (doorCd <= 0 && Math.hypot(player.x - O.door.x, player.z - O.door.z) < 2.3 && player.y < 2) { doorCd = 2; useDoor(); }
       }
     }
     doorCd -= dt;
@@ -4804,6 +4823,16 @@
     camera.lookAt(tgx, tgy, tgz);
   }
 
+
+  // ---------- Suasana hidup tambahan: serbuk sari / daun halus yang jatuh di siang hari (pterosaurus & kunang-kunang sudah ada di atas) ----------
+  let ambAcc2 = 0;
+  function updateDrift(dt) {
+    if (state !== 'playing' || isNight) return;
+    const gy = player.gy || 0;
+    ambAcc2 += dt * 2.5;
+    while (ambAcc2 >= 1) { ambAcc2 -= 1; const a = Math.random() * 6.283, d = 2 + Math.random() * 15, x = player.x + Math.cos(a) * d, z = player.z + Math.sin(a) * d;
+      emit(FX.small, x, gy + 5 + Math.random() * 4, z, 0.6 + Math.random() * 0.5, -0.7 - Math.random() * 0.4, (Math.random() - 0.5) * 0.6, 7, 0.55, 0.75, 0.3, 0, 0.1, false); }
+  }
   // ---------- Loop utama ----------
   const isPortrait = () => window.innerHeight > window.innerWidth * 1.05;
   let last = performance.now();
@@ -4819,7 +4848,7 @@
     animate(dt);
     updateRemotes(dt);
     updateRemoteRings(dt);
-    updateSlashes(dt); updateRingFx(dt); updateBubbles(dt); updateTele(dt); updateSkill(dt); updateFx(dt); updateBolts(dt);
+    updateSlashes(dt); updateRingFx(dt); updateBubbles(dt); updateTele(dt); updateSkill(dt); updateFx(dt); updateBolts(dt); updateDrift(dt);
     updateOnline(dt);
     if (arenaOn && state === 'playing') Arena.send({ x: player.x, z: player.z, y: hero.root.position.y, yaw: player.yaw, vx: player.vx, vz: player.vz, atk: player.atkT, sw: swimming }, now);
     updateCamera(dt);

@@ -57,6 +57,8 @@ const Arena = (() => {
     else if (m.t === 'h') { if (st.onHit) st.onHit(m); }                                       // seranganku mengenai lawan
     else if (m.t === 'k') { const r = st.remotes.get(m.id); if (r && m.id !== st.id) st.remotes.delete(m.id); if (st.onKill) st.onKill(m); }
     else if (m.t === 'S') { if (st.onSkill) st.onSkill(m); }                                    // lawan mulai skill: tanda bahaya di tanah
+    else if (m.t === 'A') { if (st.onAlert) st.onAlert(m); }
+    else if (m.t === 'W') { if (st.onWave) st.onWave(m); }
     else if (m.t === 'E') { if (st.onEmote) st.onEmote(m.id, m.e); }
     else if (m.t === 'R') { if (st.onRoar) st.onRoar(m.id); }
     else if (m.t === 'o') { const r = Date.now() - m.c; if (r >= 0 && r < 10000) st.rtt = st.rtt ? st.rtt * 0.7 + r * 0.3 : r; }
@@ -98,12 +100,13 @@ const Arena = (() => {
   const worldTime = () => Math.max(0, (Date.now() + st.skew - st.t0) / 1000);
 
   const attack = (yaw) => { if (st.on && st.ws && st.ws.readyState === 1) st.ws.send(JSON.stringify({ t: 'a', yaw: +yaw.toFixed(3) })); };
+  const tp = (k, x, z) => { if (st.on && st.ws && st.ws.readyState === 1) st.ws.send(JSON.stringify({ t: 'tp', k, x: +x.toFixed(2), z: +z.toFixed(2) })); };
   const emote = (e) => { if (st.on && st.ws && st.ws.readyState === 1) st.ws.send(JSON.stringify({ t: 'e', e })); };
   const skill = (yaw) => { if (st.on && st.ws && st.ws.readyState === 1) st.ws.send(JSON.stringify({ t: 'k', yaw: +yaw.toFixed(3) })); };
   const roar = () => { if (st.on && st.ws && st.ws.readyState === 1) st.ws.send(JSON.stringify({ t: 'r' })); };
 
   function leave() { const ws = st.ws; reset(); try { ws && ws.close(); } catch (e) { /* abaikan */ } }
 
-  return { st, join, send, attack, roar, skill, emote, leave, worldTime, nowMs, renderTime, delayMs, get on() { return st.on; }, get remotes() { return st.remotes; }, set onFix(f) { st.onFix = f; }, set onEnd(f) { st.onEnd = f; }, set onDamaged(f) { st.onDamaged = f; }, set onHit(f) { st.onHit = f; }, set onKill(f) { st.onKill = f; }, set onRoar(f) { st.onRoar = f; }, set onEmote(f) { st.onEmote = f; }, set onSkill(f) { st.onSkill = f; }, set onHp(f) { st.onHp = f; }, get kits() { return st.kits; }, set onJoin(f) { st.onJoin = f; }, set onLeave(f) { st.onLeave = f; } };
+  return { st, join, send, tp, attack, roar, skill, emote, leave, worldTime, nowMs, renderTime, delayMs, get on() { return st.on; }, get remotes() { return st.remotes; }, set onFix(f) { st.onFix = f; }, set onEnd(f) { st.onEnd = f; }, set onDamaged(f) { st.onDamaged = f; }, set onHit(f) { st.onHit = f; }, set onKill(f) { st.onKill = f; }, set onRoar(f) { st.onRoar = f; }, set onEmote(f) { st.onEmote = f; }, set onSkill(f) { st.onSkill = f; }, set onHp(f) { st.onHp = f; }, set onAlert(f) { st.onAlert = f; }, set onWave(f) { st.onWave = f; }, get kits() { return st.kits; }, set onJoin(f) { st.onJoin = f; }, set onLeave(f) { st.onLeave = f; } };
 })();
 if (typeof module !== 'undefined') module.exports = Arena;

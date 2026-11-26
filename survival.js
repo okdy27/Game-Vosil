@@ -3544,7 +3544,20 @@
   bagEl.addEventListener('pointerdown', (e) => { e.stopPropagation(); if (e.target === bagEl) closeBag(); });
   bagBody.addEventListener('click', (e) => { const b = e.target.closest && e.target.closest('[data-ex]'); if (b && !b.disabled) { const ex = b.getAttribute('data-ex'); if (ex === 'resume') closeBag(); else if (ex.startsWith('w-')) walletAct(ex); else doExchange(ex); } });
 
-  if (rotBtn) rotBtn.addEventListener('click', () => { GameAudio.init(); enterImmersive(); });
+  // gerbang masuk: logo + tombol MAIN (gesture sentuh) -> layar penuh + kunci horizontal -> halaman Pilih Dino. Jika masih tegak: minta putar HP.
+  const gateEl = $('rotate');
+  let gateIn = false;
+  const isPortraitNow = () => (window.innerHeight || 0) > (window.innerWidth || 0) * 1.05;
+  function updateGate() {
+    if (!gateEl) return;
+    const portrait = isPortraitNow(), show = !gateIn || portrait;
+    gateEl.classList.toggle('on', show);
+    gateEl.classList.toggle('turn', gateIn && portrait);
+    const tt = $('rotTitle'); if (tt && gateIn && portrait) tt.textContent = t('rot_turn');
+  }
+  if (rotBtn) rotBtn.addEventListener('click', () => { GameAudio.init(); gateIn = true; autoFsTried = true; enterImmersive(); updateGate(); setTimeout(updateGate, 400); setTimeout(updateGate, 1200); });
+  window.addEventListener('resize', updateGate); window.addEventListener('orientationchange', () => setTimeout(updateGate, 200));
+  updateGate();
   let autoFsTried = false;
   function autoFs() { if (autoFsTried || isFs()) return; autoFsTried = true; enterImmersive(); }
   document.addEventListener('fullscreenchange', () => { try { resize(); } catch (e) { /* abaikan */ } });

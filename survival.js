@@ -1768,18 +1768,37 @@
     sp.scale.set(3.4, 0.85, 1); sp.renderOrder = 10;
     return sp;
   }
-  function hpSprite() {
-    const cv = document.createElement('canvas'); cv.width = 128; cv.height = 20;
+  function hpSprite() {                                               // bar nyawa gaya MOBA: lencana level + bar bersegmen
+    const cv = document.createElement('canvas'); cv.width = 192; cv.height = 32;
     const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(cv), transparent: true, depthTest: false }));
-    sp.scale.set(2.3, 0.36, 1); sp.renderOrder = 10; sp.userData.cv = cv;
+    sp.scale.set(3.3, 0.55, 1); sp.renderOrder = 10; sp.userData.cv = cv;
     return sp;
   }
-  function drawHp(sp, hp) {
+  function drawHp(sp, hp, self, lv) {
     const cv = sp.userData.cv, g = cv.getContext('2d'), f = Math.max(0, Math.min(1, hp / 100));
-    g.clearRect(0, 0, 128, 20);
-    g.fillStyle = 'rgba(0,0,0,.65)'; g.fillRect(0, 0, 128, 20);
-    g.fillStyle = f > 0.5 ? '#43c85a' : f > 0.25 ? '#ffb300' : '#ef3b30'; g.fillRect(3, 3, 122 * f, 14);
+    g.clearRect(0, 0, 192, 32);
+    g.fillStyle = 'rgba(6,12,18,.82)'; g.fillRect(28, 6, 160, 20);                 // latar bar
+    const col = self ? (f > 0.3 ? '#3ddc5a' : '#ffb300') : (f > 0.3 ? '#e5392f' : '#ff7043');
+    g.fillStyle = col; g.fillRect(31, 9, 154 * f, 14);
+    g.fillStyle = 'rgba(255,255,255,.25)'; g.fillRect(31, 9, 154 * f, 4);
+    g.fillStyle = 'rgba(0,0,0,.55)'; for (let i = 1; i < 10; i++) g.fillRect(31 + 15.4 * i, 9, 1.5, 14);   // garis tiap 10 nyawa
+    g.strokeStyle = 'rgba(255,255,255,.5)'; g.lineWidth = 1.5; g.strokeRect(28.5, 6.5, 159, 19);
+    g.beginPath(); g.arc(16, 16, 14, 0, Math.PI * 2); g.fillStyle = '#16212b'; g.fill(); g.lineWidth = 3; g.strokeStyle = self ? '#ffca28' : '#cfd8dc'; g.stroke();   // lencana level
+    g.fillStyle = '#fff'; g.font = 'bold 17px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(String(lv || 1), 16, 17);
     sp.material.map.needsUpdate = true;
+  }
+  // nama + bar nyawa di atas dino sendiri (selalu tampil saat bermain)
+  const myNameSp = nameSprite('...'), myHb = hpSprite(); let myTagName = '', myTagHp = -1, myTagLv = -1;
+  myNameSp.visible = myHb.visible = false; scene.add(myNameSp); scene.add(myHb);
+  function updateMyTag() {
+    const show = state === 'playing' && !(hero.root.visible === false);
+    myNameSp.visible = myHb.visible = show; if (!show) return;
+    const nm = playerName();
+    if (nm !== myTagName) { myTagName = nm; const sp = nameSprite(nm); myNameSp.material.map.dispose(); myNameSp.material.map = sp.material.map; sp.material.dispose(); }
+    const hp = Math.round(player.hp);
+    if (hp !== myTagHp || player.level !== myTagLv) { myTagHp = hp; myTagLv = player.level; drawHp(myHb, player.hp, true, player.level); }
+    const h = (player.gy || 0) + player.y + 2.9 * scaleNow / 1.1;
+    myHb.position.set(player.x, h + 0.45, player.z); myNameSp.position.set(player.x, h + 1.0, player.z);
   }
   // nama pemain pilihan sendiri (disimpan di perangkat, maks 14 huruf/angka/spasi/_-.)
   const NAME_KEY = 'vosil_pname_v1';
@@ -1860,7 +1879,7 @@
       let v = remoteViews.get(r.id);
       if (!r.seen || !r.near) { if (v) { v.c.root.visible = false; v.sp.visible = false; v.hb.visible = false; if (v.sh) v.sh.visible = false; } continue; }
       if (!v) {
-        const pl = PLAYABLES[r.char] || PLAYABLES.vosil;
+        const pl = PLAYABLES[r.char] || (r.char === 'raptor' ? { scale: PTYPES.raptor.scale, variant: PTYPES.raptor.variant, pal: PTYPES.raptor.pal } : PLAYABLES.vosil);
         const c = makeCreature(Object.assign({ scale: pl.scale, variant: pl.variant }, pl.pal));
         const sp = nameSprite(r.name), sh = makeDynShadow(), hb = hpSprite();
         scene.add(c.root); scene.add(sp); scene.add(sh); scene.add(hb);
@@ -1868,7 +1887,7 @@
         remoteViews.set(r.id, v);
       }
       v.c.root.visible = true; v.sp.visible = true; v.sh.visible = true; v.hb.visible = true;
-      if (r.hp !== undefined && r.hp !== v.hp) { v.hp = r.hp; drawHp(v.hb, r.hp); }
+      if (r.hp !== undefined && r.hp !== v.hp) { v.hp = r.hp; drawHp(v.hb, r.npc ? r.hp * 2.5 : r.hp, false, r.level); }
       if (r.buf && r.buf.length >= 1) {                              // tampilkan posisi sedikit di masa lalu (110-260 ms, menyesuaikan kestabilan jaringan), diinterpolasi antar data jaringan
         const rt = Arena.renderTime(), b = r.buf;
         let i = b.length - 1; while (i > 0 && b[i].at > rt) i--;
@@ -1885,6 +1904,7 @@
         const k = Math.min(1, dt * 10);
         r.x += (r.tx - r.x) * k; r.y += (r.ty - r.y) * k; r.z += (r.tz - r.z) * k; r.dyaw = r.yaw;
       }
+      if (r.npc) r.y = heightAt(r.x, r.z);                              // NPC server: tinggi tanah dihitung di sini
       const want = v.pl.scale * lvScale(r.level);
       v.sc += (want - v.sc) * Math.min(1, dt * 5);
       const spd = Math.hypot(r.vx, r.vz);
@@ -4661,6 +4681,7 @@
     const gy = swimBlend > 0.01 ? lerp(groundY, WL - 0.78 * (scaleNow / 1.1) + Math.sin(clock * 2.4) * 0.06, swimBlend) : groundY;
     player.gy = gy;
     hero.root.position.set(player.x, gy + player.y, player.z);
+    updateMyTag();
     if (state === 'over') {
       hero.root.rotation.z += (1.4 - hero.root.rotation.z) * Math.min(1, dt * 7);
       hero.root.position.y = gy + 0.15;

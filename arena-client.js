@@ -34,7 +34,7 @@ const Arena = (() => {
         if (m.t === 'full') { fin(resolve, null); return; }
         if (m.t === 'w' && !done) {
           st.ws = ws; st.id = m.id; st.on = true; st.seed = m.seed; st.x = m.x; st.z = m.z; st.room = room; st.remotes.clear();
-          st.kits = m.kits || null; st.count = (m.roster || []).length || 1; st.max = m.max || 8; st.t0 = m.t0 || 0; st.skew = m.ts ? m.ts - (Date.now() - (Date.now() - helloAt) / 2) : 0;      // selisih jam server (perkiraan separuh waktu pulang-pergi)
+          st.kits = m.kits || null; st.count = (m.roster || []).filter((c) => !c.npc).length || 1; st.max = m.max || 8; st.t0 = m.t0 || 0; st.skew = m.ts ? m.ts - (Date.now() - (Date.now() - helloAt) / 2) : 0;      // selisih jam server (perkiraan separuh waktu pulang-pergi)
           for (const c of m.roster || []) if (c.id !== m.id) addCard(c);
           fin(resolve, { id: m.id, seed: m.seed, x: m.x, z: m.z, room });
           return;
@@ -45,13 +45,13 @@ const Arena = (() => {
   }
 
   function addCard(c) {
-    if (!st.remotes.has(c.id)) st.remotes.set(c.id, { id: c.id, name: c.name, char: c.char, level: c.level, x: 0, y: 0, z: 0, yaw: 0, vx: 0, vz: 0, atk: -1, seen: false, t: 0 });
+    if (!st.remotes.has(c.id)) st.remotes.set(c.id, { id: c.id, name: c.name, char: c.char, level: c.level, npc: !!c.npc, x: 0, y: 0, z: 0, yaw: 0, vx: 0, vz: 0, atk: -1, seen: false, t: 0 });
     else Object.assign(st.remotes.get(c.id), { name: c.name, char: c.char, level: c.level });
   }
 
   function handle(m) {
-    if (m.t === 'j') { addCard(m.p); st.count = Math.min(st.max, st.count + 1); if (st.onJoin) st.onJoin(m.p); }
-    else if (m.t === 'l') { const r = st.remotes.get(m.id); st.remotes.delete(m.id); st.count = Math.max(1, st.count - 1); if (r && st.onLeave) st.onLeave(r); }
+    if (m.t === 'j') { addCard(m.p); if (!m.p.npc) { st.count = Math.min(st.max, st.count + 1); if (st.onJoin) st.onJoin(m.p); } }
+    else if (m.t === 'l') { const r = st.remotes.get(m.id); st.remotes.delete(m.id); if (!m.npc && !(r && r.npc)) { st.count = Math.max(1, st.count - 1); if (r && st.onLeave) st.onLeave(r); } }
     else if (m.t === 'f') { if (st.onFix) st.onFix(m.x, m.z); }
     else if (m.t === 'd') { st.ds = m.seq || 0; if (st.onDamaged) st.onDamaged(m); }          // aku terkena serangan (server yang memutuskan)
     else if (m.t === 'h') { if (st.onHit) st.onHit(m); }                                       // seranganku mengenai lawan

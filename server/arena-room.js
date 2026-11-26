@@ -22,6 +22,7 @@ export const STATS = {
   carno: { scale: 1.25, bite: 1.4, armor: 0.9 },
   spino: { scale: 1.4, bite: 1.3, armor: 0.75 },
   parasaur: { scale: 1.25, bite: 0.6, armor: 1.1 },
+  raptor: { scale: 0.85, bite: 1, armor: 1 },          // NPC pemburu yang dijalankan server
 };
 export const EMOTES = 6, EMOTE_CD_MS = 2000;
 const LV1 = 0.72;                       // skala level 1 (lvScale(1))
@@ -45,6 +46,8 @@ export const KITS = {
   parasaur: { bite: { dmg: 4.5, cd: 550, reach: 0 },
     skill: { id: 'sonic', cd: 9000, windup: 160, recover: 300, shape: 'cone', r: 10, arc: 0.85, dmg: 5, kb: 1.5, slow: 0.45, slowMs: 2500 } },
 };
+// ---- NPC pemburu (dunia bersama): dijalankan server, sama untuk semua pemain ----
+export const NPC = { hp: 40, chase: 6.2, wander: 1.8, detect: 26, bite: 7, biteCd: 1100, reach: 2.4, spawnMin: 45, spawnMax: 70, despawn: 170, respawnMs: 8000, max: 5 };
 const LAG_RANGE = 1.5, LAG_ARC = 0.25;  // toleransi karena data posisi lawan sedikit tertinggal
 const REGEN_DELAY = 6000, REGEN_RATE = 1.2;   // nyawa dipulihkan SERVER: setelah 6 detik tidak terkena serangan, +1.2/detik (klien tidak bisa menambah nyawa)
 
@@ -61,7 +64,9 @@ export class ArenaCore {
     this.nextId = 1;
     this.seed = this.newSeed(); this.t0 = this.now();            // t0 = awal "hari pertama" arena (jam siang-malam bersama)
     this.dirty = true; this.lastSnap = 0; this.pending = [];
+    this.npcOn = true; this.npcs = new Map(); this.nextNpc = 1; this.npcSpawnAt = 0; this.lastNpc = 0;
   }
+  everyone() { return [...this.players.values(), ...this.npcs.values()]; }
   newSeed() { return 1 + Math.floor(this.rnd() * 1e6); }
 
   // send(str) mengirim teks ke pemain itu. Mengembalikan id, atau null jika penuh.
@@ -103,7 +108,7 @@ export class ArenaCore {
       p.name = cleanName(m.name); p.char = CHARS.includes(m.char) ? m.char : 'vosil';
       p.level = 1;                                                 // arena: semua level 1 (adil)
       const first = !p.ready; p.ready = true; this.dirty = true;
-      const roster = [...this.players.values()].filter((q) => q.ready).map((q) => this.card(q));
+      const roster = this.everyone().filter((q) => q.ready).map((q) => this.card(q));
       p.send(JSON.stringify({ t: 'w', id: p.id, seed: this.seed, ts: this.now(), t0: this.t0, x: r1(p.x), z: r1(p.z), roster, max: MAX_PLAYERS, kits: KITS }));
       if (first) this.broadcast({ t: 'j', p: this.card(p) }, p.id);
       return;
@@ -150,6 +155,7 @@ export class ArenaCore {
   }
   kill(q, a) {
     q.alive = false; a.kills++;
+    if (q.npc) { this.npcSpawnAt = this.now() + NPC.respawnMs; this.broadcast({ t: 'k', id: q.id, by: a.id, nm: q.name, bn: a.name }); this.dropNpc(q); return; }
     this.broadcast({ t: 'k', id: q.id, by: a.id, nm: q.name, bn: a.name });
   }
   onBite(a, m, t) {
@@ -158,7 +164,7 @@ export class ArenaCore {
     a.atkReady = t + kit.cd;
     if (typeof m.yaw === 'number' && Number.isFinite(m.yaw)) a.yaw = m.yaw;
     const sa = STATS[a.char], sA = (sa.scale * LV1) / 1.1;
-    for (const q of this.players.values()) {
+    for (const q of this.everyone()) {
       if (q.id === a.id || !q.alive || !q.ready) continue;
       const dx = q.x - a.x, dz = q.z - a.z, d = Math.hypot(dx, dz);
       if (d > 2.4 * sA + STATS[q.char].scale * LV1 * 0.9 + kit.reach + LAG_RANGE) continue;
@@ -187,7 +193,7 @@ export class ArenaCore {
     if (!a.alive || !this.players.has(a.id)) return;
     const dx = -Math.sin(sp.yaw), dz = -Math.cos(sp.yaw);          // arah depan model
     const cx = sk.shape === 'circle' ? a.x : sp.ox, cz = sk.shape === 'circle' ? a.z : sp.oz;
-    for (const q of this.players.values()) {
+    for (const q of this.everyone()) {
       if (q.id === a.id || !q.alive || !q.ready) continue;
       const body = STATS[q.char].scale * LV1 * 0.9, rx = q.x - cx, rz = q.z - cz, dist = Math.hypot(rx, rz);
       if (Math.abs(q.y - a.y) > 6) continue;
@@ -213,24 +219,61 @@ export class ArenaCore {
   strike(p) { p.strikes++; if (p.strikes > 60) { try { p.send(JSON.stringify({ t: 'kick' })); } catch (e) { /* abaikan */ } } }
   shouldKick(id) { const p = this.players.get(id); return !!p && p.strikes > 60; }
 
-  card(p) { return { id: p.id, name: p.name, char: p.char, level: p.level }; }
+  card(p) { return p.npc ? { id: p.id, name: p.name, char: p.char, level: 1, npc: 1 } : { id: p.id, name: p.name, char: p.char, level: p.level }; }
   broadcast(obj, exceptId) {
     const s = JSON.stringify(obj);
     for (const q of this.players.values()) if (q.id !== exceptId && q.ready) { try { q.send(s); } catch (e) { /* abaikan */ } }
   }
 
+  dropNpc(n) { if (!this.npcs.delete(n.id)) return; this.broadcast({ t: 'l', id: n.id, npc: 1 }); this.dirty = true; }
+  spawnNpc(t) {
+    const ps = [...this.players.values()].filter((p) => p.ready && p.alive); if (!ps.length) return;
+    const base = ps[Math.floor(this.rnd() * ps.length)], ang = this.rnd() * Math.PI * 2, d = NPC.spawnMin + this.rnd() * (NPC.spawnMax - NPC.spawnMin);
+    const x = base.x + Math.cos(ang) * d, z = base.z + Math.sin(ang) * d;
+    if (ps.some((p) => Math.hypot(p.x - x, p.z - z) < NPC.spawnMin - 5)) return;
+    const id = 'n' + (this.nextNpc++);
+    const n = { id, npc: true, name: 'Raptor', char: 'raptor', level: 1, ready: true, alive: true, x, y: base.y, z, yaw: 0, vx: 0, vz: 0, atk: -1, sw: 0, hp: NPC.hp, dseq: 0, lastHurt: 0, kbUntil: 0, hitGap: new Map(), kills: 0, send: () => {}, atkReady: t + 1500, wanderT: 0, wyaw: ang };
+    this.npcs.set(id, n); this.broadcast({ t: 'j', p: this.card(n) }); this.dirty = true;
+  }
+  stepNpcs(t) {
+    const dt = Math.min(0.2, Math.max(0, (t - (this.lastNpc || t)) / 1000)); this.lastNpc = t;
+    const ps = [...this.players.values()].filter((p) => p.ready && p.alive);
+    if (!ps.length) { for (const n of [...this.npcs.values()]) this.dropNpc(n); return; }
+    const want = this.npcOn ? Math.min(NPC.max, 1 + Math.floor(ps.length * 1.5)) : 0;
+    if (this.npcs.size < want && t >= this.npcSpawnAt) { this.spawnNpc(t); this.npcSpawnAt = t + 1500; }
+    for (const n of [...this.npcs.values()]) {
+      let tgt = null, bd = NPC.detect, nearest = 1e9;
+      for (const p of ps) { const d = Math.hypot(p.x - n.x, p.z - n.z); if (d < bd) { bd = d; tgt = p; } if (d < nearest) { nearest = d; n.y = p.y; } }
+      if (nearest > NPC.despawn) { this.dropNpc(n); continue; }
+      let mvx = 0, mvz = 0, sp = 0;
+      if (tgt) {
+        const dx = tgt.x - n.x, dz = tgt.z - n.z, d = Math.max(0.001, Math.hypot(dx, dz)); n.yaw = faceYaw(dx, dz);
+        if (d > NPC.reach * 0.8) { sp = NPC.chase; mvx = dx / d; mvz = dz / d; }
+        if (d <= NPC.reach && t >= n.atkReady) { n.atkReady = t + NPC.biteCd; n.atk = 0; this.strikeTarget(n, tgt, NPC.bite, t, 'bite', { kb: 1 }); }
+      } else {
+        if (t >= n.wanderT) { n.wanderT = t + 2000 + this.rnd() * 3000; n.wyaw += (this.rnd() - 0.5) * 2.2; n.wmove = this.rnd() < 0.7; }
+        if (n.wmove) { sp = NPC.wander; mvx = Math.cos(n.wyaw); mvz = Math.sin(n.wyaw); n.yaw = faceYaw(mvx, mvz); }
+      }
+      n.x += mvx * sp * dt; n.z += mvz * sp * dt; n.vx = mvx * sp; n.vz = mvz * sp;
+      if (n.atk >= 0) { n.atk += dt; if (n.atk > 0.35) n.atk = -1; }
+      this.dirty = true;
+    }
+  }
+
   // siaran berkala: hanya jika ada perubahan (atau 1x per detik); tiap pemain hanya menerima pemain lain yang dekat
   tick() {
     const ts = this.now();
+    this.stepNpcs(ts);
     if (this.pending.length) { const due = this.pending.filter((p) => p.at <= ts); if (due.length) { this.pending = this.pending.filter((p) => p.at > ts); for (const p of due) this.resolveSkill(p, ts); } }
     if (!this.dirty && ts - this.lastSnap < KEEPALIVE_MS) return;
     this.dirty = false; this.lastSnap = ts;
     const ps = [...this.players.values()].filter((p) => p.ready && p.alive);
+    const everyone = [...ps, ...this.npcs.values()];
     const rdt = Math.min(1, (ts - (this.lastRegen || ts)) / 1000); this.lastRegen = ts;
     for (const p of ps) if (p.hp < HP_MAX && ts - p.lastHurt > REGEN_DELAY) { p.hp = Math.min(HP_MAX, p.hp + REGEN_RATE * rdt); }
     for (const a of ps) {
       const list = [];
-      for (const b of ps) {
+      for (const b of everyone) {
         if (b.id === a.id) continue;
         if (Math.hypot(b.x - a.x, b.z - a.z) > RADIUS) continue;
         list.push([b.id, r1(b.x), r1(b.y), r1(b.z), Math.round(b.yaw * 100) / 100, r1(b.vx), r1(b.vz), Math.round(b.atk * 100) / 100, b.sw, b.level, Math.round(b.hp), b.kills]);

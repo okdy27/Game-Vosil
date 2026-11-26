@@ -53,17 +53,17 @@ export const KITS = {
 // kind: hunter (pemburu tunggal) | pack (berkelompok, mengincar yang nyawanya paling tipis) | guard (menjaga titik, membalas keras) | ambush (diam lalu menerkam)
 //       territory (menantang di wilayahnya) | giant (berjalan lurus, bahaya injakan) | sentinel (berseru jika ada predator) | scav (pengintai sisa makanan) | healer (memulihkan pemain)
 export const NPCT = {
-  raptor: { name: 'Raptor', kind: 'hunter', hp: 60, chase: 7.6, wander: 2, detect: 32, dmg: 9, cd: 850, reach: 2.3, lv: 2 },
-  deino: { name: 'Deinonychus', kind: 'pack', hp: 55, chase: 8.8, wander: 2.2, detect: 36, dmg: 8, cd: 650, reach: 2.2, lv: 3 },
+  raptor: { name: 'Raptor', kind: 'hunter', hp: 60, chase: 6.6, wander: 2, detect: 28, dmg: 6, cd: 1050, reach: 2.3, lv: 2 },
+  deino: { name: 'Deinonychus', kind: 'pack', hp: 55, chase: 7.5, wander: 2.2, detect: 30, dmg: 5, cd: 950, reach: 2.2, lv: 3 },
   compy: { name: 'Compsognathus', kind: 'scav', hp: 14, wander: 2.4, flee: 7.5, lv: 1 },
   micro: { name: 'Microraptor', kind: 'healer', hp: 18, speed: 7, heal: 2.2, lv: 1 },
-  anky: { name: 'Ankylosaurus', kind: 'guard', hp: 220, chase: 4.8, wander: 1.4, dmg: 13, cd: 1300, reach: 3.2, kb: 8, leash: 24, lv: 3 },
-  spinoa: { name: 'Spinosaurus', kind: 'ambush', hp: 160, dash: 15, dmg: 17, cd: 2600, reach: 3.2, trig: 11, lv: 5 },
-  allo: { name: 'Allosaurus', kind: 'territory', hp: 190, chase: 8.4, wander: 1.6, detect: 24, dmg: 17, cd: 1150, reach: 3.0, leash: 55, lv: 5 },
+  anky: { name: 'Ankylosaurus', kind: 'guard', hp: 220, chase: 4.8, wander: 1.4, dmg: 10, cd: 1400, reach: 3.2, kb: 8, leash: 24, lv: 3 },
+  spinoa: { name: 'Spinosaurus', kind: 'ambush', hp: 160, dash: 14, dmg: 13, cd: 2600, reach: 3.2, trig: 11, lv: 5 },
+  allo: { name: 'Allosaurus', kind: 'territory', hp: 190, chase: 7.2, wander: 1.6, detect: 22, dmg: 13, cd: 1300, reach: 3.0, leash: 55, lv: 5 },
   argen: { name: 'Argentinosaurus', kind: 'giant', hp: 520, wander: 2.3, dmg: 12, cd: 1100, reach: 5.6, kb: 6, lv: 6 },
   para: { name: 'Parasaurolophus', kind: 'sentinel', hp: 40, wander: 1.8, flee: 7, lv: 1 },
 };
-export const NPC = { spawnMin: 45, spawnMax: 70, despawn: 170, respawnMs: 6000, cap: 14, packEveryMs: [40000, 65000], packFirstMs: 25000 };
+export const NPC = { spawnMin: 45, spawnMax: 70, despawn: 170, respawnMs: 6000, cap: 14, packEveryMs: [65000, 95000], packFirstMs: 45000 };
 const LAG_RANGE = 1.5, LAG_ARC = 0.25;  // toleransi karena data posisi lawan sedikit tertinggal
 const REGEN_DELAY = 6000, REGEN_RATE = 1.2;   // nyawa dipulihkan SERVER: setelah 6 detik tidak terkena serangan, +1.2/detik (klien tidak bisa menambah nyawa)
 
@@ -282,7 +282,7 @@ export class ArenaCore {
   }
   diff() { return Math.min(1, Math.max(0, (this.now() - this.born) / 360000)); }       // 0 -> 1 selama 6 menit: musuh makin tangguh
   startPack(t, ps) {
-    const base = ps[Math.floor(this.rnd() * ps.length)], ang = this.rnd() * Math.PI * 2, n = 3 + Math.min(3, Math.floor(ps.length / 2) + Math.floor(this.diff() * 2));
+    const base = ps[Math.floor(this.rnd() * ps.length)], ang = this.rnd() * Math.PI * 2, n = 3 + Math.min(2, Math.floor(ps.length / 3) + Math.floor(this.diff() * 2));
     const pid = this.nextNpc; let made = 0;
     for (let i = 0; i < n; i++) {
       const type = i % 3 === 2 ? 'deino' : 'raptor';
@@ -322,7 +322,7 @@ export class ArenaCore {
         if (t >= n.wanderT) { n.wanderT = t + 2000 + this.rnd() * 3000; n.wyaw += (this.rnd() - 0.5) * 2.4; n.wmove = this.rnd() < 0.7; if (hx !== undefined && Math.hypot(n.x - hx, n.z - hz) > rad) n.wyaw = Math.atan2(hz - n.z, hx - n.x); }
         if (n.wmove) { spd = v; dx = Math.cos(n.wyaw); dz = Math.sin(n.wyaw); n.yaw = faceYaw(dx, dz); }
       };
-      const bite = (tg, dmg, kb) => { if (t >= n.atkReady && tg) { n.atkReady = t + sp.cd; n.atk = 0; this.strikeTarget(n, tg, dmg * (1 + diff * 0.35), t, 'bite', { kb }); } };
+      const bite = (tg, dmg, kb) => { if (t >= n.atkReady && tg) { n.atkReady = t + sp.cd; n.atk = 0; this.strikeTarget(n, tg, dmg * (1 + diff * 0.2), t, 'bite', { kb }); } };
       const k = n.kind;
       if (k === 'hunter' || k === 'pack') {
         let tg = null, bd = sp.detect * (1 + diff * 0.25);
@@ -354,7 +354,7 @@ export class ArenaCore {
         else if (n.phase === 'dash') {
           spd = sp.dash; dx = -Math.sin(n.yaw); dz = -Math.cos(n.yaw);
           const hit = ps.find((p) => Math.hypot(p.x - n.x, p.z - n.z) < sp.reach);
-          if (hit) { n.atk = 0; this.strikeTarget(n, hit, sp.dmg * (1 + diff * 0.35), t, 'bite', { kb: 5 }); n.phase = 'rest'; n.until = t + 1500; n.atkReady = t + sp.cd; }
+          if (hit) { n.atk = 0; this.strikeTarget(n, hit, sp.dmg * (1 + diff * 0.2), t, 'bite', { kb: 5 }); n.phase = 'rest'; n.until = t + 1500; n.atkReady = t + sp.cd; }
           else if (t >= n.until) { n.phase = 'rest'; n.until = t + 1500; n.atkReady = t + sp.cd; }
         } else if (t >= n.until) n.phase = 'idle';
       } else if (k === 'territory') {
@@ -369,7 +369,7 @@ export class ArenaCore {
       } else if (k === 'giant') {
         if (t >= n.wanderT) { n.wanderT = t + 12000 + this.rnd() * 8000; n.wyaw += (this.rnd() - 0.5) * 1.4; }
         spd = sp.wander; dx = Math.cos(n.wyaw); dz = Math.sin(n.wyaw); n.yaw = faceYaw(dx, dz);
-        for (const p of ps) if (Math.hypot(p.x - n.x, p.z - n.z) < sp.reach && t >= n.atkReady) { n.atkReady = t + sp.cd; n.atk = 0; this.strikeTarget(n, p, sp.dmg * (1 + diff * 0.3), t, 'bite', { kb: sp.kb }); }     // injakan
+        for (const p of ps) if (Math.hypot(p.x - n.x, p.z - n.z) < sp.reach && t >= n.atkReady) { n.atkReady = t + sp.cd; n.atk = 0; this.strikeTarget(n, p, sp.dmg * (1 + diff * 0.2), t, 'bite', { kb: sp.kb }); }     // injakan
       } else if (k === 'sentinel') {
         const h = hostile.find((q) => Math.hypot(q.x - n.x, q.z - n.z) < 38);
         if (h) {

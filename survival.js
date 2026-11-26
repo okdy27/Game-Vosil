@@ -2389,6 +2389,13 @@
     arenaBusy = false;
   }
   let arenaBusy = false;
+  let lastMode = 'arena';                                               // mode terakhir: 'solo' bila pemain memilih solo
+  async function playAgain() {                                          // main lagi: utamakan arena online, solo hanya bila penuh/gagal/dipilih solo
+    if (state === 'playing' || arenaBusy) return;
+    const ab = $('arenaBtn');
+    if (lastMode !== 'solo' && ab && !ab.classList.contains('hidden')) { await startArena(); if (state !== 'playing') { toast(t('ar_full_solo'), 4); startGame(); } }
+    else startGame();
+  }
   const arenaBtn = $('arenaBtn');
   if (arenaBtn) {
     arenaBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
@@ -3314,7 +3321,8 @@
     const w = $('welcome'); if (w) { w.classList.remove('on'); void w.offsetWidth; w.classList.add('on'); setTimeout(() => w.classList.remove('on'), 3300); }
     try { GameAudio.init(); } catch (e) { /* abaikan */ }
     const ab = $('arenaBtn');
-    if (!solo && ab && !ab.classList.contains('hidden')) startArena().then(() => { if (state !== 'playing') startGame(); });
+    lastMode = solo ? 'solo' : 'arena';
+    if (!solo && ab && !ab.classList.contains('hidden')) startArena().then(() => { if (state !== 'playing') { toast(t('ar_full_solo'), 4); startGame(); } });
     else startGame();
   }
   function closeDex() { dexEl.classList.remove('on'); if (pv.c) { pv.scene.remove(pv.c.root); disposeTree(pv.c.root); pv.c = null; } }
@@ -3363,7 +3371,7 @@
   canvas.addEventListener('pointerdown', (e) => {
     e.preventDefault();
     GameAudio.init();
-    if (state === 'over' && performance.now() - overAt > 700) startGame();
+    if (state === 'over' && performance.now() - overAt > 700) playAgain();
   });
 
   window.addEventListener('keydown', (e) => {
@@ -3374,7 +3382,7 @@
     if (['arrowleft', 'arrowright', 'arrowup', 'arrowdown', ' ', 'enter'].includes(k)) e.preventDefault();
     GameAudio.init();
     if (state !== 'playing') {
-      if ((k === ' ' || k === 'enter') && state === 'over' && performance.now() - overAt > 700) startGame();
+      if ((k === ' ' || k === 'enter') && state === 'over' && performance.now() - overAt > 700) playAgain();
       return;
     }
     if (k === ' ') input.jump = true;

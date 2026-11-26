@@ -615,6 +615,12 @@
     #topBtns { left: calc(var(--sl) + 14px + clamp(88px, 27vh, 120px) + 24px); }
     #emoteBar { left: auto; right: calc(var(--sr) + 14px); top: calc(var(--st) + 100px); flex-direction: row; }
     #dexBtns button { white-space: nowrap; font-size: clamp(10px, 2.6vh, 13px); }
+
+    /* teks info dalam game: kecil & agak transparan; timer mode kuat dipindah ke atas nyawa dino */
+    #toast { font-size: 11px; padding: 3px 9px; border-radius: 9px; color: rgba(255, 255, 255, .78); background: rgba(0, 0, 0, .26); max-width: 30vw; text-shadow: 0 1px 2px rgba(0, 0, 0, .6); line-height: 1.25; }
+    #toast.show { opacity: .88; }
+    #power { display: none !important; }
+    #onlineBox { opacity: .75; font-size: 11px; }
 </style>
 </head>
 <body>

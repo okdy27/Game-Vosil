@@ -1804,15 +1804,27 @@
   // nama + bar nyawa di atas dino sendiri (selalu tampil saat bermain)
   const myNameSp = nameSprite('...'), myHb = hpSprite(); let myTagName = '', myTagHp = -1, myTagLv = -1;
   myNameSp.visible = myHb.visible = false; scene.add(myNameSp); scene.add(myHb);
+  // timer mode kuat (telur) di atas bar nyawa dino
+  const myPow = (() => { const cv = document.createElement('canvas'); cv.width = 160; cv.height = 28; const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(cv), transparent: true, depthTest: false })); sp.scale.set(2.6, 0.45, 1); sp.renderOrder = 11; sp.visible = false; sp.userData.cv = cv; scene.add(sp); return sp; })();
+  let myPowKey = -1;
+  function drawPow(left) {
+    const cv = myPow.userData.cv, g = cv.getContext('2d'), f = Math.max(0, Math.min(1, left / POWER_TIME));
+    g.clearRect(0, 0, 160, 28); g.fillStyle = 'rgba(6,12,18,.7)'; g.fillRect(2, 4, 156, 20);
+    g.fillStyle = left < 2.5 ? '#ff5252' : '#ff9800'; g.fillRect(4, 6, 152 * f, 16);
+    g.fillStyle = '#fff'; g.font = 'bold 15px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('🥚 ' + Math.ceil(left) + ' s', 80, 15);
+    myPow.material.map.needsUpdate = true;
+  }
   function updateMyTag() {
     const show = state === 'playing' && !(hero.root.visible === false);
-    myNameSp.visible = myHb.visible = show; if (!show) return;
+    myNameSp.visible = myHb.visible = show; if (!show) { myPow.visible = false; return; }
     const nm = playerName();
     if (nm !== myTagName) { myTagName = nm; const sp = nameSprite(nm); myNameSp.material.map.dispose(); myNameSp.material.map = sp.material.map; sp.material.dispose(); }
     const hp = Math.round(player.hp);
     if (hp !== myTagHp || player.level !== myTagLv) { myTagHp = hp; myTagLv = player.level; drawHp(myHb, player.hp, true, player.level); }
     const h = (player.gy || 0) + player.y + 2.9 * scaleNow / 1.1;
     myHb.position.set(player.x, h + 0.45, player.z); myNameSp.position.set(player.x, h + 1.0, player.z);
+    myPow.visible = powerLeft > 0;
+    if (powerLeft > 0) { const key = Math.round(powerLeft * 5); if (key !== myPowKey) { myPowKey = key; drawPow(powerLeft); } myPow.position.set(player.x, h + 1.55, player.z); }
   }
   // nama pemain pilihan sendiri (disimpan di perangkat, maks 14 huruf/angka/spasi/_-.)
   const NAME_KEY = 'vosil_pname_v1';
@@ -2240,8 +2252,16 @@
     }
   }
   let skillWind = null, dashS = null, slowT = 0, slowMul = 1, aimHintT = 0, skAnim = null;
-  const kitSkill = () => (typeof Arena !== 'undefined' && Arena.kits && Arena.kits[save.char] ? Arena.kits[save.char].skill : null);
-  const skLabel = () => { const sk = arenaOn ? kitSkill() : null; return t('sk_' + (sk ? sk.id : 'roar')); };
+  // skill khas tiap dino: SAMA di arena maupun mode solo (di arena angka resmi dari server, di solo dari tabel ini)
+  const LOCAL_KITS = {
+    vosil: { id: 'roar', cd: 14000, windup: 150, recover: 250, shape: 'circle', r: 8.2, dmg: 7, kb: 3 },
+    velo: { id: 'pounce', cd: 8000, windup: 130, recover: 700, shape: 'line', len: 7, width: 2.4, dmg: 12, kb: 1.2, dash: 7 },
+    carno: { id: 'charge', cd: 10000, windup: 250, recover: 900, shape: 'line', len: 7, width: 3.2, dmg: 18, kb: 5, dash: 6.5 },
+    spino: { id: 'sweep', cd: 7000, windup: 180, recover: 350, shape: 'circle', r: 5.2, dmg: 9, kb: 4.5 },
+    parasaur: { id: 'sonic', cd: 9000, windup: 160, recover: 300, shape: 'cone', r: 10, arc: 0.85, dmg: 5, kb: 2 }
+  };
+  const kitSkill = () => (arenaOn && typeof Arena !== 'undefined' && Arena.kits && Arena.kits[save.char] ? Arena.kits[save.char].skill : LOCAL_KITS[save.char] || LOCAL_KITS.vosil);
+  const skLabel = () => { const sk = kitSkill(); return t('sk_' + (sk ? sk.id : 'roar')); };
   function aimYaw() {                                                              // bidik otomatis ke lawan terdekat (jika dekat)
     let best = null, bd = 9;
     for (const r of Arena.remotes.values()) {
@@ -2259,13 +2279,13 @@
     roarCd = sk.cd / 1000;
     player.atkCd = Math.max(player.atkCd, (sk.windup + sk.recover) / 1000);          // terkunci selama persiapan + pemulihan (kelemahan tiap skill)
     skillWind = { t: sk.windup / 1000, sk, yaw: player.yaw, ox: player.x, oz: player.z };
-    Arena.skill(player.yaw);
+    if (arenaOn) Arena.skill(player.yaw);
     skAnim = { id: sk.id, t: 0, dur: sk.windup / 1000 + 0.32 };                  // gerak serangan dino (pose khas tiap skill)
   }
 
   // ---------- Bidik skill: tahan tombol, geser jari untuk mengarahkan, lepas untuk meluncurkan ----------
   const aim = { on: false, yaw: 0, moved: false, cx: 0, cy: 0, mesh: null, fill: null, shape: '' };
-  const aimReady = () => state === 'playing' && arenaOn && !!kitSkill() && roarCd <= 0 && player.atkCd <= 0 && !skillWind;
+  const aimReady = () => state === 'playing' && !!kitSkill() && roarCd <= 0 && player.atkCd <= 0 && !skillWind;
   function aimClear() { for (const k of ['mesh', 'fill']) if (aim[k]) { scene.remove(aim[k]); aim[k].material.dispose(); aim[k] = null; } aim.on = false; }
   function aimBegin(e) {
     if (!aimReady()) return false;
@@ -2301,16 +2321,40 @@
     skillFx(sk.id, ox !== undefined ? ox : player.x, oz !== undefined ? oz : player.z, yaw, { shape: sk.shape, r: sk.r || 0, len: sk.len || 0, width: sk.width || 0, arc: sk.arc || 0 });
     starBurst(player.x, gy + player.y + 1.4 * scaleNow / 1.1, player.z, 8, 'gain');
   }
+  // mode solo: kerusakan skill dihitung di sini (di arena ditentukan server)
+  function soloSkillHit(sk, yaw, ox, oz) {
+    const fx = -Math.sin(yaw), fz = -Math.cos(yaw), mult = 1.5 * (1 + 0.3 * (player.level - 1));
+    let hit = 0;
+    for (const p of preds.slice()) {
+      if (p.dead) continue;
+      const dx = p.x - ox, dz = p.z - oz, d = Math.hypot(dx, dz) || 1, rad = 0.5 * p.def.scale;
+      let inside = false;
+      if (sk.shape === 'circle') inside = d <= sk.r + rad;
+      else if (sk.shape === 'line') { const pr = dx * fx + dz * fz, pp = Math.abs(dx * fz - dz * fx); inside = pr > -0.5 && pr <= sk.len + rad + (sk.dash ? sk.dash * 0.5 : 0) && pp <= sk.width / 2 + rad; }
+      else inside = d <= sk.r + rad && (dx * fx + dz * fz) / d >= Math.cos(sk.arc || 0.85);
+      if (!inside) continue;
+      hit++;
+      const calm = p.def.timid || p.def.neutral, giant = !!p.def.giant;
+      const kb = (giant ? 0.3 : 1) * (sk.kb || 2) * (1 - Math.min(0.6, d / (sk.r || sk.len || 8) * 0.4));
+      p.x += (dx / d) * kb; p.z += (dz / d) * kb;
+      if (!calm) damagePred(p, sk.dmg * mult * (giant ? 0.6 : 1), 'skill');
+      if (p.dead) continue;
+      if (p.def.timid) { p.state = 'flee'; p.t = 3; }
+      else { p.state = 'stun'; p.t = giant ? 0.7 : (sk.id === 'sonic' ? 1.4 : 1.2); p.cd = Math.max(p.cd, 1.4); p.warn && (p.warn.visible = false); }
+    }
+    if (sk.shape === 'circle') player.invuln = Math.max(player.invuln, 0.5);
+    if (hit === 0) toast(t('roar_none'), 1.2);
+  }
   function updateSkill(dt) {
     slowT = Math.max(0, slowT - dt); if (slowT <= 0) slowMul = 1;
     if (skAnim) { skAnim.t += dt; if (skAnim.t >= skAnim.dur) skAnim = null; }
-    if (state !== 'playing' || !arenaOn) { skillWind = null; dashS = null; if (aim.on) aimClear(); return; }
+    if (state !== 'playing') { skillWind = null; dashS = null; if (aim.on) aimClear(); return; }
     if (aimHintT > 0) { aimHintT -= dt; if (aimHintT <= 0) toast(t('ar_aim'), 6); }
     if (aim.on) {
       if (skillWind) aimClear();
       else { aim.mesh.position.set(player.x, heightAt(player.x, player.z) + 0.3, player.z); aim.mesh.rotation.y = aim.yaw; const pu = Math.sin(clock * 6); aim.mesh.material.opacity = 0.6 + 0.12 * pu; aim.fill.material.opacity = 0.1 + 0.04 * pu; aim.fill.position.copy(aim.mesh.position); aim.fill.rotation.y = aim.yaw; if (aim.shape === 'circle') aim.mesh.rotation.y = clock * 0.9; }
     }
-    if (skillWind) { skillWind.t -= dt; if (skillWind.t <= 0) { const w = skillWind; skillWind = null; fireSkill(w.sk, w.yaw, w.ox, w.oz); } }
+    if (skillWind) { skillWind.t -= dt; if (skillWind.t <= 0) { const w = skillWind; skillWind = null; fireSkill(w.sk, w.yaw, w.ox, w.oz); if (!arenaOn) soloSkillHit(w.sk, w.yaw, w.ox, w.oz); } }
     if (dashS) {
       const step = Math.min(dashS.left, dt); dashS.left -= dt;
       player.x += dashS.dx * dashS.v * step; player.z += dashS.dz * dashS.v * step;
@@ -3782,7 +3826,7 @@
   const roarCooldown = () => Math.max(8, 15 - 0.6 * (player.level - 1));
   function doRoar() {
     if (state !== 'playing') return;
-    if (arenaOn) { arenaSkillPress(); return; }
+    arenaSkillPress(); return;
     if (roarCd > 0) return;
     roarCd = roarCooldown();
     roarR = 8 + 0.2 * player.level;

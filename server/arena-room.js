@@ -139,15 +139,16 @@ export class ArenaCore {
 
   // teleport resmi dari game (pintu pulau harta / jatuh ke jurang): dibatasi supaya tidak bisa dipakai curang
   onTeleport(p, m, t) {
-    if (t < (p.tpReady || 0) || t - p.lastHurt < 4000) { p.send(JSON.stringify({ t: 'f', x: r1(p.x), z: r1(p.z) })); return; }
+    if (t < (p.tpReady || 0)) { p.send(JSON.stringify({ t: 'f', x: r1(p.x), z: r1(p.z) })); return; }
     const x = num(m.x, p.x), z = num(m.z, p.z), k = m.k === 'door' ? 'door' : 'fall';
-    if (k === 'door') { if (Math.hypot(x - 2.5, z - 2.5) > 1) { p.send(JSON.stringify({ t: 'f', x: r1(p.x), z: r1(p.z) })); return; } p.tpReady = t + 20000; }
+    if (k === 'door') { if (Math.hypot(x - 2.5, z - 2.5) > 1) { p.send(JSON.stringify({ t: 'f', x: r1(p.x), z: r1(p.z) })); return; } p.tpReady = t + 8000; }
     else { if (Math.hypot(x - p.x, z - p.z) > 80) { p.send(JSON.stringify({ t: 'f', x: r1(p.x), z: r1(p.z) })); return; } p.tpReady = t + 5000; }
     p.x = x; p.z = z; p.lastT = t; this.dirty = true;
   }
   onState(p, m, t) {
     const x = num(m.x, p.x), z = num(m.z, p.z), y = num(m.y, p.y);
     const dt = Math.max(0.05, Math.min(1, (t - p.lastT) / 1000));
+    if (p.strikes > 0) p.strikes = Math.max(0, p.strikes - 0.5 * Math.max(0, (t - (p.strikeT || t)) / 1000)); p.strikeT = t;     // pelanggaran lama memudar
     if (Math.abs(x) > WORLD_LIM || Math.abs(z) > WORLD_LIM || Math.hypot(x - p.x, z - p.z) > maxSpeed(p.char) * dt + 2 + (t < p.dashUntil ? 9 : 0) + (t < p.kbUntil ? 6 : 0) || Math.abs(y - p.y) > 40 + 40 * dt) {
       p.strikes++;                                                 // loncat terlalu jauh -> kembalikan ke posisi terakhir yang sah
       p.send(JSON.stringify({ t: 'f', x: r1(p.x), z: r1(p.z) }));

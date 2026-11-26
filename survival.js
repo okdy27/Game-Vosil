@@ -1947,7 +1947,13 @@
         const k = Math.min(1, dt * 10);
         r.x += (r.tx - r.x) * k; r.y += (r.ty - r.y) * k; r.z += (r.tz - r.z) * k; r.dyaw = r.yaw;
       }
-      if (r.npc) r.y = heightAt(r.x, r.z);                              // NPC server: tinggi tanah dihitung di sini
+      if (r.npc) {
+        r.y = heightAt(r.x, r.z);                                       // NPC server: tinggi tanah dihitung di sini
+        // NPC tidak boleh berdiri di air, jurang sungai, atau area lompat: laporkan ke server agar dihapus (server tidak punya data medan)
+        const bad = r.y < WL + 0.35 || riverT(r.x, r.z) > 0.12 || !!zoneNear(r.x, r.z, 8);
+        if (bad) { r.badT = (r.badT || 0) + dt; if (r.badT > 0.35 && (!r.nbAt || clock - r.nbAt > 2)) { r.nbAt = clock; try { Arena.nb(r.id); } catch (e) { /* abaikan */ } } if (r.badT > 0.35) { const vv = remoteViews.get(r.id); if (vv) vv.c.root.visible = false; } }
+        else { if (r.badT) { const vv = remoteViews.get(r.id); if (vv) vv.c.root.visible = true; } r.badT = 0; }
+      }
       const want = r.npc ? v.pl.scale : v.pl.scale * lvScale(r.level);
       v.sc += (want - v.sc) * Math.min(1, dt * 5);
       const spd = Math.hypot(r.vx, r.vz);
@@ -2426,6 +2432,7 @@
   }
   if (typeof Arena !== 'undefined') {
     Arena.onFix = (x, z) => { player.x = x; player.z = z; };                       // server mengembalikan posisi (gerak tidak wajar)
+    Arena.onLevel = (lv, xp, up) => { if (!arenaOn || state !== 'playing') return; player.level = Math.max(1, Math.min(MAX_LEVEL, lv | 0)); player.xp = xp | 0; if (up) levelUp(); };
     Arena.onHp = (h) => { if (arenaOn && state === 'playing') player.hp = Math.max(0, Math.min(100, h)); };
     Arena.onAlert = (m) => { if (!arenaOn) return; toast(t('ar_alert', { n: m.nm || '?' }), 2.6); GameAudio.sfx.alarm ? GameAudio.sfx.alarm() : GameAudio.sfx.record(); shake = Math.max(shake, 0.12); };
     Arena.onWave = (m) => { if (!arenaOn) return; toast(t('ar_wave', { n: m.n }), 3.2); try { GameAudio.sfx.horde ? GameAudio.sfx.horde() : GameAudio.sfx.power(); } catch (e) { /* abaikan */ } shake = Math.max(shake, 0.25); hurtT = Math.max(hurtT, 0.12); };
@@ -3082,6 +3089,7 @@
       hp: 100, hunger: 100, thirst: 100, stamina: 100, exhausted: false,
       invuln: 0, atkT: -1, atkCd: 0, atkHit: false, lastDmg: 99, level: 1, xp: 0, counterT: 0
     });
+    setLatch(false);
     roarCd = 0; hordeCd = 70; horde = null; dangerNow = 0; waryNow = 0; swimming = false; swimBlend = 0; time = 0; runTime = 0; runCoins = 0; kills = 0; powerLeft = 0; scaleNow = baseScale(); shake = 0; lvDay = 0;
     spawnCd = 8; animalCd = 2; chased = false; lastBiome = null; biomeCd = 0; drinkCd = 0; deathReason = '';
     camX = 0; camZ = 0; camLead = { x: 0, z: 0 }; shown = {}; camZoom = 1; camBx = 0; camBz = 0;
@@ -3385,7 +3393,12 @@
     btnRoar.addEventListener('pointerup', () => { btnRoar.classList.remove('on'); aimEnd(true); });
     btnRoar.addEventListener('pointercancel', () => { btnRoar.classList.remove('on'); aimEnd(false); });
   }
-  bindBtn(btnSprint, () => { input.sprint = true; }, () => { input.sprint = false; });
+  let sprintLatch = false, sprintIdle = 0;                              // lari sekali ketuk: aktif sampai tenaga habis (ketuk lagi untuk berhenti)
+  const setLatch = (on) => { sprintLatch = on; sprintIdle = 0; if (btnSprint) btnSprint.classList.toggle('latch', on); };
+  if (btnSprint) {
+    btnSprint.addEventListener('contextmenu', (e) => e.preventDefault());
+    btnSprint.addEventListener('pointerdown', (e) => { e.preventDefault(); GameAudio.init(); if (state !== 'playing') return; if (sprintLatch) setLatch(false); else if (!player.exhausted && player.stamina > 0) setLatch(true); else toast(t('tired'), 1.2); });
+  }
 
   canvas.addEventListener('pointerup', autoFs);             // gesture sentuh yang sah untuk layar penuh
   canvas.addEventListener('click', autoFs);
@@ -3686,7 +3699,7 @@
     });
   }
   function openBag() {
-    if (state === 'playing') { input.sprint = false; input.attack = false; input.jump = false; for (const k in keys) keys[k] = false; }
+    if (state === 'playing') { setLatch(false); input.sprint = false; input.attack = false; input.jump = false; for (const k in keys) keys[k] = false; }
     bagOpen = true; showTab(tabWanted); renderBag(); acctPrefetch(); bagEl.classList.remove('hidden'); }
   function closeBag() { bagOpen = false; bagEl.classList.add('hidden'); }
   if (coinBox) {                                                  // ketuk koin/poin di kanan atas -> halaman Tukar
@@ -4435,13 +4448,14 @@
     }
 
     // tenaga & lari
-    const wantSprint = (input.sprint || keys.shift) && mag > 0.2;
+    const wantSprint = (input.sprint || keys.shift || sprintLatch) && mag > 0.2;
     if (player.stamina <= 0) player.exhausted = true;
     else if (player.stamina >= 25) player.exhausted = false;
     const sprinting = wantSprint && !player.exhausted && player.stamina > 0;
     if (swimming) { /* tenaga diatur di blok renang */ }
     else if (sprinting) player.stamina = Math.max(0, player.stamina - 28 * curChar.stam * dt);
     else player.stamina = Math.min(100, player.stamina + (mag > 0.2 ? 12 : 22) * dt);
+    if (sprintLatch) { if (player.exhausted || player.stamina <= 0) setLatch(false); else if (mag <= 0.2) { sprintIdle += dt; if (sprintIdle > 0.7) setLatch(false); } else sprintIdle = 0; }
 
     const weak = player.hunger <= 0 || player.thirst <= 0;
     const speedMul = (powerLeft > 0 ? 1.25 : 1) * (weak ? 0.85 : 1) * curChar.speed * speedLv() * (slowT > 0 ? slowMul : 1);

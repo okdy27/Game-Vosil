@@ -30,6 +30,10 @@ export const STATS = {
 export const EMOTES = 6, EMOTE_CD_MS = 2000;
 const LV1 = 0.72;                       // skala level 1 (lvScale(1))
 export const HP_MAX = 100;
+export const MAX_LEVEL = 10;
+export const xpNeed = (l) => 45 + 30 * (l - 1);
+export const lvDmg = (l) => 1 + 0.07 * (l - 1);           // level naik -> gigitan makin kuat
+export const lvArmor = (l) => 1 - 0.025 * (l - 1);         // ... dan makin tahan
 export const BITE_ARC = 1.1;
 export const HIT_GAP_MS = 300;          // satu penyerang tidak bisa mengenai korban yang sama lebih rapat dari ini (dikeroyok tetap bisa)
 
@@ -111,7 +115,7 @@ export class ArenaCore {
       id, send, name: 'Dino', char: 'vosil', level: 1, ready: false, alive: true,
       x: Math.cos(ang) * d, y: 0, z: Math.sin(ang) * d, yaw: 0, vx: 0, vz: 0, atk: -1, sw: 0,
       lastT: this.now(), bucket: RATE, bucketT: this.now(), strikes: 0,
-      emReady: 0, hp: HP_MAX, dseq: 0, lastHurt: 0, kbUntil: 0, hitGap: new Map(), atkReady: 0, skReady: 0, lockUntil: 0, dashUntil: 0, kills: 0,
+      emReady: 0, hp: HP_MAX, xp: 0, xpT: 0, dseq: 0, lastHurt: 0, kbUntil: 0, hitGap: new Map(), atkReady: 0, skReady: 0, lockUntil: 0, dashUntil: 0, kills: 0,
     };
     this.players.set(id, p);
     this.dirty = true;
@@ -138,7 +142,7 @@ export class ArenaCore {
     if (m.t === 'q') { p.send(JSON.stringify({ t: 'o', c: num(m.c) })); return; }         // ping -> pong (klien mengukur jeda)
     if (m.t === 'h') {                                             // hello: identitas tampilan
       p.name = cleanName(m.name); p.char = CHARS.includes(m.char) ? m.char : 'vosil';
-      p.level = 1;                                                 // arena: semua level 1 (adil)
+      p.level = 1; p.xp = 0;                                       // setiap hidup baru mulai dari level 1, lalu naik lewat XP
       const first = !p.ready; p.ready = true; this.dirty = true;
       const roster = this.everyone().filter((q) => q.ready).map((q) => this.card(q));
       p.send(JSON.stringify({ t: 'w', id: p.id, seed: this.seed, ts: this.now(), t0: this.t0, x: r1(p.x), z: r1(p.z), roster, max: MAX_PLAYERS, kits: KITS }));
@@ -151,6 +155,7 @@ export class ArenaCore {
     else if (m.t === 'k' || m.t === 'r') this.onSkill(p, m, t);
     else if (m.t === 'e') this.onEmote(p, m, t);
     else if (m.t === 'tp') this.onTeleport(p, m, t);
+    else if (m.t === 'nb') this.onBadSpot(p, m, t);
   }
 
   // teleport resmi dari game (pintu pulau harta / jatuh ke jurang): dibatasi supaya tidak bisa dipakai curang
@@ -160,6 +165,13 @@ export class ArenaCore {
     if (k === 'door') { if (Math.hypot(x - 2.5, z - 2.5) > 1) { p.send(JSON.stringify({ t: 'f', x: r1(p.x), z: r1(p.z) })); return; } p.tpReady = t + 8000; }
     else { if (Math.hypot(x - p.x, z - p.z) > 80) { p.send(JSON.stringify({ t: 'f', x: r1(p.x), z: r1(p.z) })); return; } p.tpReady = t + 5000; }
     p.x = x; p.z = z; p.lastT = t; this.dirty = true;
+  }
+  // klien memiliki data medan; server tidak. NPC yang berdiri di air / jurang / area lompat dilaporkan lalu dihapus (dibatasi supaya tidak disalahgunakan)
+  onBadSpot(p, m, t) {
+    if (t < (p.nbReady || 0)) return; p.nbReady = t + 1200;
+    const n = this.npcs.get(String(m.id)); if (!n || Math.hypot(n.x - p.x, n.z - p.z) > RADIUS) return;
+    this.npcSpawnAt = Math.min(this.npcSpawnAt, this.now() + 1500);
+    this.dropNpc(n);
   }
   onState(p, m, t) {
     const x = num(m.x, p.x), z = num(m.z, p.z), y = num(m.y, p.y);
@@ -181,7 +193,16 @@ export class ArenaCore {
   }
 
   // ---- serangan ----
-  armor(q) { return STATS[q.char].armor; }
+  armor(q) { return STATS[q.char].armor * (q.npc ? 1 : lvArmor(q.level)); }
+  // XP milik server (anti-curang): naik level mempengaruhi kekuatan & ketahanan
+  gainXp(p, n) {
+    if (p.npc || !p.alive || p.level >= MAX_LEVEL || n <= 0) return;
+    p.xp += n; let up = 0;
+    while (p.level < MAX_LEVEL && p.xp >= xpNeed(p.level)) { p.xp -= xpNeed(p.level); p.level++; up++; }
+    if (p.level >= MAX_LEVEL) p.xp = 0;
+    if (up) { p.hp = Math.min(HP_MAX, p.hp + 35); this.dirty = true; }
+    try { p.send(JSON.stringify({ t: 'xp', lv: p.level, xp: Math.round(p.xp), up })); } catch (e) { /* abaikan */ }
+  }
   // lakukan kerusakan; mengembalikan true jika kena. ex = {kb, slow, slowMs}
   strikeTarget(a, q, dmg, t, kind, ex) {
     if (!q.alive || q.id === a.id || !q.ready) return false;
@@ -198,6 +219,7 @@ export class ArenaCore {
   }
   kill(q, a) {
     q.alive = false; a.kills++;
+    if (!a.npc) this.gainXp(a, q.npc ? Math.min(70, Math.round(q.maxHp * 0.35) + 8) : 30 + 8 * q.level);
     if (q.npc) { this.npcSpawnAt = Math.max(this.npcSpawnAt, this.now() + (q.pack ? 0 : NPC.respawnMs)); this.broadcast({ t: 'k', id: q.id, by: a.id, nm: q.name, bn: a.name }); this.dropNpc(q); return; }
     this.broadcast({ t: 'k', id: q.id, by: a.id, nm: q.name, bn: a.name });
   }
@@ -213,7 +235,7 @@ export class ArenaCore {
       if (d > 2.4 * sA + STATS[q.char].scale * LV1 * 0.9 + kit.reach + LAG_RANGE) continue;
       if (d > 1.3 && Math.abs(angDiff(a.yaw, faceYaw(dx, dz))) > BITE_ARC + LAG_ARC) continue;
       if (Math.abs(q.y - a.y) > 6) continue;                       // beda ketinggian jauh (tebing)
-      this.strikeTarget(a, q, kit.dmg, t, 'bite');
+      this.strikeTarget(a, q, kit.dmg * lvDmg(a.level), t, 'bite');
     }
     this.dirty = true;
   }
@@ -246,7 +268,7 @@ export class ArenaCore {
         const along = rx * dx + rz * dz, lat = Math.abs(rx * dz - rz * dx);
         hit = along >= -0.8 && along <= sk.len + LAG_RANGE && lat <= sk.width / 2 + body * 0.5 + LAG_RANGE * 0.6;
       } else if (sk.shape === 'cone') hit = dist <= sk.r + body * 0.5 + LAG_RANGE && (dist < 1.3 || Math.abs(angDiff(sp.yaw, faceYaw(rx, rz))) <= sk.arc + LAG_ARC);
-      if (hit) this.strikeTarget(a, q, sk.dmg, t, sk.id, { kb: sk.kb, slow: sk.slow, slowMs: sk.slowMs });
+      if (hit) this.strikeTarget(a, q, sk.dmg * lvDmg(a.level), t, sk.id, { kb: sk.kb, slow: sk.slow, slowMs: sk.slowMs });
     }
     this.dirty = true;
   }
@@ -399,6 +421,7 @@ export class ArenaCore {
     const ps = [...this.players.values()].filter((p) => p.ready && p.alive);
     const everyone = [...ps, ...this.npcs.values()];
     const rdt = Math.min(1, (ts - (this.lastRegen || ts)) / 1000); this.lastRegen = ts;
+    for (const p of ps) { if (p.alive && ts - (p.xpT || (p.xpT = ts)) >= 10000) { p.xpT = ts; this.gainXp(p, 3); } }     // bertahan hidup = XP perlahan
     for (const p of ps) if (p.hp < HP_MAX && ts - p.lastHurt > REGEN_DELAY) { p.hp = Math.min(HP_MAX, p.hp + REGEN_RATE * rdt); }
     for (const a of ps) {
       const list = [];

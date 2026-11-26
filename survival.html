@@ -252,7 +252,7 @@
     #stickZone {
       position: fixed;
       left: 0; bottom: 0;
-      width: 48vw; height: 72vh;
+      width: 48vw; height: min(72vh, calc(100vh - 190px));      /* tidak menutupi mini map & tulisan Online */
       pointer-events: none;
       touch-action: none;
     }
@@ -641,6 +641,7 @@
     .plRow b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .plRow small { color: #9fb6c4; font-size: 11px; white-space: nowrap; }
     #plistFoot { padding: 6px 12px 9px; font-size: 11px; color: #9fb6c4; border-top: 1px solid rgba(255, 255, 255, .08); }
+      #btnSprint.latch { box-shadow: 0 0 0 3px #ffe082, 0 0 16px 4px rgba(255, 214, 79, .75); filter: brightness(1.25); }
   </style>
 </head>
 <body>

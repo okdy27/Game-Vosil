@@ -1977,6 +1977,28 @@
   function presBeat() {
     try { fetch('/api/presence', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: presId }) }).then((r) => r.json()).then((j) => { if (j && j.ok) presN = j.n | 0; }).catch(() => {}); } catch (e) { /* abaikan */ }
   }
+
+  // ---------- Daftar pemain online (ketuk tulisan Online) ----------
+  const plistEl = $('plist');
+  function plistRender() {
+    if (!plistEl) return;
+    const box = $('plistBody'); if (!box) return;
+    const rows = [{ me: true, name: playerName() || 'Dino', char: save.char, level: player.level, d: 0 }];
+    if (arenaOn && typeof Arena !== 'undefined') for (const r of Arena.remotes.values()) { if (r.npc) continue; rows.push({ me: false, name: r.name || 'Dino', char: r.char, level: r.level || 1, d: r.seen && r.near ? Math.round(Math.hypot(r.x - player.x, r.z - player.z)) : -1 }); }
+    $('plistTitle').textContent = t('pl_title', { n: rows.length, m: arenaOn ? Arena.st.max : 1 });
+    const esc = (x) => String(x).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    box.innerHTML = rows.map((r) => '<div class="plRow' + (r.me ? ' me' : '') + '"><i></i><b>' + esc(r.name) + (r.me ? ' (' + esc(t('pl_you')) + ')' : '') + '</b><small>' + esc((PLAYABLES[r.char] || {}).name || '') + ' · Lv ' + (r.level | 0) + (r.d >= 0 && !r.me ? ' · ' + r.d + ' m' : '') + '</small></div>').join('');
+    const pg = arenaOn && Arena.st.rtt ? Math.round(Arena.st.rtt) + ' ms' : '';
+    $('plistFoot').textContent = arenaOn ? t('pl_foot', { p: pg }) : t('pl_solo');
+  }
+  let plistT = 0;
+  function plistOpen(on) { if (!plistEl) return; plistEl.classList.toggle('on', on); clearInterval(plistT); if (on) { plistRender(); plistT = setInterval(plistRender, 1500); } }
+  if (plistEl && onlineBox) {
+    onlineBox.addEventListener('pointerdown', (e) => e.stopPropagation());
+    onlineBox.addEventListener('click', (e) => { e.stopPropagation(); plistOpen(true); });
+    plistEl.addEventListener('pointerdown', (e) => e.stopPropagation());
+    plistEl.addEventListener('click', (e) => { e.stopPropagation(); if (e.target === plistEl || e.target.id === 'plistX') plistOpen(false); });
+  }
   function updateOnline(dt) {
     if (!onlineBox) return;
     if (dt) { presT -= dt; if (presT <= 0 && !(typeof document !== 'undefined' && document.hidden)) { presT = 40; presBeat(); } }
@@ -2959,7 +2981,7 @@
       }
       // pemain online lain: titik KUNING besar bercincin putih (koin = kotak kecil, area tantangan = berlian)
       if (arenaOn && typeof Arena !== 'undefined') for (const r of Arena.remotes.values()) {
-        if (!r.seen || !r.near) continue;
+        if (r.npc || !r.seen || !r.near) continue;
         let q = pt(r.x, r.z), edge = false;
         if (q[2] > MM_R) { const a = Math.atan2(q[1] - c, q[0] - c); q = [c + Math.cos(a) * rad, c + Math.sin(a) * rad]; edge = true; }
         ctx.globalAlpha = edge ? 0.75 : 1;

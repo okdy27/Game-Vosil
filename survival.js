@@ -1853,6 +1853,7 @@
     const v = remoteViews.get(m.to); if (!v) return;
     const r = Arena.remotes.get(m.to); if (!r) return;
     v.hitT = 0.18;                                                                  // lawan 'tersentak' sesaat
+    hitFeel(!!(m.k && m.k !== 'bite'));
     showDmg(r.x, r.y + 2.2 * v.sc + 0.4, r.z, '-' + Math.round(m.dmg), m.k === 'roar' ? 'crit' : 'hit', m.k === 'roar' ? 1.2 : 1);
     starBurst(r.x, r.y + 1.3 * v.sc, r.z, 5, 'hit');
     if (m.k && m.k !== 'bite') GameAudio.sfx.skillHit(m.k, m.dmg / 18, sndAt(r.x, r.z).pan); else GameAudio.sfx.hit();
@@ -2757,6 +2758,19 @@
       }
     }
   } catch (e) { starPool.length = 0; barPool.length = 0; }
+  // ---------- Rasa puas: hit-stop (jeda sekejap saat pukulan telak), kombo, kupu-kupu emas, bintang jatuh ----------
+  let hitStop = 0; const combo = { n: 0, t: 0 };
+  function hitFeel(big) {
+    if (state !== 'playing') return;
+    hitStop = Math.max(hitStop, big ? 0.09 : 0.035);
+    combo.n++; combo.t = 3;
+    if (combo.n >= 3) showDmg(player.x, (player.gy || 0) + player.y + 3.4 * scaleNow / 1.1, player.z, 'COMBO x' + combo.n, 'crit', 1 + Math.min(0.5, combo.n * 0.04));
+    if (combo.n % 5 === 0) {
+      starBurst(player.x, (player.gy || 0) + player.y + 1.6 * scaleNow / 1.1, player.z, 12, 'gain'); shake = Math.max(shake, 0.3);
+      try { GameAudio.sfx.record(); } catch (e) { /* abaikan */ }
+      if (!arenaOn) { runCoins += 3; addC(3); }
+    }
+  }
   function starBurst(x, y, z, n, cls) {
     if (!starPool.length) return;
     n = Math.max(2, Math.round(n * fxMul));
@@ -3688,7 +3702,7 @@
   }
 
   function damagePred(p, dmg, tag) {
-    p.hp -= dmg;
+    p.hp -= dmg; hitFeel(tag === 'counter' || tag === 'skill' || powerLeft > 0);
     p.flash = 1;
     const big = tag === 'counter' || powerLeft > 0;
     const label = (tag === 'counter' ? '💥' : tag === 'weak' ? '⚡' : '') + '-' + Math.round(dmg) + (powerLeft > 0 ? '!' : '');
@@ -3730,6 +3744,8 @@
     const xp = (p.def.timid || p.def.neutral) ? Math.round(p.def.hp * 0.18) : Math.round(p.def.hp * 0.45 + p.def.reward * 2);
     gainXp(xp);
     showDmg(p.x + 0.6, heightAt(p.x, p.z) + 1.6 * p.def.scale, p.z, '+' + xp + ' XP', 'xp', 1);
+    ringWave(p.x, p.z, 0.6, 4.5, 0.6, 1, 0.8, 0.3); hitStop = Math.max(hitStop, 0.1); shake = Math.max(shake, 0.35);
+    if (!arenaOn && rw && Math.random() < 0.15) { runCoins += rw; addC(rw); showDmg(p.x, heightAt(p.x, p.z) + 3 * p.def.scale, p.z, t('lucky', { n: rw }), 'gain', 1.3); starBurst(p.x, heightAt(p.x, p.z) + 1.8, p.z, 16, 'gain'); }
     GameAudio.sfx.smash();
     GameAudio.sfx.eat();
     toast((p.def.reward ? t('meat_coins', { n: p.def.reward }) : '') + t('meat', { n: p.def.food }), 2.2);
@@ -4869,6 +4885,49 @@
 
 
   // ---------- Suasana hidup tambahan: serbuk sari / daun halus yang jatuh di siang hari (pterosaurus & kunang-kunang sudah ada di atas) ----------
+  const bf = { m: null, t: 0, cd: 45, a: 0, x: 0, z: 0, ph: 0 };
+  { const wm = new THREE.MeshBasicMaterial({ color: 0xffd54f, side: THREE.DoubleSide, transparent: true, opacity: 0.95 });
+    const wg = new THREE.BufferGeometry(); wg.setAttribute('position', new THREE.BufferAttribute(new Float32Array([0, 0, 0.12, 0.5, 0.05, 0.2, 0, 0, -0.12, 0.5, 0.05, -0.2]), 3)); wg.setIndex([0, 1, 2, 2, 1, 3]);
+    const g = new THREE.Group(), l = new THREE.Mesh(wg, wm), r = new THREE.Mesh(wg, wm); r.scale.x = -1; g.add(l, r);
+    const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: softTex, color: 0xffe082, transparent: true, opacity: 0.8, depthWrite: false, blending: THREE.AdditiveBlending })); glow.scale.set(1.8, 1.8, 1); g.add(glow);
+    g.visible = false; scene.add(g); bf.m = g; bf.l = l; bf.r = r; }
+  const sstar = { m: new THREE.Mesh(new THREE.PlaneGeometry(9, 0.14), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending })), t: -1, cd: 20, x: 0, y: 0, z: 0, dx: 0, dz: 0 };
+  sstar.m.visible = false; scene.add(sstar.m);
+  function updateSurprise(dt) {
+    if (state !== 'playing') { bf.m.visible = false; bf.t = 0; sstar.m.visible = false; sstar.t = -1; combo.n = 0; return; }
+    if (combo.t > 0) { combo.t -= dt; if (combo.t <= 0) combo.n = 0; }
+    // kupu-kupu emas: muncul tiap 1-2 menit di siang hari, kejar & sentuh untuk hadiah
+    if (bf.t <= 0) {
+      bf.cd -= dt;
+      if (bf.cd <= 0 && !isNight && !swimming) { bf.cd = 60 + Math.random() * 60; bf.t = 28; bf.a = Math.random() * 6.283; bf.x = player.x + Math.cos(bf.a) * 14; bf.z = player.z + Math.sin(bf.a) * 14; bf.ph = Math.random() * 6; toast(t('bf_spawn'), 3.2); }
+    } else {
+      bf.t -= dt; bf.ph += dt;
+      const fl = Math.hypot(bf.x - player.x, bf.z - player.z) < 7 ? 1 : 0;
+      bf.a += dt * (0.9 + Math.sin(bf.ph * 1.7) * 0.6) + (fl ? Math.sin(bf.ph * 3) * dt : 0);
+      const sp = fl ? 5.5 : 2.2; bf.x += Math.cos(bf.a) * sp * dt; bf.z += Math.sin(bf.a) * sp * dt;
+      if (Math.hypot(bf.x - player.x, bf.z - player.z) > 34) { bf.x = player.x + Math.cos(bf.a + 3) * 16; bf.z = player.z + Math.sin(bf.a + 3) * 16; }
+      const y = heightAt(bf.x, bf.z) + 1.6 + Math.sin(bf.ph * 3) * 0.5;
+      bf.m.visible = true; bf.m.position.set(bf.x, y, bf.z); bf.m.rotation.y = -bf.a;
+      const f = Math.sin(bf.ph * 22) * 0.9; bf.l.rotation.z = f; bf.r.rotation.z = -f;
+      bf.m.scale.setScalar(bf.t < 3 ? Math.max(0.1, bf.t / 3) : 1);
+      if (Math.random() < dt * 12) emit(FX.small, bf.x, y, bf.z, (Math.random() - 0.5) * 0.5, -0.2, (Math.random() - 0.5) * 0.5, 0.9, 1, 0.85, 0.3, 0, 0.5, false);
+      if (Math.hypot(bf.x - player.x, bf.z - player.z) < 2.2 && Math.abs(y - ((player.gy || 0) + player.y + 1)) < 3) {
+        bf.t = 0; bf.m.visible = false; const n = 6 + player.level * 2;
+        if (arenaOn) toast(t('bf_got0'), 2.4); else { runCoins += n; addC(n); toast(t('bf_got', { n }), 2.6); }
+        starBurst(player.x, (player.gy || 0) + player.y + 1.6 * scaleNow / 1.1, player.z, 16, 'gain'); ringWave(player.x, player.z, 0.6, 5, 0.7, 1, 0.9, 0.3);
+        try { GameAudio.sfx.power(); } catch (e) { /* abaikan */ }
+      }
+      if (bf.t <= 0) bf.m.visible = false;
+    }
+    // bintang jatuh di langit malam
+    if (sstar.t < 0) {
+      if (isNight) { sstar.cd -= dt; if (sstar.cd <= 0) { sstar.cd = 25 + Math.random() * 30; sstar.t = 0; const a = Math.random() * 6.283; sstar.x = player.x + Math.cos(a) * 70; sstar.z = player.z + Math.sin(a) * 70; sstar.y = 55 + Math.random() * 20; const b = a + 1.57 + (Math.random() - 0.5); sstar.dx = Math.cos(b) * 60; sstar.dz = Math.sin(b) * 60; } }
+    } else {
+      sstar.t += dt; const k = sstar.t / 1.3;
+      if (k >= 1) { sstar.t = -1; sstar.m.visible = false; }
+      else { sstar.m.visible = true; sstar.m.position.set(sstar.x + sstar.dx * k, sstar.y - 25 * k, sstar.z + sstar.dz * k); sstar.m.lookAt(camera.position); sstar.m.rotation.z = Math.atan2(-25, Math.hypot(sstar.dx, sstar.dz)) * 0.3; sstar.m.material.opacity = Math.sin(k * Math.PI) * 0.9; }
+    }
+  }
   let ambAcc2 = 0;
   function updateDrift(dt) {
     if (state !== 'playing' || isNight) return;
@@ -4882,7 +4941,8 @@
   let last = performance.now();
   function frame(now) {
     const paused = bagOpen && state === 'playing';                 // tas dibuka saat bermain = game dijeda
-    const dt = paused ? 0.0001 : Math.min(0.05, Math.max(0, (now - last) / 1000));
+    const dt0 = paused ? 0.0001 : Math.min(0.05, Math.max(0, (now - last) / 1000));
+    const dt = hitStop > 0 ? dt0 * 0.12 : dt0; hitStop = Math.max(0, hitStop - dt0);       // hit-stop: dunia melambat sesaat saat pukulan telak
     last = now;
     clock += dt;
 
@@ -4892,7 +4952,7 @@
     animate(dt);
     updateRemotes(dt);
     updateRemoteRings(dt);
-    updateSlashes(dt); updateRingFx(dt); updateBubbles(dt); updateTele(dt); updateSkill(dt); updateFx(dt); updateBolts(dt); updateDrift(dt);
+    updateSlashes(dt); updateRingFx(dt); updateBubbles(dt); updateTele(dt); updateSkill(dt); updateFx(dt); updateBolts(dt); updateDrift(dt); updateSurprise(dt);
     updateOnline(dt);
     if (arenaOn && state === 'playing') Arena.send({ x: player.x, z: player.z, y: hero.root.position.y, yaw: player.yaw, vx: player.vx, vz: player.vz, atk: player.atkT, sw: swimming }, now);
     updateCamera(dt);

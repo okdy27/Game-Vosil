@@ -581,6 +581,24 @@
     #btnRoar { width: 76px; height: 76px; right: calc(var(--sr) + 140px); bottom: calc(var(--sb) + 96px); background: radial-gradient(circle at 35% 30%, rgba(255, 170, 60, .7), rgba(60, 20, 0, .85)); border-color: rgba(255, 210, 120, .95); }
     #btnJump { width: 70px; height: 70px; right: calc(var(--sr) + 146px); bottom: calc(var(--sb) + 14px); }
     #btnSprint { width: 64px; height: 64px; right: calc(var(--sr) + 40px); bottom: calc(var(--sb) + 142px); }
+
+    /* ---------- Halaman Pilih Dino: gaya kaca gelap sederhana ---------- */
+    #dexList, #dexInfo, #dexName, #dexBtns button, #dex .nameRow input { background: rgba(8, 16, 22, .80); border: 1px solid rgba(255, 255, 255, .16); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); text-shadow: none; }
+    #dexList, #dexInfo { border-radius: 14px; }
+    .dxi { border: 1px solid rgba(255, 255, 255, .12); background: rgba(255, 255, 255, .05); border-radius: 10px; }
+    .dxi.sel { border-color: #ffca28; background: rgba(255, 202, 40, .16); }
+    #dexName { left: 22vw; right: 38vw; width: auto; margin: 0 auto; max-width: 340px; bottom: calc(var(--sb, 0px) + 66px); padding: 7px 12px 8px; border-radius: 14px; }
+    #dexName b { font-size: clamp(15px, 4.4vh, 22px); letter-spacing: 1.5px; color: #fff; }
+    #dexName span, #dexName em { background: rgba(255, 255, 255, .08); border: 1px solid rgba(255, 255, 255, .2); color: #ffe082; font-weight: 700; padding: 1px 8px; border-radius: 999px; font-size: clamp(10px, 2.7vh, 12px); }
+    #dexName em { color: #b3e5fc; }
+    #dexPick { height: 44px; bottom: calc(var(--sb, 0px) + 12px); border-radius: 12px; letter-spacing: .5px; font-size: clamp(12px, 3.4vh, 16px); padding: 0 18px; }
+    #dex.home #dexPick { background: linear-gradient(#4caf50, #2e7d32); border: 1px solid rgba(255, 255, 255, .35); width: min(300px, 100%); box-shadow: 0 4px 14px rgba(0, 0, 0, .45); }
+    #dexBtns { bottom: calc(var(--sb, 0px) + 12px); gap: 8px; }
+    #dexBtns button { height: 44px; padding: 0 6px; border-radius: 12px; color: #fff; font-size: clamp(11px, 3vh, 14px); }
+    #dexBtns button:active { background: rgba(255, 255, 255, .22); }
+    #dex.home #dexList { bottom: calc(var(--sb, 0px) + 66px); }
+    #dex .nameRow input { color: #fff; border-radius: 10px; }
+    #dexHint { color: #fff; text-shadow: 0 1px 4px #000; opacity: .9; }
 </style>
 </head>
 <body>

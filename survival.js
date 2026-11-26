@@ -3163,7 +3163,7 @@
     poseCreature(pv.c, clock * 1.5, 0, false, 0, -1, clock);
     const r = dexStage.getBoundingClientRect(), w = Math.max(10, Math.round(r.width)), h = Math.max(10, Math.round(r.height));
     if (w !== pv.w || h !== pv.h) { pv.w = w; pv.h = h; pv.r.setSize(w, h, false); pv.cv.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:100%;display:block'; }
-    pv.cam.aspect = w / h; pv.cam.setViewOffset(w, h, Math.round(w * 0.08), 0, w, h); pv.cam.updateProjectionMatrix();       // dino sedikit ke kiri: tepat di antara dua panel
+    pv.cam.aspect = w / h; pv.cam.setViewOffset(w, h, Math.round(w * 0.08), Math.round(h * 0.12), w, h); pv.cam.updateProjectionMatrix();       // dino sedikit ke kiri: tepat di antara dua panel
     pv.cam.position.set(0, pv.cy + pv.dist * 0.18, pv.dist); pv.cam.lookAt(0, pv.cy * 0.9, 0);
     try { pv.r.render(pv.scene, pv.cam); } catch (e) { pv.fail = true; try { $('dexHint').textContent = t('dx_no3d'); } catch (x) { /* abaikan */ } }
   }

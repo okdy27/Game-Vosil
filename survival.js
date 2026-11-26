@@ -2355,6 +2355,7 @@
   const heroShadow = makeDynShadow();
   scene.add(heroShadow);
 
+  let dexInit = false, dexHome = false;
   let state = 'menu';               // 'menu' | 'playing' | 'over'
   let time = 0, runTime = 0, clock = 0;
   let runCoins = 0, kills = 0, overAt = 0, startPerf = 0;
@@ -2891,7 +2892,8 @@
   }
   function refreshPanels() {
     hudEl.classList.toggle('hidden', state !== 'playing');
-    menuEl.classList.toggle('hidden', state !== 'menu');
+    menuEl.classList.add('hidden');                          // halaman utama = layar Pilih Dino (lihat syncDex)
+    if (dexInit) syncDex();
     overEl.classList.toggle('hidden', state !== 'over');
     document.body.classList.toggle('playing', state === 'playing');
     $('menuTotal').textContent = save.coins;
@@ -3119,6 +3121,17 @@
   pv.scene.add(new THREE.HemisphereLight(0xffffff, 0x6a7a66, 0.95));
   { const d = new THREE.DirectionalLight(0xfff0d2, 0.9); d.position.set(-6, 10, 8); pv.scene.add(d); }
   { const disc = new THREE.Mesh(new THREE.CircleGeometry(1, 40), new THREE.MeshBasicMaterial({ color: 0x0e161c, transparent: true, opacity: 0.55 })); disc.rotation.x = -Math.PI / 2; disc.position.y = 0.01; disc.name = 'disc'; pv.scene.add(disc); }
+  // latar arena di balik dino: langit, tanah, pohon & batu (dibuat sekali, tetap sederhana)
+  pv.scene.background = new THREE.Color(0x9fd0e6); pv.scene.fog = new THREE.Fog(0x9fd0e6, 14, 46);
+  { const gm = new THREE.Mesh(new THREE.CircleGeometry(60, 48), new THREE.MeshLambertMaterial({ color: 0x6fae4f })); gm.rotation.x = -Math.PI / 2; gm.position.y = -0.02; pv.scene.add(gm);
+    let sd = 7; const rnd = () => { sd = (sd * 16807) % 2147483647; return sd / 2147483647; };
+    const kinds = ['broad', 'pine', 'broad', 'palm', 'pine'];
+    for (let i = 0; i < 26; i++) {
+      const a = Math.PI * (0.12 + 0.76 * (i / 25)) + (rnd() - 0.5) * 0.12, d = 9 + rnd() * 16;       // setengah lingkaran di belakang dino
+      const tr = makeTree(1.1 + rnd() * 0.9, kinds[i % kinds.length], i); tr.position.set(-Math.cos(a) * d * 1.25, 0, -Math.sin(a) * d); pv.scene.add(tr);
+    }
+    for (let i = 0; i < 7; i++) { const rk = makeRock(0.8 + rnd() * 1.2, false); const a = rnd() * Math.PI * 2, d = 6 + rnd() * 6; rk.position.set(Math.cos(a) * d, 0, -Math.abs(Math.sin(a)) * d - 3); pv.scene.add(rk); }
+  }
   const dexStage = $('dexStage');
   function pvEnsure() {
     if (pv.r) return true; if (pv.fail) return false;
@@ -3150,7 +3163,7 @@
     poseCreature(pv.c, clock * 1.5, 0, false, 0, -1, clock);
     const r = dexStage.getBoundingClientRect(), w = Math.max(10, Math.round(r.width)), h = Math.max(10, Math.round(r.height));
     if (w !== pv.w || h !== pv.h) { pv.w = w; pv.h = h; pv.r.setSize(w, h, false); pv.cv.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:100%;display:block'; }
-    pv.cam.aspect = w / h; pv.cam.updateProjectionMatrix();
+    pv.cam.aspect = w / h; pv.cam.setViewOffset(w, h, Math.round(w * 0.08), 0, w, h); pv.cam.updateProjectionMatrix();       // dino sedikit ke kiri: tepat di antara dua panel
     pv.cam.position.set(0, pv.cy + pv.dist * 0.18, pv.dist); pv.cam.lookAt(0, pv.cy * 0.9, 0);
     try { pv.r.render(pv.scene, pv.cam); } catch (e) { pv.fail = true; try { $('dexHint').textContent = t('dx_no3d'); } catch (x) { /* abaikan */ } }
   }
@@ -3172,18 +3185,34 @@
     body += '<p class="pro">' + t('dx_pro') + ': ' + esc(t('dx_pro_' + dexId)) + '</p><p class="con">' + t('dx_con') + ': ' + esc(t('dx_con_' + dexId)) + '</p><p class="cnt">' + t('dx_cnt') + ': ' + esc(t('dx_cnt_' + dexId)) + '</p>';
     $('dexInfo').innerHTML = stats + keys + '<div class="dxd">' + body + '</div>';
     const pk = $('dexPick'), on = save.char === dexId;
-    pk.textContent = t(on ? 'dx_picked' : 'dx_pick'); pk.classList.toggle('on', on);
+    pk.textContent = dexHome ? t('dx_start') : t(on ? 'dx_picked' : 'dx_pick'); pk.classList.toggle('on', on && !dexHome);
   }
   function dexPreview(id) { dexId = id; pv.idle = 0; pvBuild(id); renderDex(); }
   function openDex() { dexId = save.char in PLAYABLES ? save.char : 'vosil'; dexTab = 'sk'; pv.yaw = 0.6; pv.idle = 0; dexEl.classList.add('on'); pvBuild(dexId); renderDex(); }
+  function syncDex() {                                                  // layar Pilih Dino = halaman utama saat state 'menu'
+    if (state === 'menu') { if (!dexEl.classList.contains('on') || !dexHome) { dexHome = true; dexEl.classList.add('home'); openDex(); } }
+    else if (dexHome) { dexHome = false; dexEl.classList.remove('home'); closeDex(); }
+  }
+  let starting = false;
+  function welcomeThenStart(solo) {                                     // sambutan: logo memudar, dunia dimuat di baliknya
+    if (starting || state !== 'menu') return; starting = true; setTimeout(() => { starting = false; }, 3500);
+    const w = $('welcome'); if (w) { w.classList.remove('on'); void w.offsetWidth; w.classList.add('on'); setTimeout(() => w.classList.remove('on'), 3300); }
+    try { GameAudio.init(); } catch (e) { /* abaikan */ }
+    const ab = $('arenaBtn');
+    if (!solo && ab && !ab.classList.contains('hidden')) startArena().then(() => { if (state !== 'playing') startGame(); });
+    else startGame();
+  }
   function closeDex() { dexEl.classList.remove('on'); if (pv.c) { pv.scene.remove(pv.c.root); disposeTree(pv.c.root); pv.c = null; } }
   ['dexOpen', 'dexOpen2'].forEach((id) => { const b = $(id); if (b) { b.addEventListener('pointerdown', (e) => e.stopPropagation()); b.addEventListener('click', (e) => { e.stopPropagation(); GameAudio.init(); openDex(); }); } });
   dexEl.addEventListener('pointerdown', (e) => e.stopPropagation());
   dexEl.addEventListener('click', (e) => {
     e.stopPropagation();
     const el = e.target.closest ? e.target.closest('button') : null; if (!el) return;
+    autoFs();
     if (el.id === 'dexX') closeDex();
-    else if (el.id === 'dexPick') { selectChar(dexId); renderDex(); closeDex(); }
+    else if (el.id === 'dexPick') { selectChar(dexId); if (dexHome) { welcomeThenStart(false); } else { renderDex(); closeDex(); } }
+    else if (el.id === 'dexSolo') { selectChar(dexId); welcomeThenStart(true); }
+    else if (el.id === 'dexBag') { tabWanted = 'bag'; openBag(); }
     else if (el.dataset.d) dexPreview(el.dataset.d);
     else if (el.dataset.k) { dexTab = el.dataset.k; renderDex(); }
   });
@@ -3219,8 +3248,7 @@
   canvas.addEventListener('pointerdown', (e) => {
     e.preventDefault();
     GameAudio.init();
-    if (state === 'menu') startGame();
-    else if (state === 'over' && performance.now() - overAt > 700) startGame();
+    if (state === 'over' && performance.now() - overAt > 700) startGame();
   });
 
   window.addEventListener('keydown', (e) => {
@@ -3231,7 +3259,7 @@
     if (['arrowleft', 'arrowright', 'arrowup', 'arrowdown', ' ', 'enter'].includes(k)) e.preventDefault();
     GameAudio.init();
     if (state !== 'playing') {
-      if ((k === ' ' || k === 'enter') && (state === 'menu' || performance.now() - overAt > 700)) startGame();
+      if ((k === ' ' || k === 'enter') && state === 'over' && performance.now() - overAt > 700) startGame();
       return;
     }
     if (k === ' ') input.jump = true;
@@ -4786,6 +4814,7 @@
   pondCache.clear(); zoneReset();
   ensureChunks(true);
   applyDayNight();
+  dexInit = true;
   refreshPanels();
   requestAnimationFrame(frame);
 

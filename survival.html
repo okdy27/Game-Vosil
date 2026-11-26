@@ -537,7 +537,25 @@
       background: #101820;
       font-size: 16px; line-height: 1.6;
     }
-  </style>
+      #dex { background: #14202a; }
+    #dexStage { left: 0 !important; right: 0 !important; }
+    #dex .nameRow { position: absolute; left: calc(var(--sl, 0px) + 8px); right: calc(var(--sr, 0px) + 60px); top: calc(var(--st, 0px) + 6px); margin: 0; justify-content: flex-start; z-index: 2; }
+    #dex .nameRow label { display: none; }
+    #dex .nameRow input { width: min(30vw, 170px); padding: 5px 10px; font-size: 14px; }
+    #dexTitle { display: none; }
+    #dexList, #dexInfo { background: rgba(10, 18, 24, .72); border-radius: 14px; padding: 6px; }
+    #dexList { top: calc(var(--st, 0px) + 44px); }
+    #dex.home #dexX { display: none; }
+    #dexBtns { display: none; position: absolute; left: calc(var(--sl, 0px) + 8px); bottom: calc(var(--sb, 0px) + 8px); width: min(21vw, 190px); gap: 6px; }
+    #dex.home #dexBtns { display: flex; }
+    #dexBtns button { flex: 1; padding: 7px 4px; border: 0; border-radius: 14px; background: rgba(255,255,255,.16); color: #eceff1; font-weight: 800; font-size: clamp(10px, 2.8vh, 13px); cursor: pointer; }
+    #dex.home #dexList { bottom: calc(var(--sb, 0px) + 50px); }
+    #dex.home #dexPick { background: #43a047; color: #fff; box-shadow: 0 0 18px rgba(102,187,106,.6); width: 220px; }
+    #welcome { position: fixed; inset: 0; z-index: 45; display: none; flex-direction: column; align-items: center; justify-content: center; background: #0e1f1b; pointer-events: none; color: #ffe9a8; text-align: center; }
+    #welcome.on { display: flex; animation: splashBg 3.2s ease-in forwards; }
+    #welcome img { width: min(34vh, 40vw); height: auto; border-radius: 50%; animation: splashLogo 3.2s ease-in-out forwards; }
+    #welcome h2 { margin: 10px 0 0; letter-spacing: 3px; font-size: clamp(16px, 5vh, 28px); animation: splashLogo 3.2s ease-in-out forwards; }
+</style>
 </head>
 <body>
   <canvas id="game"></canvas>
@@ -592,13 +610,12 @@
   </div>
   </div>
 
-  <div id="dex"><div id="dexStage"></div><div id="dexHint" data-i18n="dx_rot">↔ Geser untuk memutar</div><div id="dexTitle" data-i18n="dx_title">PILIH DINO</div><button id="dexX" type="button" data-i18n="dx_close">✕</button><div id="dexList"></div><div id="dexName"></div><button id="dexPick" type="button"></button><div id="dexInfo"></div></div>
+  <div id="dex"><div id="dexStage"></div><div id="dexHint" data-i18n="dx_rot">↔ Geser untuk memutar</div><div id="dexTitle" data-i18n="dx_title">PILIH DINO</div><div class="nameRow"><label for="nameIn" data-i18n="nm_label">Nama pemain</label><input id="nameIn" type="text" maxlength="14" autocomplete="off" autocapitalize="words" spellcheck="false" data-i18n-ph="nm_ph" placeholder="Nama (maks 14)"></div><button id="dexX" type="button" data-i18n="dx_close">✕</button><div id="dexBtns"><button id="dexBag" type="button" data-i18n="dx_bag">🎒 Tas</button><button id="dexSolo" type="button" data-i18n="dx_solo">Main solo</button></div><div id="dexList"></div><div id="dexName"></div><button id="dexPick" type="button"></button><div id="dexInfo"></div></div>
 
   <div id="menu" class="panel">
     <img class="menuLogo" src="vosil-logo-256.png" alt="Vosil">
     <h1>VOSIL SURVIVAL</h1>
     <p class="lead" data-i18n="menu_lead">Jelajahi lembah prasejarah, bertahan hidup, kumpulkan koin</p>
-    <div class="nameRow"><label for="nameIn" data-i18n="nm_label">Nama pemain</label><input id="nameIn" type="text" maxlength="14" autocomplete="off" autocapitalize="words" spellcheck="false" data-i18n-ph="nm_ph" placeholder="Nama (maks 14)"></div>
     <div id="charRow"></div>
     <p id="charInfo"></p>
     <button id="dexOpen" class="bBtn" type="button" style="margin:4px auto 6px;background:#ffb300;color:#3e2723;font-size:14px;padding:9px 16px" data-i18n="dx_open">🦖 Pilih Dino & Skill</button>
@@ -613,7 +630,7 @@
       <li data-i18n="help8">💧 Kolam: isi haus</li>
     </ul>
     <p class="stat"><span data-i18n="total_coins">Total koin</span>: <b id="menuTotal">0</b> &nbsp;|&nbsp; <span data-i18n="record">Rekor</span>: <b id="menuBest">0</b> <span data-i18n="days_unit">hari</span></p>
-    <p class="cta" data-i18n="cta_start">Ketuk untuk mulai</p>
+    
     <!-- Tombol ini akan diaktifkan di tahap wallet + smart contract -->
     <button id="bagBtn" class="bagOpen" type="button" data-i18n="bag_btn">🎒 Tas &amp; Tukar Poin</button>
     <button id="arenaBtn" class="bagOpen hidden" type="button" data-i18n="ar_btn" style="background:#5c6bc0;color:#fff">🌐 Arena online (uji)</button>
@@ -645,6 +662,7 @@
     </div>
   </div></div>
 
+  <div id="welcome"><img src="vosil-logo-512.png" alt="Vosil"><h2 data-i18n="welcome">Welcome Vosil Survival</h2></div>
   <div id="splash"><img src="vosil-logo-512.png" alt="Vosil"></div>
 
   <div id="rotate">

@@ -69,7 +69,23 @@ const REGEN_DELAY = 6000, REGEN_RATE = 1.2;   // nyawa dipulihkan SERVER: setela
 
 const num = (v, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
 const r1 = (v) => Math.round(v * 10) / 10;
-const cleanName = (s) => String(s || '').replace(/[^\p{L}\p{N} _.-]/gu, '').trim().slice(0, 14) || 'Dino';
+// ---- filter nama pemain (kata kasar, pelecehan, dan peniru admin) ----
+const BAD_LONG = 'anjing anjrit bangsat bajingan brengsek keparat kampret sialan kontol memek ngentot entot jembut itil pantek jancok jancuk cuk pelacur lonte jablay bokep tolol goblok idiot  babi bangke tai kimak perek ngewe sange coli fuck fuk shit bitch cunt dick cock pussy nigger nigga fag faggot retard rape rapist whore slut bastard asshole nazi hitler porn sex'.split(' ');
+const BAD_SHORT = ['cuk', 'tai', 'sex', 'dick', 'cock', 'fuk', 'itil', 'coli', 'sange', 'ngewe', 'babi', 'nazi', 'porn'];       // kata pendek: hanya bila berdiri sendiri
+const IMPERSON = 'admin moderator official staff vosilteam'.split(' ');
+export function nameAllowed(name) {
+  const raw = String(name || '').toLowerCase();
+  const leet = raw.replace(/[@]/g, 'a').replace(/[$]/g, 's').replace(/0/g, 'o').replace(/1/g, 'i').replace(/3/g, 'e').replace(/4/g, 'a').replace(/5/g, 's').replace(/7/g, 't');
+  const tight = leet.replace(/[^a-z]/g, '').replace(/(.)\1+/g, '$1');                 // tanpa spasi/simbol, huruf berulang diringkas
+  const words = leet.split(/[^a-z]+/).filter(Boolean).map((w) => w.replace(/(.)\1+/g, '$1'));
+  for (const b of BAD_LONG) { const bb = b.replace(/(.)\1+/g, '$1'); if (bb.length >= 5 && tight.includes(bb)) return false; if (words.includes(bb)) return false; }
+  for (const b of ['fuck', 'shit', 'cunt', 'anjing', 'ngentot']) if (tight.includes(b.replace(/(.)\1+/g, '$1'))) return false;
+  for (const b of BAD_SHORT) if (words.includes(b.replace(/(.)\1+/g, '$1'))) return false;
+  for (const w of IMPERSON) if (tight.includes(w.replace(/[^a-z]/g, ''))) return false;
+  return true;
+}
+const cleanName0 = (s) => String(s || '').replace(/[^\p{L}\p{N} _.-]/gu, '').trim().slice(0, 14) || 'Dino';
+const cleanName = (s) => { const n = cleanName0(s); return nameAllowed(n) ? n : 'Dino'; };
 const faceYaw = (dx, dz) => Math.atan2(-dx, -dz);                   // model menghadap -Z (sama dengan game)
 const angDiff = (a, b) => ((b - a + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
 

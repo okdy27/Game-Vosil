@@ -621,6 +621,10 @@
     #toast.show { opacity: .88; }
     #power { display: none !important; }
     #onlineBox { opacity: .75; font-size: 11px; }
+
+    #betaTag { position: absolute; z-index: 3; top: calc(var(--st, 0px) + 10px); right: calc(var(--sr, 0px) + 12px); padding: 3px 10px; border-radius: 999px; background: rgba(8, 16, 22, .8); border: 1px solid rgba(255, 255, 255, .2); color: #ffab91; font-weight: 800; font-size: 11px; letter-spacing: 1px; }
+    #betaTag a { color: #ffe082; text-decoration: none; letter-spacing: 0; }
+    #rotTerms { margin-top: 6px; opacity: .85; }
 </style>
 </head>
 <body>
@@ -676,7 +680,7 @@
   </div>
   </div>
 
-  <div id="dex"><div id="dexStage"></div><div id="dexHint" data-i18n="dx_rot">↔ Geser untuk memutar</div><div id="dexTitle" data-i18n="dx_title">PILIH DINO</div><div class="nameRow"><label for="nameIn" data-i18n="nm_label">Nama pemain</label><input id="nameIn" type="text" maxlength="14" autocomplete="off" autocapitalize="words" spellcheck="false" data-i18n-ph="nm_ph" placeholder="Nama (maks 14)"></div><button id="dexX" type="button" data-i18n="dx_close">✕</button><div id="dexBtns"><button id="dexBag" type="button" data-i18n="dx_bag">🎒 Tas</button><button id="dexSolo" type="button" data-i18n="dx_solo">Main solo</button></div><div id="dexList"></div><div id="dexName"></div><button id="dexPick" type="button"></button><div id="dexInfo"></div></div>
+  <div id="dex"><span id="betaTag">BETA · <a href="aturan.html" target="_blank" rel="noopener" data-i18n="terms_link">Aturan</a></span><div id="dexStage"></div><div id="dexHint" data-i18n="dx_rot">↔ Geser untuk memutar</div><div id="dexTitle" data-i18n="dx_title">PILIH DINO</div><div class="nameRow"><label for="nameIn" data-i18n="nm_label">Nama pemain</label><input id="nameIn" type="text" maxlength="14" autocomplete="off" autocapitalize="words" spellcheck="false" data-i18n-ph="nm_ph" placeholder="Nama (maks 14)"></div><button id="dexX" type="button" data-i18n="dx_close">✕</button><div id="dexBtns"><button id="dexBag" type="button" data-i18n="dx_bag">🎒 Tas</button><button id="dexSolo" type="button" data-i18n="dx_solo">Main solo</button></div><div id="dexList"></div><div id="dexName"></div><button id="dexPick" type="button"></button><div id="dexInfo"></div></div>
 
   <div id="menu" class="panel">
     <img class="menuLogo" src="vosil-logo-256.png" alt="Vosil">
@@ -722,6 +726,7 @@
       <button id="sfxBtn" class="ibtn" type="button" data-on="🔊 Efek suara: ON" data-off="🔊 Efek suara: OFF">🔊 Efek suara</button>
       <button id="qBtn" class="ibtn" type="button">◪ Kualitas grafis</button>
       <button id="nbBtn" class="ibtn" type="button">🌙 Kecerahan malam</button>
+      <a id="termsBtn" class="ibtn" href="aturan.html" target="_blank" rel="noopener" data-i18n="terms_set" style="text-decoration:none;text-align:center">📜 Aturan &amp; penafian</a>
       <button id="langBtn" class="ibtn" type="button">🌐 Bahasa</button>
       <button id="fsBtn" class="ibtn" type="button" data-i18n="fs_btn">⛶ Layar penuh</button>
       <button id="exitBtn" class="ibtn" type="button" data-i18n="ex_btn" style="background:#8d2f2f;color:#fff">🚪 Keluar dari game</button>
@@ -734,10 +739,11 @@
 
   <div id="rotate">
     <img id="rotLogo" src="vosil-logo-256.png" alt="Vosil" style="width:min(30vh,34vw);height:auto;border-radius:50%;box-shadow:0 0 24px rgba(255,255,255,.2)">
-    <h1 id="rotH" style="margin:4px 0 0;letter-spacing:3px;font-size:clamp(20px,6vh,32px);color:#ffe9a8">VOSIL SURVIVAL</h1>
+    <h1 id="rotH" style="margin:4px 0 0;letter-spacing:3px;font-size:clamp(20px,6vh,32px);color:#ffe9a8">VOSIL SURVIVAL <sup style="font-size:.4em;letter-spacing:1px;background:#ff7043;color:#fff;border-radius:6px;padding:1px 6px;vertical-align:middle">BETA</sup></h1>
     <div id="rotTitle" data-i18n="rot_title">Dimainkan horizontal · layar penuh</div>
     <b id="rotPhone" style="display:none">📱</b>
     <button id="rotBtn" type="button" data-i18n="rot_btn">▶ MAIN</button>
+    <small id="rotTerms"><span data-i18n="terms_gate">Dengan menekan MAIN, kamu menyetujui</span> <a href="aturan.html" target="_blank" rel="noopener" data-i18n="terms_link" style="color:#ffd54f">Aturan &amp; penafian</a></small>
     <small id="rotNote" data-i18n="rot_note">Layar akan otomatis penuh dan horizontal. Jika tidak berputar sendiri, putar HP secara manual.</small>
   </div>
   <div id="lvFlash"></div>

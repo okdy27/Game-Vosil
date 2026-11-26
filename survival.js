@@ -1828,11 +1828,27 @@
   }
   // nama pemain pilihan sendiri (disimpan di perangkat, maks 14 huruf/angka/spasi/_-.)
   const NAME_KEY = 'vosil_pname_v1';
+// ---- filter nama pemain (kata kasar, pelecehan, dan peniru admin) ----
+  const BAD_LONG = 'anjing anjrit bangsat bajingan brengsek keparat kampret sialan kontol memek ngentot entot jembut itil pantek jancok jancuk cuk pelacur lonte jablay bokep tolol goblok idiot  babi bangke tai kimak perek ngewe sange coli fuck fuk shit bitch cunt dick cock pussy nigger nigga fag faggot retard rape rapist whore slut bastard asshole nazi hitler porn sex'.split(' ');
+  const BAD_SHORT = ['cuk', 'tai', 'sex', 'dick', 'cock', 'fuk', 'itil', 'coli', 'sange', 'ngewe', 'babi', 'nazi', 'porn'];       // kata pendek: hanya bila berdiri sendiri
+  const IMPERSON = 'admin moderator official staff vosilteam'.split(' ');
+  function nameAllowed(name) {
+    const raw = String(name || '').toLowerCase();
+    const leet = raw.replace(/[@]/g, 'a').replace(/[$]/g, 's').replace(/0/g, 'o').replace(/1/g, 'i').replace(/3/g, 'e').replace(/4/g, 'a').replace(/5/g, 's').replace(/7/g, 't');
+    const tight = leet.replace(/[^a-z]/g, '').replace(/(.)\1+/g, '$1');                 // tanpa spasi/simbol, huruf berulang diringkas
+    const words = leet.split(/[^a-z]+/).filter(Boolean).map((w) => w.replace(/(.)\1+/g, '$1'));
+    for (const b of BAD_LONG) { const bb = b.replace(/(.)\1+/g, '$1'); if (bb.length >= 5 && tight.includes(bb)) return false; if (words.includes(bb)) return false; }
+    for (const b of ['fuck', 'shit', 'cunt', 'anjing', 'ngentot']) if (tight.includes(b.replace(/(.)\1+/g, '$1'))) return false;
+    for (const b of BAD_SHORT) if (words.includes(b.replace(/(.)\1+/g, '$1'))) return false;
+    for (const w of IMPERSON) if (tight.includes(w.replace(/[^a-z]/g, ''))) return false;
+    return true;
+  }
+  // (daftar kata sama dengan server/arena-room.js; server tetap memeriksa ulang)
   const cleanPName = (s) => String(s || '').replace(/[^\p{L}\p{N} _.-]/gu, '').replace(/\s+/g, ' ').trim().slice(0, 14);
-  let pname = ''; try { pname = cleanPName(localStorage.getItem(NAME_KEY)); } catch (e) { /* abaikan */ }
+  let pname = ''; try { pname = cleanPName(localStorage.getItem(NAME_KEY)); if (!nameAllowed(pname)) pname = ''; } catch (e) { /* abaikan */ }
   const autoName = 'Dino' + Math.floor(Math.random() * 900 + 100);
-  const playerName = () => pname || (Wallet.address ? Wallet.address.slice(2, 6) + Wallet.address.slice(-3) : autoName);
-  { const inp = $('nameIn'); if (inp) { inp.value = pname; inp.addEventListener('input', () => { pname = cleanPName(inp.value); try { localStorage.setItem(NAME_KEY, pname); } catch (e) { /* abaikan */ } }); inp.addEventListener('blur', () => { inp.value = pname; }); ['pointerdown', 'touchstart', 'keydown'].forEach((ev) => inp.addEventListener(ev, (e) => e.stopPropagation())); } }
+  const playerName = () => (pname && nameAllowed(pname) ? pname : '') || (Wallet.address ? Wallet.address.slice(2, 6) + Wallet.address.slice(-3) : autoName);
+  { const inp = $('nameIn'); if (inp) { inp.value = pname; inp.addEventListener('input', () => { pname = cleanPName(inp.value); try { localStorage.setItem(NAME_KEY, pname); } catch (e) { /* abaikan */ } }); inp.addEventListener('blur', () => { if (pname && !nameAllowed(pname)) { pname = ''; try { localStorage.setItem(NAME_KEY, ''); } catch (e) { /* abaikan */ } toast(t('nm_bad'), 2.6); } inp.value = pname; }); ['pointerdown', 'touchstart', 'keydown'].forEach((ev) => inp.addEventListener(ev, (e) => e.stopPropagation())); } }
   const pName = (id) => { const r = Arena.remotes.get(id); return r ? r.name : 'Dino'; };
   const remoteRings = [];
   function pvpHurt(m) {                                                            // aku terkena serangan pemain lain (server yang memutuskan)

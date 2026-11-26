@@ -569,7 +569,7 @@
     #bagTop::before { content: '⚙'; font-size: 19px; line-height: 32px; }
     #emoteBar { top: calc(var(--st) + 16px + 44px); right: auto; left: calc(var(--sl) + 14px + clamp(88px, 27vh, 120px) + 10px); opacity: 1; }
     #emoteBar button { width: 36px; height: 36px; border-color: rgba(160, 215, 245, .7); background: rgba(10, 25, 38, .6); }
-    #stats { top: calc(var(--st) + 10px); right: calc(var(--sr) + 14px); display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
+    #stats { top: calc(var(--st) + 10px); right: calc(var(--sr) + 14px); display: flex; pointer-events: none; flex-direction: column; align-items: flex-end; gap: 3px; }
     #coinBox { padding: 4px 14px 4px 10px; border: 2px solid #c9a24a; border-radius: 8px; background: linear-gradient(#3b2d10, #241a08); box-shadow: 0 2px 8px rgba(0, 0, 0, .5); }
     #stickHint, #stickBase { border: 2px solid rgba(190, 225, 250, .55); background: radial-gradient(circle, rgba(255, 255, 255, .05) 0 45%, rgba(120, 190, 235, .16) 100%); box-shadow: inset 0 0 14px rgba(120, 190, 235, .25); }
     #stickHint { width: 132px; height: 132px; left: calc(var(--sl) + 40px); bottom: calc(var(--sb) + 30px); }
@@ -721,6 +721,7 @@
       <button id="musicBtn" class="ibtn" type="button" data-on="🎵 Musik: ON" data-off="🎵 Musik: OFF">🎵 Musik</button>
       <button id="sfxBtn" class="ibtn" type="button" data-on="🔊 Efek suara: ON" data-off="🔊 Efek suara: OFF">🔊 Efek suara</button>
       <button id="qBtn" class="ibtn" type="button">◪ Kualitas grafis</button>
+      <button id="nbBtn" class="ibtn" type="button">🌙 Kecerahan malam</button>
       <button id="langBtn" class="ibtn" type="button">🌐 Bahasa</button>
       <button id="fsBtn" class="ibtn" type="button" data-i18n="fs_btn">⛶ Layar penuh</button>
       <button id="exitBtn" class="ibtn" type="button" data-i18n="ex_btn" style="background:#8d2f2f;color:#fff">🚪 Keluar dari game</button>

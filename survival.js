@@ -2998,23 +2998,25 @@
   }
 
   // ---------- Siklus siang-malam ----------
-  const SKY_DAY = [0.62, 0.85, 0.96], SKY_NIGHT = [0.03, 0.06, 0.16], SKY_DUSK = [0.95, 0.58, 0.38];
+  const SKY_DAY = [0.62, 0.85, 0.96], SKY_NIGHT = [0.03, 0.06, 0.16], SKY_NIGHT_LIT = [0.26, 0.34, 0.55], SKY_DUSK = [0.95, 0.58, 0.38];
+  const nightBoost = () => [0.3, 0.65, 1][save.nb === undefined ? 1 : save.nb] || 0.65;      // 0 = Normal, 1 = Terang (bawaan), 2 = Sangat terang (di luar ruangan)
   function applyDayNight() {
     const ang = (runTime / DAY_LEN) * Math.PI * 2 + 0.3;
     const raw = Math.sin(ang);
     const k = smooth(-0.35, 0.2, raw);                       // 0 = malam, 1 = siang
     const dusk = clamp(1 - Math.abs(raw) * 3.2, 0, 1) * 0.5;
-    const rgb = [0, 1, 2].map((i) => lerp(lerp(SKY_NIGHT[i], SKY_DAY[i], k), SKY_DUSK[i], dusk));
+    const nb = nightBoost();
+    const rgb = [0, 1, 2].map((i) => lerp(lerp(lerp(SKY_NIGHT[i], SKY_NIGHT_LIT[i], nb), SKY_DAY[i], k), SKY_DUSK[i], dusk));
     scene.background.setRGB(rgb[0], rgb[1], rgb[2]);
     scene.fog.color.setRGB(rgb[0], rgb[1], rgb[2]);
-    scene.fog.near = lerp(14, 26, k) * fogMul;              // malam: pandangan lebih pendek = lebih tegang
-    scene.fog.far = lerp(50, 68, k) * fogMul;               // lebih pendek dari area yang dimuat (60 m) supaya tepi dunia tersamar
+    scene.fog.near = lerp(14 + 14 * nb, 26, k) * fogMul;              // malam: pandangan lebih pendek = lebih tegang
+    scene.fog.far = lerp(50 + 12 * nb, 68, k) * fogMul;               // lebih pendek dari area yang dimuat (60 m) supaya tepi dunia tersamar
     mPond.color.setRGB(lerp(0.06, 0.25, k), lerp(0.16, 0.66, k), lerp(0.3, 0.88, k));   // air gelap saat malam
     mDeep.opacity = lerp(0.7, 0.55, k);
     mGlint.opacity = 0.12 + 0.4 * k;
     mShadow.opacity = 0.14 + 0.42 * k;               // siang: bayangan tegas, malam: nyaris tak terlihat
-    hemi.intensity = 0.3 + 0.42 * k;
-    sunLight.intensity = 0.12 + 0.95 * k;
+    hemi.intensity = lerp(0.3 + 0.62 * nb, 0.72, k);        // malam: cahaya bulan lembut, makin terang bila pengaturan dinaikkan
+    sunLight.intensity = lerp(0.12 + 0.5 * nb, 1.07, k);
     isNight = k < 0.4;
     try { GameAudio.nightAmbience(isNight && state === 'playing'); } catch (e) { /* abaikan */ }
   }
@@ -3424,6 +3426,15 @@
     qBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
     lbl();
   }
+  const nbBtn = $('nbBtn');
+  if (nbBtn) {
+    const nbName = () => t(['nb_0', 'nb_1', 'nb_2'][save.nb === undefined ? 1 : save.nb]);
+    const nlbl = () => { nbBtn.textContent = t('nb_lbl', { q: nbName() }); };
+    L.onChange(nlbl);
+    nbBtn.addEventListener('click', (e) => { e.stopPropagation(); save.nb = ((save.nb === undefined ? 1 : save.nb) + 1) % 3; writeSave(); nlbl(); applyDayNight(); toast(t('nb_lbl', { q: nbName() }), 1.6); });
+    nbBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
+    nlbl();
+  }
   if (!QUAL[save.q]) save.q = 'mid';
   applyQuality();
 
@@ -3632,6 +3643,11 @@
     if (state === 'playing') { input.sprint = false; input.attack = false; input.jump = false; for (const k in keys) keys[k] = false; }
     bagOpen = true; showTab(tabWanted); renderBag(); acctPrefetch(); bagEl.classList.remove('hidden'); }
   function closeBag() { bagOpen = false; bagEl.classList.add('hidden'); }
+  if (coinBox) {                                                  // ketuk koin/poin di kanan atas -> halaman Tukar
+    coinBox.style.pointerEvents = 'auto'; coinBox.style.cursor = 'pointer';
+    coinBox.addEventListener('pointerdown', (e) => e.stopPropagation());
+    coinBox.addEventListener('click', (e) => { e.stopPropagation(); GameAudio.init(); tabWanted = 'bag'; openBag(); });
+  }
   ['bagBtn', 'bagBtn2', 'bagTop'].forEach((id) => {
     const b = $(id); if (!b) return;
     b.addEventListener('pointerdown', (e) => e.stopPropagation());
@@ -3745,7 +3761,7 @@
     gainXp(xp);
     showDmg(p.x + 0.6, heightAt(p.x, p.z) + 1.6 * p.def.scale, p.z, '+' + xp + ' XP', 'xp', 1);
     ringWave(p.x, p.z, 0.6, 4.5, 0.6, 1, 0.8, 0.3); hitStop = Math.max(hitStop, 0.1); shake = Math.max(shake, 0.35);
-    if (!arenaOn && rw && Math.random() < 0.15) { runCoins += rw; addC(rw); showDmg(p.x, heightAt(p.x, p.z) + 3 * p.def.scale, p.z, t('lucky', { n: rw }), 'gain', 1.3); starBurst(p.x, heightAt(p.x, p.z) + 1.8, p.z, 16, 'gain'); }
+    if (!arenaOn && rw && kills > 0 && kills % 6 === 0) { runCoins += rw; addC(rw); showDmg(p.x, heightAt(p.x, p.z) + 3 * p.def.scale, p.z, t('lucky', { n: rw }), 'gain', 1.3); starBurst(p.x, heightAt(p.x, p.z) + 1.8, p.z, 16, 'gain'); }
     GameAudio.sfx.smash();
     GameAudio.sfx.eat();
     toast((p.def.reward ? t('meat_coins', { n: p.def.reward }) : '') + t('meat', { n: p.def.food }), 2.2);

@@ -25,6 +25,9 @@ export function settings(env) {
   return {
     ptPerVos: n('PT_PER_VOS', 1000),
     earnCapDay: n('EARN_CAP_DAY', 1000),            // batas poin yang boleh masuk ke akun per dompet per hari (= 1 VOS)
+    earnShare: n('EARN_SHARE', 0.6),               // bagian kuota harian untuk hadiah main (harian 35% + arena 25% dari jatah)
+    earnCapMin: n('EARN_CAP_MIN', 200),            // batas harian per dompet paling kecil saat pemain sangat ramai (poin)
+    arenaShare: n('ARENA_SHARE', 0.4),             // porsi arena maksimal dari batas harian per dompet
     earnPerMin: n('EARN_PTS_PER_MIN', 30),          // poin yang boleh masuk per menit waktu main yang diamati server
     redeemMin: n('REDEEM_MIN', 5000),               // minimum penukaran (poin)
     redeemMaxDay: n('REDEEM_MAX_DAY', 5000),        // maksimum penukaran per dompet per hari (poin)
@@ -104,13 +107,20 @@ export function createApp(deps) {
   }
 
   // ---- hitungan hari ini ----
+  // batas harian dinamis per dompet: anggaran poin hari ini dibagi jumlah dompet aktif hari ini (tidak melebihi EARN_CAP_DAY, tidak kurang dari EARN_CAP_MIN)
+  async function dynamicCap(env, day) {
+    const S = settings(env);
+    const a = await first(env, 'SELECT COUNT(*) AS n FROM beats WHERE day = ?', day);
+    const active = Math.max(1, (a && a.n) || 1), budget = S.dailyQuotaVos * S.ptPerVos * S.earnShare;
+    return Math.max(Math.min(S.earnCapMin, S.earnCapDay), Math.min(S.earnCapDay, Math.floor(budget / active)));
+  }
   async function todayState(env, acc) {
-    const S = settings(env), day = dayKey(env);
+    const S = settings(env), day = dayKey(env), capNow = await dynamicCap(env, day);
     const b = await first(env, 'SELECT n FROM beats WHERE address = ? AND day = ?', acc.address, day);
     const c = await first(env, 'SELECT COALESCE(SUM(points),0) AS s FROM credits WHERE address = ? AND day = ?', acc.address, day);
-    const allowance = Math.min(S.earnCapDay, Math.floor(((b && b.n) || 0) * S.earnPerMin));
+    const allowance = Math.min(capNow, Math.floor(((b && b.n) || 0) * S.earnPerMin));
     const credited = (c && c.s) || 0;
-    return { day, cap: S.earnCapDay, allowance, credited, available: Math.max(0, allowance - credited) };
+    return { day, cap: capNow, arenaCap: Math.floor(capNow * S.arenaShare), allowance, credited, available: Math.max(0, allowance - credited) };
   }
   async function queueInfo(env) {
     const S = settings(env), day = dayKey(env);

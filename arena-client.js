@@ -84,7 +84,7 @@ const Arena = (() => {
   // kirim posisi sendiri, paling sering 10 kali per detik
   function send(p, now) {
     if (!st.on || !st.ws || st.ws.readyState !== 1) return;
-    if (now - st.lastSend < 50) return;
+    if (now - st.lastSend < 80) return;
     const key = [p.x.toFixed(2), p.z.toFixed(2), p.y.toFixed(2), p.yaw.toFixed(2), p.vx.toFixed(1), p.vz.toFixed(1), (p.atk === undefined ? -1 : p.atk).toFixed(2), p.sw ? 1 : 0, 0].join('|');
     if (key === st.lastKey && now - st.lastSend < 1000) return;       // tidak ada perubahan: hemat kuota (cukup 1x per detik)
     st.lastKey = key;

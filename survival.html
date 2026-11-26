@@ -599,6 +599,22 @@
     #dex.home #dexList { bottom: calc(var(--sb, 0px) + 66px); }
     #dex .nameRow input { color: #fff; border-radius: 10px; }
     #dexHint { color: #fff; text-shadow: 0 1px 4px #000; opacity: .9; }
+
+    /* ---------- Perbaikan tabrakan (v2) ---------- */
+    #dex { --dl: min(21vw, 190px); --di: min(36vw, 330px); }
+    #bag { z-index: 37; background: rgba(4, 10, 14, .78); }
+    #dexList, #dexBtns { width: var(--dl); }
+    #dexInfo { width: var(--di); }
+    #dexName, #dexPick { left: calc(var(--sl, 0px) + 18px + var(--dl)); right: calc(var(--sr, 0px) + 18px + var(--di)); width: auto; max-width: none; margin: 0; }
+    #dexName { bottom: calc(var(--sb, 0px) + 66px); }
+    #dex.home #dexPick { width: auto; white-space: nowrap; font-size: clamp(11px, 3.1vh, 15px); padding: 0 8px; }
+    #dexBtns { box-sizing: border-box; }
+    #dexInfo { bottom: calc(var(--sb, 0px) + 12px); top: calc(var(--st, 0px) + 48px); }
+    #dex.home #dexList { bottom: calc(var(--sb, 0px) + 68px); }
+    #dexHint { left: calc(var(--sl, 0px) + 18px + var(--dl)); right: calc(var(--sr, 0px) + 18px + var(--di)); }
+    #topBtns { left: calc(var(--sl) + 14px + clamp(88px, 27vh, 120px) + 24px); }
+    #emoteBar { left: auto; right: calc(var(--sr) + 14px); top: calc(var(--st) + 100px); flex-direction: row; }
+    #dexBtns button { white-space: nowrap; font-size: clamp(10px, 2.6vh, 13px); }
 </style>
 </head>
 <body>

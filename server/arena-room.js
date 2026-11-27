@@ -295,7 +295,7 @@ export class ArenaCore {
       const d = (o.d !== undefined ? o.d : NPC.spawnMin + this.rnd() * (NPC.spawnMax - NPC.spawnMin)) + (a > 5 ? (a - 5) * 3 : 0);
       x = base.x + Math.cos(ang) * d + (o.jx || 0); z = base.z + Math.sin(ang) * d + (o.jz || 0);
       if (!o.force && ps.some((p) => Math.hypot(p.x - x, p.z - z) < NPC.spawnMin - 8)) continue;
-      if (this.terr && !this.terr.walkable(x, z)) continue;
+      if (this.terr && !this.terr.walkable(x, z)) continue;       // tidak muncul di air / jurang / dekat area harta karun
       found = true;
     }
     if (!found) return null;
@@ -332,13 +332,14 @@ export class ArenaCore {
     if (this.npcOn) this.manageNpcs(t, ps);
     const hostile = [...this.npcs.values()].filter((n) => ['hunter', 'pack', 'territory', 'ambush'].includes(n.kind));
     const diff = this.diff();
+    const inZone = (x, z) => !!(this.terr && this.terr.zoneNear(x, z, 8));       // area tantangan lompat (+ pinggiran): NPC tidak masuk ke sana
     for (const n of [...this.npcs.values()]) {
       const sp = n.sp;
       let nearest = 1e9, np = null;
-      for (const p of ps) { const dd = Math.hypot(p.x - n.x, p.z - n.z); if (dd < nearest) { nearest = dd; np = p; } }
-      if (np) n.y = np.y;
-      if (nearest > NPC.despawn && !n.pack) { this.dropNpc(n); continue; }
-      if (nearest > NPC.despawn * 1.6) { this.dropNpc(n); continue; }
+      let nearAny = 1e9;
+      for (const p of ps) { const dd = Math.hypot(p.x - n.x, p.z - n.z); if (dd < nearAny) { nearAny = dd; n.y = p.y; } if (dd < nearest && !inZone(p.x, p.z)) { nearest = dd; np = p; } }     // pemain di dalam area harta karun tidak dikejar
+      if (nearAny > NPC.despawn && !n.pack) { this.dropNpc(n); continue; }
+      if (nearAny > NPC.despawn * 1.6) { this.dropNpc(n); continue; }
       let dx = 0, dz = 0, spd = 0;
       const toward = (x, z, v) => { const ex = x - n.x, ez = z - n.z, dd = Math.max(0.001, Math.hypot(ex, ez)); dx = ex / dd; dz = ez / dd; spd = v; n.yaw = faceYaw(ex, ez); return dd; };
       const away = (x, z, v) => { const ex = n.x - x, ez = n.z - z, dd = Math.max(0.001, Math.hypot(ex, ez)); dx = ex / dd; dz = ez / dd; spd = v; n.yaw = faceYaw(dx, dz); };
@@ -353,12 +354,12 @@ export class ArenaCore {
       const bite = (tg, dmg, kb) => { if (t >= n.atkReady && tg) { n.atkReady = t + sp.cd; n.atk = 0; this.strikeTarget(n, tg, dmg * (1 + diff * 0.2), t, 'bite', { kb }); } };
       const k = n.kind;
       if (n.pack && !n.leaving && t - n.bornAt > NPC.packLifeMs) n.leaving = true;      // kawanan tidak mengejar selamanya: setelah ~75 dtk mereka pergi
-      if (n.leaving) { if (nearest > 70) { this.dropNpc(n); continue; } if (np) away(np.x, np.z, sp.chase * 0.9); }
+      if (n.leaving) { if (nearAny > 70) { this.dropNpc(n); continue; } if (np) away(np.x, np.z, sp.chase * 0.9); }
       else if (k === 'hunter' || k === 'pack') {
         let tg = null, bd = sp.detect * (1 + diff * 0.25);
         for (const p of ps) {
           const dd = Math.hypot(p.x - n.x, p.z - n.z);
-          if (dd > bd) continue;
+          if (dd > bd || inZone(p.x, p.z)) continue;
           if (k === 'pack') { if (!tg || p.hp < tg.hp - 5 || (Math.abs(p.hp - tg.hp) <= 5 && dd < Math.hypot(tg.x - n.x, tg.z - n.z))) tg = p; }
           else if (!tg || dd < Math.hypot(tg.x - n.x, tg.z - n.z)) tg = p;
         }
@@ -415,33 +416,22 @@ export class ArenaCore {
         if (tg) { const dd = Math.hypot(tg.x - n.x, tg.z - n.z); if (dd > 3.5) toward(tg.x, tg.z, sp.speed); else { wander(1.2); } }
         for (const p of ps) if (p.hp < HP_MAX && Math.hypot(p.x - n.x, p.z - n.z) < 6) { p.hp = Math.min(HP_MAX, p.hp + sp.heal * dt); this.dirty = true; }
       }
-      { // gerak: menoleh halus, kecepatan naik-turun halus, menghindari air / jurang / area lompat tanpa gemetar
-        const fly = n.kind === 'healer';
-        const W = (this.terr && !fly) ? (x, z) => this.terr.walkable(x, z) : () => true;
-        let a = spd > 0 ? Math.atan2(dz, dx) : null;
+      { // gerak: bebas ke mana saja (air, lembah, bukit) - satu-satunya batas: tidak masuk area harta karun. Menoleh & berlari naik-turun dengan halus.
+        const a = spd > 0 ? Math.atan2(dz, dx) : null;
         if (a !== null) {
           if (n.hd === undefined || n.kind === 'ambush') n.hd = a;
-          else { const df = angDiff(n.hd, a), tr = (k === 'giant' ? 1.6 : (spd > 5 ? 5.5 : 3.2)) * dt; n.hd += Math.max(-tr, Math.min(tr, df)); }
+          else { const df = angDiff(n.hd, a), tr = (n.kind === 'giant' ? 1.6 : 7) * dt; n.hd += Math.max(-tr, Math.min(tr, df)); }
         }
-        let want = a === null ? 0 : spd;
-        if (n.kind === 'ambush') n.cs = want;                         // terkaman: langsung cepat
-        const acc = (want > n.cs ? 12 : 22) * dt; n.cs += Math.max(-acc, Math.min(acc, want - n.cs));
+        const want = a === null ? 0 : spd;
+        if (n.kind === 'ambush') n.cs = want;
+        else { const acc = (want > n.cs ? 18 : 30) * dt; n.cs += Math.max(-acc, Math.min(acc, want - n.cs)); }
         if (n.cs < 0.05) n.cs = 0;
         let mx = 0, mz = 0;
         if (n.cs > 0 && n.hd !== undefined) {
-          const probe = Math.max(1.8, n.cs * 0.55 + 1.2), sd = n.avs || (a !== null && angDiff(n.hd, a) > 0 ? 1 : -1);
-          let use = null;
-          for (const o of [0, 0.6, -0.6, 1.2, -1.2, 1.9, -1.9]) {
-            const oo = o * sd, h = n.hd + oo;
-            if (W(n.x + Math.cos(h) * probe, n.z + Math.sin(h) * probe)) { use = oo; n.avs = o === 0 ? 0 : sd; break; }
-          }
-          if (use === null) {                                      // buntu: berhenti, lalu cari arah jalan lain (tidak bergetar di tepi)
-            n.cs = 0; n.stuck = (n.stuck || 0) + dt; n.avs = 0;
-            if (n.stuck > 0.4) { n.stuck = 0; n.wyaw = n.hd + Math.PI * (0.6 + this.rnd() * 0.8); n.wanderT = t + 1500; n.wst = 'walk'; }
-          } else {
-            n.stuck = 0;
-            const h = n.hd + use; mx = Math.cos(h) * n.cs * dt; mz = Math.sin(h) * n.cs * dt;
-            if (!W(n.x + mx, n.z + mz)) { mx = 0; mz = 0; n.cs = 0; }
+          mx = Math.cos(n.hd) * n.cs * dt; mz = Math.sin(n.hd) * n.cs * dt;
+          if (inZone(n.x + mx, n.z + mz) && !inZone(n.x, n.z)) {          // sampai di batas area harta karun: berhenti total (animasi diam), lalu menjauh / merumput
+            mx = 0; mz = 0; n.cs = 0;
+            n.wyaw = n.hd + Math.PI * (0.7 + this.rnd() * 0.6); n.wst = 'graze'; n.wanderT = t + 1500 + this.rnd() * 1500;
           }
         }
         n.x += mx; n.z += mz; n.vx = dt > 0 ? mx / dt : 0; n.vz = dt > 0 ? mz / dt : 0;

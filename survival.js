@@ -1188,7 +1188,101 @@
   }
 
   // ---------- Makhluk (dino pemain & predator) ----------
+  // Vosil versi lucu (mengacu pada gambar referensi): kepala besar, mata bulat besar berkilau, mulut lebar bergigi,
+  // perut kuning-hijau muda, plat oranye di punggung & ekor, tubuh gemuk berkaki tebal. Kerangka gerak sama dengan makeCreature.
+  function makeVosil(p) {
+    const root = new THREE.Group(), body = new THREE.Group(); root.add(body);
+    const green = smoothStd(p.body), dark = smoothStd(p.dark), light = smoothStd(p.light), spikeM = smoothStd(p.spike);
+    const white = std(0xffffff, { flatShading: false }), black = std(p.pupil, { flatShading: false });
+    const pink = smoothStd(0xe0626a), bone = smoothStd(0xfaf6e8);
+    const part = (geo, mat, x, y, z, parent) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); (parent || body).add(m); return m; };
+    const ball = (r, mat, sx, sy, sz, x, y, z, parent, seg) => { const m = part(new THREE.SphereGeometry(r, seg || 14, seg ? Math.max(5, seg - 3) : 10), mat, x, y, z, parent); m.scale.set(sx, sy, sz); return m; };
+    const plate = (h, w, mat, x, y, z, parent, rx) => { const m = part(new THREE.ConeGeometry(w, h, 4), mat, x, y, z, parent); m.scale.set(0.45, 1, 1.25); m.rotation.y = Math.PI / 4 * 0; if (rx) m.rotation.x = rx; return m; };
+
+    // badan gemuk: dada, pinggul, perut terang
+    ball(0.7, green, 0.92, 0.86, 1.2, 0, 1.15, 0);
+    ball(0.5, green, 0.95, 0.9, 1.0, 0, 1.27, -0.5);
+    ball(0.56, green, 1.0, 0.88, 1.0, 0, 1.1, 0.44);
+    ball(0.62, light, 0.8, 0.66, 1.12, 0, 0.93, -0.04);                                     // perut
+    ball(0.28, light, 0.9, 0.7, 1.1, 0, 1.2, -0.82, undefined, 9);                           // dada/leher bawah
+    // plat oranye di punggung
+    for (let i = 0; i < 7; i++) {
+      const z = -0.62 + i * 0.22, h = 0.4 - Math.abs(i - 2) * 0.035 - i * 0.012;
+      const topY = 1.15 + 0.595 * Math.sqrt(Math.max(0, 1 - (z / 0.84) * (z / 0.84)));
+      plate(h, 0.13, spikeM, 0, topY + h / 2 - 0.05, z);
+    }
+    for (const [x, y, z] of [[0.32, 1.62, -0.25], [-0.34, 1.58, 0.18], [0.4, 1.5, 0.42], [-0.28, 1.66, -0.55], [0.46, 1.32, -0.1], [-0.48, 1.3, 0.3]]) ball(0.07, dark, 1.3, 0.35, 1.3, x, y, z, undefined, 7);   // bercak kulit
+
+    // leher pendek
+    ball(0.34, green, 1, 1, 1, 0, 1.45, -0.72, undefined, 10);
+
+    // kepala besar & bulat
+    const headPivot = new THREE.Group(); headPivot.position.set(0, 1.62, -0.85); headPivot.scale.setScalar(1.32); body.add(headPivot);
+    ball(0.42, green, 1.0, 0.95, 1.0, 0, 0, 0, headPivot);
+    ball(0.3, green, 1.0, 0.68, 1.2, 0, -0.07, -0.36, headPivot);                           // moncong pendek-lebar
+    ball(0.11, light, 1.1, 0.8, 1, 0, -0.02, -0.64, headPivot, 9);                           // ujung hidung
+    for (const sx of [-1, 1]) {
+      ball(0.032, black, 1, 1, 1, sx * 0.075, 0.03, -0.72, headPivot, 6);                    // lubang hidung
+      ball(0.15, light, 0.7, 0.8, 1.0, sx * 0.3, -0.09, -0.24, headPivot, 9);               // pipi terang
+      ball(0.1, dark, 1.35, 0.42, 1.3, sx * 0.25, 0.3, -0.2, headPivot, 8);                  // alis ramah
+      for (let i = 0; i < 3; i++) { const tt = part(new THREE.ConeGeometry(0.03, 0.09, 4), bone, sx * 0.13, -0.245, -0.3 - i * 0.12, headPivot); tt.rotation.x = Math.PI; }
+    }
+    for (const sx of [-1, 1]) { const tt = part(new THREE.ConeGeometry(0.03, 0.1, 4), bone, sx * 0.05, -0.245, -0.64, headPivot); tt.rotation.x = Math.PI; }
+    plate(0.24, 0.07, spikeM, 0, 0.45, 0.12, headPivot, -0.35); plate(0.2, 0.06, spikeM, 0, 0.38, 0.3, headPivot, -0.5);
+    const jaw = new THREE.Group(); jaw.position.set(0, -0.14, -0.12); headPivot.add(jaw);
+    ball(0.17, pink, 0.9, 0.3, 1.45, 0, -0.045, -0.32, jaw, 10);                             // isi mulut
+    ball(0.21, light, 0.78, 0.4, 1.55, 0, -0.12, -0.32, jaw, 12);                            // rahang bawah
+    for (const sx of [-1, 1]) for (let i = 0; i < 2; i++) part(new THREE.ConeGeometry(0.025, 0.08, 4), bone, sx * 0.11, -0.02, -0.36 - i * 0.15, jaw);
+    for (const s2 of [-1, 1]) {                                                              // mata besar berkilau
+      ball(0.15, white, 1, 1.05, 0.85, s2 * 0.255, 0.14, -0.18, headPivot, 12);
+      ball(0.105, black, 1, 1.05, 0.9, s2 * 0.29, 0.14, -0.28, headPivot, 12);
+      ball(0.033, white, 1, 1, 1, s2 * 0.265, 0.2, -0.375, headPivot, 6);
+      ball(0.016, white, 1, 1, 1, s2 * 0.32, 0.1, -0.365, headPivot, 5);
+    }
+
+    // lengan mungil
+    const arms = [];
+    for (const s2 of [-1, 1]) {
+      const pv = new THREE.Group(); pv.position.set(s2 * 0.5, 1.2, -0.6); body.add(pv);
+      const up = part(new THREE.CylinderGeometry(0.06, 0.09, 0.36, 7), green, 0, -0.05, -0.15, pv); up.rotation.x = 1.3;
+      ball(0.09, green, 1, 1, 1.2, 0, -0.1, -0.33, pv, 9);
+      for (const c of [-1, 0, 1]) { const cl = part(new THREE.ConeGeometry(0.026, 0.11, 4), bone, c * 0.04, -0.11, -0.43, pv); cl.rotation.x = -1.4; }
+      arms.push(pv);
+    }
+
+    // kaki tebal
+    const legs = [];
+    for (const s2 of [-1, 1]) {
+      const hip = new THREE.Group(); hip.position.set(s2 * 0.46, 0.99, 0.12); body.add(hip);
+      ball(0.31, green, 1, 1.12, 1.2, 0, -0.07, 0.03, hip);
+      part(new THREE.CylinderGeometry(0.22, 0.17, 0.5, 9), green, 0, -0.27, 0, hip);
+      const knee = new THREE.Group(); knee.position.set(0, -0.5, 0); hip.add(knee);
+      ball(0.16, green, 1, 1, 1, 0, 0, 0, knee, 10);
+      part(new THREE.CylinderGeometry(0.15, 0.1, 0.44, 8), dark, 0, -0.22, 0, knee);
+      const foot = new THREE.Group(); foot.position.set(0, -0.43, 0); knee.add(foot);
+      ball(0.12, dark, 1, 1, 1, 0, 0, 0, foot, 9);
+      ball(0.19, dark, 1, 0.5, 2.0, 0, -0.04, -0.13, foot, 10);
+      for (const c of [-1, 0, 1]) { const toe = part(new THREE.ConeGeometry(0.05, 0.15, 5), bone, c * 0.1, -0.05, -0.38, foot); toe.rotation.x = -1.45; }
+      legs.push({ hip, knee, foot });
+    }
+
+    // ekor tiga ruas, plat oranye mengecil ke ujung
+    const tail1 = new THREE.Group(); tail1.position.set(0, 1.08, 0.7); body.add(tail1);
+    const t1 = part(new THREE.CylinderGeometry(0.22, 0.37, 1.1, 10), green, 0, 0, 0.55, tail1); t1.rotation.x = Math.PI / 2;
+    for (let i = 0; i < 3; i++) plate(0.3 - i * 0.07, 0.1, spikeM, 0, 0.3 - i * 0.04 + 0.1, 0.2 + i * 0.32, tail1);
+    const tail2 = new THREE.Group(); tail2.position.set(0, 0, 1.1); tail1.add(tail2);
+    const t2 = part(new THREE.CylinderGeometry(0.11, 0.22, 0.9, 9), green, 0, 0, 0.45, tail2); t2.rotation.x = Math.PI / 2;
+    for (let i = 0; i < 2; i++) plate(0.2 - i * 0.05, 0.08, spikeM, 0, 0.17 - i * 0.03 + 0.08, 0.2 + i * 0.3, tail2);
+    const tail3 = new THREE.Group(); tail3.position.set(0, 0, 0.9); tail2.add(tail3);
+    const t3 = part(new THREE.CylinderGeometry(0.02, 0.11, 0.8, 8), dark, 0, 0, 0.4, tail3); t3.rotation.x = Math.PI / 2;
+
+    root.scale.setScalar(p.scale);
+    mergeTree(root); outlineTree(root);
+    return { root, body, headPivot, jaw, arms, legs, tail1, tail2, tail3, mats: [green, dark, light, spikeM], variant: undefined };
+  }
+
   function makeCreature(p) {
+    if (!p.variant) return makeVosil(p);
     const root = new THREE.Group();
     const body = new THREE.Group();
     root.add(body);
@@ -1435,7 +1529,7 @@
     } else {
       c.headPivot.position.z = -0.85;
       c.headPivot.rotation.x = -c.body.rotation.x * 0.8 + Math.sin(phase * 2) * 0.04 * r;       // kepala menyeimbangkan badan
-      if (c.jaw) c.jaw.rotation.x = approach(c.jaw.rotation.x, -0.06 - 0.04 * Math.sin(t * 2.1), 12);
+      if (c.jaw) c.jaw.rotation.x = approach(c.jaw.rotation.x, (v ? -0.06 : -0.2) - 0.04 * Math.sin(t * 2.1), 12);       // Vosil: mulut sedikit terbuka (tersenyum)
     }
     c.headPivot.rotation.y = hy;
   }
@@ -1632,7 +1726,7 @@
     return { root, body, headPivot, legs4, tail, mats: [mBody, mDark, mLight], isTrike: true, hz, graze, stride };
   }
 
-  const PAL_PLAYER = { body: 0x4caf50, dark: 0x2e7d32, light: 0xaed581, spike: 0xffb300, eye: 0xffffff, pupil: 0x111111 };
+  const PAL_PLAYER = { body: 0x79bb47, dark: 0x5c9c3a, light: 0xcfe39c, spike: 0xe9a145, eye: 0xffffff, pupil: 0x111111 };
   const PTYPES = {
     raptor: {
       name: 'Raptor', hp: 34, speed: 7.8, wander: 2.2, dmg: 9, detect: 24, reach: 1.9,
@@ -3425,7 +3519,7 @@
     el.addEventListener('pointerup', end);
     el.addEventListener('pointercancel', end);
   }
-  bindBtn(btnAttack, () => { input.attack = true; atkHeld = true; atkShowT = 0.35; }, () => { atkHeld = false; });
+  bindBtn(btnAttack, () => { input.attack = true; atkHeld = true; }, () => { atkHeld = false; });
   bindBtn(btnJump, () => { input.jump = true; });
   if (btnRoar) {                                                  // skill: ketuk = langsung (bidik otomatis); tahan + geser = bidik manual, lepas = luncurkan
     btnRoar.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -3462,7 +3556,7 @@
       return;
     }
     if (k === ' ') input.jump = true;
-    else if (k === 'j' || k === 'k') { input.attack = true; atkHeld = true; atkShowT = 0.35; }
+    else if (k === 'j' || k === 'k') { input.attack = true; atkHeld = true; }
     else if (k === 'r' || k === 'l') doRoar();
   });
   window.addEventListener('keyup', (e) => {
@@ -4020,11 +4114,12 @@
   biteGeo.setAttribute('position', new THREE.BufferAttribute(biteArr, 3));
   const mBite = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false, depthTest: false, fog: false, side: THREE.DoubleSide });
   const biteRing = new THREE.Mesh(biteGeo, mBite); biteRing.renderOrder = 3; biteRing.visible = false; biteRing.frustumCulled = false; scene.add(biteRing);
-  let biteHot = 0, biteShow = 0, atkHeld = false, atkShowT = 0;
+  let biteHot = 0, biteShow = 0, atkHeld = false, atkHoldT = 0;
+  const RING_HOLD = 0.5;                                                         // cincin muncul bila tombol gigit ditahan selama ini (ketukan biasa tidak memunculkannya)
   const biteRange = () => { const sk = arenaOn && typeof Arena !== 'undefined' && Arena.kits && Arena.kits[save.char]; return 2.4 * (scaleNow / 1.1) + 0.75 + (sk && sk.bite ? sk.bite.reach || 0 : 0); };
-  function updateBiteRing(dt) {                                                    // hanya tampil saat tombol gigit ditekan (ketukan singkat tetap terlihat ~0,35 dtk)
-    atkShowT = Math.max(0, atkShowT - dt);
-    const want = state === 'playing' && save.ring !== false && (atkHeld || atkShowT > 0) ? 1 : 0;
+  function updateBiteRing(dt) {                                                    // hanya tampil bila tombol gigit ditahan beberapa saat
+    atkHoldT = atkHeld ? atkHoldT + dt : 0;
+    const want = state === 'playing' && save.ring !== false && atkHoldT >= RING_HOLD ? 1 : 0;
     biteShow += (want - biteShow) * Math.min(1, dt * 16);
     if (biteShow < 0.02) { biteRing.visible = false; return; }
     biteRing.visible = true;

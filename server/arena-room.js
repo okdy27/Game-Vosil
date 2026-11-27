@@ -68,7 +68,7 @@ export const NPCT = {
   argen: { name: 'Argentinosaurus', kind: 'giant', hp: 520, wander: 2.3, dmg: 12, cd: 1100, reach: 5.6, kb: 6, lv: 6 },
   para: { name: 'Parasaurolophus', kind: 'sentinel', hp: 40, wander: 1.8, flee: 7, lv: 1 },
 };
-export const NPC = { spawnMin: 45, spawnMax: 70, despawn: 170, respawnMs: 6000, cap: 14, packEveryMs: [65000, 95000], packFirstMs: 45000 };
+export const NPC = { spawnMin: 45, spawnMax: 70, despawn: 170, respawnMs: 6000, cap: 12, hardCap: 22, packLifeMs: 75000, packEveryMs: [65000, 95000], packFirstMs: 45000 };
 const LAG_RANGE = 1.5, LAG_ARC = 0.25;  // toleransi karena data posisi lawan sedikit tertinggal
 const REGEN_DELAY = 6000, REGEN_RATE = 1.2;   // nyawa dipulihkan SERVER: setelah 6 detik tidak terkena serangan, +1.2/detik (klien tidak bisa menambah nyawa)
 
@@ -285,24 +285,32 @@ export class ArenaCore {
 
   dropNpc(n) { if (!this.npcs.delete(n.id)) return; this.broadcast({ t: 'l', id: n.id, npc: 1 }); this.dirty = true; }
   spawnNpc(t, type, o = {}) {
-    const ps = [...this.players.values()].filter((p) => p.ready && p.alive); if (!ps.length || this.npcs.size >= NPC.cap) return null;
-    const sp = NPCT[type], base = o.base || ps[Math.floor(this.rnd() * ps.length)], ang = o.ang !== undefined ? o.ang : this.rnd() * Math.PI * 2;
-    const d = o.d !== undefined ? o.d : NPC.spawnMin + this.rnd() * (NPC.spawnMax - NPC.spawnMin);
-    const x = base.x + Math.cos(ang) * d + (o.jx || 0), z = base.z + Math.sin(ang) * d + (o.jz || 0);
-    if (!o.force && ps.some((p) => Math.hypot(p.x - x, p.z - z) < NPC.spawnMin - 8)) return null;
-    if (this.terr && !this.terr.walkable(x, z)) return null;                 // tidak muncul di air / jurang / area lompat
+    const ps = [...this.players.values()].filter((p) => p.ready && p.alive); if (!ps.length) return null;
+    const ambient = [...this.npcs.values()].filter((n) => !n.pack).length;
+    if (this.npcs.size >= NPC.hardCap || (!o.pack && ambient >= NPC.cap)) return null;                // kawanan punya jatah sendiri di luar batas NPC biasa
+    const sp = NPCT[type], base = o.base || ps[Math.floor(this.rnd() * ps.length)], ang0 = o.ang !== undefined ? o.ang : this.rnd() * Math.PI * 2;
+    let x = 0, z = 0, ang = ang0, found = false;
+    for (let a = 0; a < 12 && !found; a++) {                                           // cari tempat yang wajar: geser sudut/jarak bila air, jurang, atau area lompat
+      ang = ang0 + (a % 2 ? 1 : -1) * Math.ceil(a / 2) * 0.45;
+      const d = (o.d !== undefined ? o.d : NPC.spawnMin + this.rnd() * (NPC.spawnMax - NPC.spawnMin)) + (a > 5 ? (a - 5) * 3 : 0);
+      x = base.x + Math.cos(ang) * d + (o.jx || 0); z = base.z + Math.sin(ang) * d + (o.jz || 0);
+      if (!o.force && ps.some((p) => Math.hypot(p.x - x, p.z - z) < NPC.spawnMin - 8)) continue;
+      if (this.terr && !this.terr.walkable(x, z)) continue;
+      found = true;
+    }
+    if (!found) return null;
     const id = 'n' + (this.nextNpc++), hpm = Math.round(sp.hp * (1 + this.diff() * 0.5));
     const n = { id, npc: true, type, kind: sp.kind, sp, name: sp.name, char: type, level: sp.lv, fr: ['scav', 'healer', 'sentinel'].includes(sp.kind), ready: true, alive: true, x, y: base.y, z, yaw: 0, vx: 0, vz: 0, atk: -1, sw: 0, hp: hpm, maxHp: hpm,
-      dseq: 0, lastHurt: 0, kbUntil: 0, hitGap: new Map(), kills: 0, send: () => {}, atkReady: t + 1200, wanderT: 0, wyaw: ang, hx: x, hz: z, phase: 'idle', until: 0, anger: 0, alertAt: 0, pack: o.pack || 0, idx: o.idx || 0 };
+      dseq: 0, lastHurt: 0, kbUntil: 0, hitGap: new Map(), kills: 0, send: () => {}, atkReady: t + 1200, wanderT: 0, wyaw: ang, hx: x, hz: z, phase: 'idle', until: 0, anger: 0, alertAt: 0, pack: o.pack || 0, idx: o.idx || 0, bornAt: t, cs: 0, hd: undefined, wst: 'walk', leaving: false, fleeing: false, avs: 0 };
     this.npcs.set(id, n); this.broadcast({ t: 'j', p: this.card(n) }); this.dirty = true; return n;
   }
   diff() { return Math.min(1, Math.max(0, (this.now() - this.born) / 360000)); }       // 0 -> 1 selama 6 menit: musuh makin tangguh
   startPack(t, ps) {
-    const base = ps[Math.floor(this.rnd() * ps.length)], ang = this.rnd() * Math.PI * 2, n = 3 + Math.min(2, Math.floor(ps.length / 3) + Math.floor(this.diff() * 2));
+    const base = ps[Math.floor(this.rnd() * ps.length)], ang = this.rnd() * Math.PI * 2, n = 4 + Math.floor(this.rnd() * 3) + Math.min(2, Math.floor(this.diff() * 2) + (ps.length >= 3 ? 1 : 0));   // 4-8 ekor
     const pid = this.nextNpc; let made = 0;
     for (let i = 0; i < n; i++) {
       const type = i % 3 === 2 ? 'deino' : 'raptor';
-      if (this.spawnNpc(t, type, { base, ang: ang + (i - n / 2) * 0.12, d: 52 + (i % 2) * 4, pack: pid, idx: i, force: true })) made++;
+      if (this.spawnNpc(t, type, { base, ang: ang + (i - n / 2) * 0.16, d: 50 + (i % 3) * 4, pack: pid, idx: i, force: true })) made++;
     }
     if (made) this.broadcast({ t: 'W', n: made, x: r1(base.x + Math.cos(ang) * 52), z: r1(base.z + Math.sin(ang) * 52) });
   }
@@ -334,13 +342,19 @@ export class ArenaCore {
       let dx = 0, dz = 0, spd = 0;
       const toward = (x, z, v) => { const ex = x - n.x, ez = z - n.z, dd = Math.max(0.001, Math.hypot(ex, ez)); dx = ex / dd; dz = ez / dd; spd = v; n.yaw = faceYaw(ex, ez); return dd; };
       const away = (x, z, v) => { const ex = n.x - x, ez = n.z - z, dd = Math.max(0.001, Math.hypot(ex, ez)); dx = ex / dd; dz = ez / dd; spd = v; n.yaw = faceYaw(dx, dz); };
-      const wander = (v, hx, hz, rad) => {
-        if (t >= n.wanderT) { n.wanderT = t + 2000 + this.rnd() * 3000; n.wyaw += (this.rnd() - 0.5) * 2.4; n.wmove = this.rnd() < 0.7; if (hx !== undefined && Math.hypot(n.x - hx, n.z - hz) > rad) n.wyaw = Math.atan2(hz - n.z, hx - n.x); }
-        if (n.wmove) { spd = v; dx = Math.cos(n.wyaw); dz = Math.sin(n.wyaw); n.yaw = faceYaw(dx, dz); }
+      const wander = (v, hx, hz, rad) => {                       // berjalan santai - berhenti merumput - berjalan lagi (perubahan arah kecil, bukan acak liar)
+        if (t >= n.wanderT) {
+          if (n.wst === 'walk' && this.rnd() < 0.6) { n.wst = 'graze'; n.wanderT = t + 2500 + this.rnd() * 3500; }
+          else { n.wst = 'walk'; n.wanderT = t + 4000 + this.rnd() * 5000; n.wyaw += (this.rnd() - 0.5) * 1.8; }
+          if (hx !== undefined && Math.hypot(n.x - hx, n.z - hz) > rad) { n.wyaw = Math.atan2(hz - n.z, hx - n.x); n.wst = 'walk'; }
+        }
+        if (n.wst === 'walk') { spd = v; dx = Math.cos(n.wyaw); dz = Math.sin(n.wyaw); }
       };
       const bite = (tg, dmg, kb) => { if (t >= n.atkReady && tg) { n.atkReady = t + sp.cd; n.atk = 0; this.strikeTarget(n, tg, dmg * (1 + diff * 0.2), t, 'bite', { kb }); } };
       const k = n.kind;
-      if (k === 'hunter' || k === 'pack') {
+      if (n.pack && !n.leaving && t - n.bornAt > NPC.packLifeMs) n.leaving = true;      // kawanan tidak mengejar selamanya: setelah ~75 dtk mereka pergi
+      if (n.leaving) { if (nearest > 70) { this.dropNpc(n); continue; } if (np) away(np.x, np.z, sp.chase * 0.9); }
+      else if (k === 'hunter' || k === 'pack') {
         let tg = null, bd = sp.detect * (1 + diff * 0.25);
         for (const p of ps) {
           const dd = Math.hypot(p.x - n.x, p.z - n.z);
@@ -386,24 +400,52 @@ export class ArenaCore {
         if (t >= n.wanderT) { n.wanderT = t + 12000 + this.rnd() * 8000; n.wyaw += (this.rnd() - 0.5) * 1.4; }
         spd = sp.wander; dx = Math.cos(n.wyaw); dz = Math.sin(n.wyaw); n.yaw = faceYaw(dx, dz);
         for (const p of ps) if (Math.hypot(p.x - n.x, p.z - n.z) < sp.reach && t >= n.atkReady) { n.atkReady = t + sp.cd; n.atk = 0; this.strikeTarget(n, p, sp.dmg * (1 + diff * 0.2), t, 'bite', { kb: sp.kb }); }     // injakan
-      } else if (k === 'sentinel') {
+      } else if (k === 'sentinel') {                              // herbivora waspada: merumput, lari bila melihat pemain / predator, menyerukan bahaya
         const h = hostile.find((q) => Math.hypot(q.x - n.x, q.z - n.z) < 38);
-        if (h) {
-          if (t >= n.alertAt) { n.alertAt = t + 9000; this.broadcast({ t: 'A', id: n.id, x: r1(h.x), z: r1(h.z), nm: h.name }); }
-          if (Math.hypot(h.x - n.x, h.z - n.z) < 22) away(h.x, h.z, sp.flee); else wander(sp.wander);
-        } else wander(sp.wander);
+        n.fleeing = !!np && nearest < (n.fleeing ? 46 : 30);
+        if (h && t >= n.alertAt) { n.alertAt = t + 9000; this.broadcast({ t: 'A', id: n.id, x: r1(h.x), z: r1(h.z), nm: h.name }); }
+        if (n.fleeing) away(np.x, np.z, sp.flee);
+        else if (h && Math.hypot(h.x - n.x, h.z - n.z) < 22) away(h.x, h.z, sp.flee);
+        else wander(sp.wander, n.hx, n.hz, 40);
       } else if (k === 'scav') {
-        if (np && nearest < 9) away(np.x, np.z, sp.flee); else wander(sp.wander, n.hx, n.hz, 12);
+        n.fleeing = !!np && nearest < (n.fleeing ? 22 : 13);
+        if (n.fleeing) away(np.x, np.z, sp.flee); else wander(sp.wander, n.hx, n.hz, 25);
       } else if (k === 'healer') {
         let tg = null; for (const p of ps) if (!tg || p.hp < tg.hp - 8) tg = p;
         if (tg) { const dd = Math.hypot(tg.x - n.x, tg.z - n.z); if (dd > 3.5) toward(tg.x, tg.z, sp.speed); else { wander(1.2); } }
         for (const p of ps) if (p.hp < HP_MAX && Math.hypot(p.x - n.x, p.z - n.z) < 6) { p.hp = Math.min(HP_MAX, p.hp + sp.heal * dt); this.dirty = true; }
       }
-      { // gerak hanya di tanah yang wajar: air, jurang sungai & area lompat adalah dinding; coba geser per sumbu
-        let mx = dx * spd * dt, mz = dz * spd * dt;
-        const W = this.terr ? (x, z) => this.terr.walkable(x, z) : () => true;
-        if (!W(n.x + mx, n.z + mz)) { if (W(n.x + mx, n.z)) mz = 0; else if (W(n.x, n.z + mz)) mx = 0; else { mx = 0; mz = 0; } }
+      { // gerak: menoleh halus, kecepatan naik-turun halus, menghindari air / jurang / area lompat tanpa gemetar
+        const fly = n.kind === 'healer';
+        const W = (this.terr && !fly) ? (x, z) => this.terr.walkable(x, z) : () => true;
+        let a = spd > 0 ? Math.atan2(dz, dx) : null;
+        if (a !== null) {
+          if (n.hd === undefined || n.kind === 'ambush') n.hd = a;
+          else { const df = angDiff(n.hd, a), tr = (k === 'giant' ? 1.6 : (spd > 5 ? 5.5 : 3.2)) * dt; n.hd += Math.max(-tr, Math.min(tr, df)); }
+        }
+        let want = a === null ? 0 : spd;
+        if (n.kind === 'ambush') n.cs = want;                         // terkaman: langsung cepat
+        const acc = (want > n.cs ? 12 : 22) * dt; n.cs += Math.max(-acc, Math.min(acc, want - n.cs));
+        if (n.cs < 0.05) n.cs = 0;
+        let mx = 0, mz = 0;
+        if (n.cs > 0 && n.hd !== undefined) {
+          const probe = Math.max(1.8, n.cs * 0.55 + 1.2), sd = n.avs || (a !== null && angDiff(n.hd, a) > 0 ? 1 : -1);
+          let use = null;
+          for (const o of [0, 0.6, -0.6, 1.2, -1.2, 1.9, -1.9]) {
+            const oo = o * sd, h = n.hd + oo;
+            if (W(n.x + Math.cos(h) * probe, n.z + Math.sin(h) * probe)) { use = oo; n.avs = o === 0 ? 0 : sd; break; }
+          }
+          if (use === null) {                                      // buntu: berhenti, lalu cari arah jalan lain (tidak bergetar di tepi)
+            n.cs = 0; n.stuck = (n.stuck || 0) + dt; n.avs = 0;
+            if (n.stuck > 0.4) { n.stuck = 0; n.wyaw = n.hd + Math.PI * (0.6 + this.rnd() * 0.8); n.wanderT = t + 1500; n.wst = 'walk'; }
+          } else {
+            n.stuck = 0;
+            const h = n.hd + use; mx = Math.cos(h) * n.cs * dt; mz = Math.sin(h) * n.cs * dt;
+            if (!W(n.x + mx, n.z + mz)) { mx = 0; mz = 0; n.cs = 0; }
+          }
+        }
         n.x += mx; n.z += mz; n.vx = dt > 0 ? mx / dt : 0; n.vz = dt > 0 ? mz / dt : 0;
+        if (n.cs > 0.4 && n.hd !== undefined) n.yaw = faceYaw(Math.cos(n.hd), Math.sin(n.hd));
       }
       if (n.atk >= 0) { n.atk += dt; if (n.atk > 0.35) n.atk = -1; }
       this.dirty = true;

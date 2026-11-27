@@ -1947,7 +1947,7 @@
         const k = Math.min(1, dt * 10);
         r.x += (r.tx - r.x) * k; r.y += (r.ty - r.y) * k; r.z += (r.tz - r.z) * k; r.dyaw = r.yaw;
       }
-      if (r.npc) r.y = heightAt(r.x, r.z);                              // NPC server: tinggi tanah dihitung di sini
+      if (r.npc) r.y = r.char === 'micro' ? Math.max(heightAt(r.x, r.z), WL + 0.6) : heightAt(r.x, r.z);     // NPC server: tinggi tanah dihitung di sini (Microraptor melayang di atas air)
       const want = r.npc ? v.pl.scale : v.pl.scale * lvScale(r.level);
       v.sc += (want - v.sc) * Math.min(1, dt * 5);
       const spd = Math.hypot(r.vx, r.vz);

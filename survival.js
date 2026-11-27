@@ -1859,6 +1859,7 @@
     player.invuln = 0.7; player.lastDmg = 0;
     const dx = player.x - m.x, dz = player.z - m.z, d = Math.hypot(dx, dz) || 1, kb = m.kb > 0 ? m.kb : 0.9;
     player.x += (dx / d) * kb; player.z += (dz / d) * kb;
+    if (m.stun > 0) { stunT = m.stun / 1000; skillWind = null; dashS = null; if (aim.on) aimClear(); showDmg(player.x, (player.gy || 0) + player.y + 3.3 * scaleNow / 1.1, player.z, '💫', 'crit', 1.3); }
     if (m.slow > 0) { slowT = (m.slowMs || 2000) / 1000; slowMul = 1 - m.slow; showDmg(player.x, (player.gy || 0) + player.y + 3.1 * scaleNow / 1.1, player.z, '🐌', 'crit', 1.1); }
     hurtT = 0.25; shake = Math.max(shake, m.kb >= 3 ? 0.85 : 0.6);
     if (m.k && m.k !== 'bite') GameAudio.sfx.skillHit(m.k, m.dmg / 18, sndAt(m.x, m.z).pan); else GameAudio.sfx.hit();
@@ -1870,6 +1871,7 @@
     const r = Arena.remotes.get(m.to); if (!r) return;
     v.hitT = 0.18;                                                                  // lawan 'tersentak' sesaat
     hitFeel(!!(m.k && m.k !== 'bite'));
+    if (m.stun > 0) showDmg(r.x, r.y + 3.2 * v.sc + 0.4, r.z, '💫', 'crit', 1.2);
     showDmg(r.x, r.y + 2.2 * v.sc + 0.4, r.z, '-' + Math.round(m.dmg), m.k === 'roar' ? 'crit' : 'hit', m.k === 'roar' ? 1.2 : 1);
     starBurst(r.x, r.y + 1.3 * v.sc, r.z, 5, 'hit');
     if (m.k && m.k !== 'bite') GameAudio.sfx.skillHit(m.k, m.dmg / 18, sndAt(r.x, r.z).pan); else GameAudio.sfx.hit();
@@ -1913,7 +1915,7 @@
     ringFx.length = 0;
     myEmote = { e: -1, t: 99 };
     teles.length = 0;
-    skillWind = null; dashS = null; slowT = 0; slowMul = 1;
+    skillWind = null; dashS = null; slowT = 0; slowMul = 1; stunT = 0;
   }
   function updateRemotes(dt) {
     if (!arenaOn || typeof Arena === 'undefined') { if (remoteViews.size) clearRemotes(); return; }
@@ -2147,7 +2149,7 @@
       circle: mk(256, 256, (g) => {                                              // cincin rune: lingkaran luar tebal, cincin putus-putus, jari-jari, bintang segitiga
         glow(g, 40, 0.2); ring(g, 122, 6, 0.95); ring(g, 110, 1.5, 0.6);
         g.setLineDash([12, 9]); ring(g, 96, 6, 0.75); g.setLineDash([]);
-        spokes(g, 16, 46, 84, 2.5, 0.5); ring(g, 42, 3, 0.8); g.globalAlpha = 0.7; g.lineWidth = 2.5; tri(g, 32, -Math.PI / 2); tri(g, 32, Math.PI / 2);
+        spokes(g, 16, 46, 84, 2.5, 0.5); ring(g, 42, 3, 0.8); g.globalAlpha = 0.8; g.lineWidth = 4; for (let k = -1; k <= 1; k++) { g.beginPath(); g.moveTo(112 + k * 15, 98); g.quadraticCurveTo(122 + k * 15, 128, 112 + k * 15, 158); g.stroke(); }
       }),
       cone: mk(256, 256, (g) => {                                                // busur gelombang berlapis + garis jari-jari
         glow(g, 20, 0.16); ring(g, 122, 7, 0.95); ring(g, 94, 4, 0.7); ring(g, 66, 3.5, 0.6); ring(g, 38, 3, 0.5);
@@ -2261,13 +2263,12 @@
     const dx = x - player.x, dz = z - player.z, d = Math.hypot(dx, dz);
     return { v: clamp(1 - d / 45, 0.12, 1), pan: clamp((Math.cos(camYaw) * dx - Math.sin(camYaw) * dz) / 18, -1, 1) };
   }
-  function skillFx(id, x, z, yaw, sh) {
+  function skillFx(id, x, z, yaw, sh, mine) {
     if (!sh) return;
     { const sd = sndAt(x, z); GameAudio.sfx.skill(id, sd.v, sd.pan); }                  // suara animasi skill
     const gy = heightAt(x, z), dx = -Math.sin(yaw), dz = -Math.cos(yaw), sx = Math.cos(yaw), sz = -Math.sin(yaw), R = Math.random, big = FX.big, sm = FX.small;
-    if (id === 'roar') {                                                          // ANGIN: gelombang & pusaran keluar ke segala arah
-      for (let i = 0; i < 40; i++) { const a = i / 40 * 6.283 + R() * 0.12, sp = sh.r / 0.55 * (0.8 + R() * 0.3); emit(big, x + Math.cos(a) * 1.2, gy + 0.6 + R() * 0.5, z + Math.sin(a) * 1.2, Math.cos(a) * sp, 0.6, Math.sin(a) * sp, 0.55, 0.55, 0.6, 0.62, 0, 0); }
-      for (let i = 0; i < 30; i++) { const a = i / 30 * 6.283, sp = sh.r / 0.6 * 0.55; emit(sm, x, gy + 0.8 + R() * 0.8, z, Math.cos(a) * sp - Math.sin(a) * 7, 1.2, Math.sin(a) * sp + Math.cos(a) * 7, 0.6, 0.75, 0.8, 0.85, 0, 1.2); }
+    if (id === 'roar') {                                                          // AUM: gelombang cincin yang melebar (efek lama yang disukai); milik sendiri digambar oleh roarRing
+      if (!mine) { ringWave(x, z, 1, sh.r, 0.6, 0.81, 0.85, 0.86); ringWave(x, z, 0.6, sh.r * 0.7, 0.45, 0.9, 0.92, 0.93); }
     } else if (id === 'pounce') {                                                 // PETIR: sambaran zig-zag di sepanjang garis
       const L = sh.len, ex = x + dx * L, ez = z + dz * L;
       for (let k = -1; k <= 1; k++) bolt(x + sx * k * sh.width * 0.25, gy + 0.8, z + sz * k * sh.width * 0.25, ex + sx * k * sh.width * 0.25, gy + 0.8, ez + sz * k * sh.width * 0.25, 0.38, 0.55, 0.62, 0.82, 1);
@@ -2290,10 +2291,10 @@
       for (let i = 0; i < 18; i++) { const ang = yaw + (R() * 2 - 1) * sh.arc, ax = -Math.sin(ang), az = -Math.cos(ang), sp = 8 + R() * 10; emit(sm, x + ax, gy + 0.9 + R(), z + az, ax * sp, R() * 2, az * sp, 0.5, 0.85, 0.95, 1, 0, 0); }
     }
   }
-  let skillWind = null, dashS = null, slowT = 0, slowMul = 1, aimHintT = 0, skAnim = null;
+  let stunT = 0, skillWind = null, dashS = null, slowT = 0, slowMul = 1, aimHintT = 0, skAnim = null;
   // skill khas tiap dino: SAMA di arena maupun mode solo (di arena angka resmi dari server, di solo dari tabel ini)
   const LOCAL_KITS = {
-    vosil: { id: 'roar', cd: 14000, windup: 150, recover: 250, shape: 'circle', r: 8.2, dmg: 7, kb: 3 },
+    vosil: { id: 'roar', cd: 14000, windup: 150, recover: 250, shape: 'circle', r: 8.2, dmg: 7, kb: 3, stun: 2500 },
     velo: { id: 'pounce', cd: 8000, windup: 130, recover: 700, shape: 'line', len: 7, width: 2.4, dmg: 12, kb: 1.2, dash: 7 },
     carno: { id: 'charge', cd: 10000, windup: 250, recover: 900, shape: 'line', len: 7, width: 3.2, dmg: 18, kb: 5, dash: 6.5 },
     spino: { id: 'sweep', cd: 7000, windup: 180, recover: 350, shape: 'circle', r: 5.2, dmg: 9, kb: 4.5 },
@@ -2312,7 +2313,7 @@
   }
   function arenaSkillPress(yawOv) {
     const sk = kitSkill();
-    if (!sk || roarCd > 0 || player.atkCd > 0 || skillWind) return;
+    if (!sk || roarCd > 0 || player.atkCd > 0 || skillWind || stunT > 0) return;
     if (yawOv !== undefined) player.yaw = yawOv; else if (sk.shape !== 'circle') player.yaw = aimYaw();
     hero.root.rotation.y = player.yaw;                                              // langsung menghadap arah serangan (tanpa menunggu putaran halus)
     roarCd = sk.cd / 1000;
@@ -2357,7 +2358,7 @@
     if (sk.shape === 'circle') { roarR = sk.r; roarT = 0; }
     if (sk.id === 'roar') showDmg(player.x, gy + player.y + 3.0 * scaleNow / 1.1, player.z, t('roar_pop'), 'crit', 1.3);
     if (sk.dash) dashS = { left: 0.22, dx: -Math.sin(yaw), dz: -Math.cos(yaw), v: sk.dash / 0.22 };
-    skillFx(sk.id, ox !== undefined ? ox : player.x, oz !== undefined ? oz : player.z, yaw, { shape: sk.shape, r: sk.r || 0, len: sk.len || 0, width: sk.width || 0, arc: sk.arc || 0 });
+    skillFx(sk.id, ox !== undefined ? ox : player.x, oz !== undefined ? oz : player.z, yaw, { shape: sk.shape, r: sk.r || 0, len: sk.len || 0, width: sk.width || 0, arc: sk.arc || 0 }, true);
     starBurst(player.x, gy + player.y + 1.4 * scaleNow / 1.1, player.z, 8, 'gain');
   }
   // mode solo: kerusakan skill dihitung di sini (di arena ditentukan server)
@@ -2379,13 +2380,14 @@
       if (!calm) damagePred(p, sk.dmg * mult * (giant ? 0.6 : 1), 'skill');
       if (p.dead) continue;
       if (p.def.timid) { p.state = 'flee'; p.t = 3; }
-      else { p.state = 'stun'; p.t = giant ? 0.7 : (sk.id === 'sonic' ? 1.4 : 1.2); p.cd = Math.max(p.cd, 1.4); p.warn && (p.warn.visible = false); }
+      else { p.state = 'stun'; p.t = giant ? (sk.stun ? 1.2 : 0.7) : (sk.stun ? sk.stun / 1000 : sk.id === 'sonic' ? 1.4 : 1.2); p.cd = Math.max(p.cd, 1.4); p.warn && (p.warn.visible = false); }
     }
     if (sk.shape === 'circle') player.invuln = Math.max(player.invuln, 0.5);
     if (hit === 0) toast(t('roar_none'), 1.2);
   }
   function updateSkill(dt) {
     slowT = Math.max(0, slowT - dt); if (slowT <= 0) slowMul = 1;
+    if (stunT > 0) { stunT = Math.max(0, stunT - dt); if (stunT > 0 && Math.random() < dt * 6) starBurst(player.x, (player.gy || 0) + player.y + 2.6 * scaleNow / 1.1, player.z, 2, 'gain'); }
     if (skAnim) { skAnim.t += dt; if (skAnim.t >= skAnim.dur) skAnim = null; }
     if (state !== 'playing') { skillWind = null; dashS = null; if (aim.on) aimClear(); return; }
     if (aimHintT > 0) { aimHintT -= dt; if (aimHintT <= 0) toast(t('ar_aim'), 6); }
@@ -4011,8 +4013,26 @@
     if (swarm >= 3 && roarCd <= 0 && roarHint <= 0) { toast(t('swarm_hint', { b: t('sk_roar') }), 2.2); roarHint = 14; }
   }
 
+  // ---------- Penanda jangkauan gigitan: cincin tipis di sekeliling dino (membesar mengikuti ukuran; menyala bila ada lawan dalam jangkauan) ----------
+  const biteGeo = new THREE.RingGeometry(0.955, 1, 72); biteGeo.rotateX(-Math.PI / 2);
+  const mBite = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.3, depthWrite: false, depthTest: false, fog: false, side: THREE.DoubleSide });
+  const biteRing = new THREE.Mesh(biteGeo, mBite); biteRing.renderOrder = 3; biteRing.visible = false; biteRing.frustumCulled = false; scene.add(biteRing);
+  let biteHot = 0;
+  const biteRange = () => { const sk = arenaOn && typeof Arena !== 'undefined' && Arena.kits && Arena.kits[save.char]; return 2.4 * (scaleNow / 1.1) + 0.75 + (sk && sk.bite ? sk.bite.reach || 0 : 0); };
+  function updateBiteRing(dt) {
+    const on = state === 'playing' && save.ring !== false;
+    biteRing.visible = on; if (!on) return;
+    const R = biteRange(), gy = (player.gy || heightAt(player.x, player.z)) + player.y * 0.0 + 0.12;
+    let hot = false;
+    for (const p of preds) { if (!p.dead && !p.def.timid && !p.def.neutral && Math.hypot(p.x - player.x, p.z - player.z) < R + p.def.scale * 0.6) { hot = true; break; } }
+    if (!hot && arenaOn && typeof Arena !== 'undefined') for (const r of Arena.remotes.values()) { if (r.seen && r.near && !(r.npc && r.fr) && Math.hypot(r.x - player.x, r.z - player.z) < R + 0.6) { hot = true; break; } }
+    biteHot += ((hot ? 1 : 0) - biteHot) * Math.min(1, dt * 10);
+    biteRing.position.set(player.x, gy, player.z); biteRing.scale.set(R, 1, R);
+    mBite.opacity = 0.26 + 0.34 * biteHot + 0.05 * Math.sin(clock * 5) * biteHot;
+    mBite.color.setRGB(1, 1 - 0.55 * biteHot, 1 - 0.7 * biteHot);                  // putih -> oranye saat lawan terjangkau
+  }
   function startAttack() {
-    if (player.atkCd > 0 || player.atkT >= 0) return;
+    if (player.atkCd > 0 || player.atkT >= 0 || stunT > 0) return;
     // bantuan bidik: hadapkan ke predator terdekat jika dekat
     let best = null, bd = 6.5;
     for (const p of preds) {
@@ -4479,6 +4499,7 @@
       const l = Math.hypot(ix, iz);
       if (l > 1) { ix /= l; iz /= l; }
     }
+    if (stunT > 0) { ix = 0; iz = 0; }                                                   // pingsan: tidak bisa bergerak
     const mag = Math.min(1, Math.hypot(ix, iz));
     if (mag > 0) {                                      // arah gerak mengikuti sudut kamera
       const cs = Math.cos(camYaw), sn = Math.sin(camYaw);
@@ -5067,7 +5088,7 @@
     animate(dt);
     updateRemotes(dt);
     updateRemoteRings(dt);
-    updateSlashes(dt); updateRingFx(dt); updateBubbles(dt); updateTele(dt); updateSkill(dt); updateFx(dt); updateBolts(dt); updateDrift(dt); updateSurprise(dt); updateRain(dt);
+    updateSlashes(dt); updateRingFx(dt); updateBubbles(dt); updateTele(dt); updateSkill(dt); updateFx(dt); updateBolts(dt); updateDrift(dt); updateSurprise(dt); updateRain(dt); updateBiteRing(dt);
     updateOnline(dt);
     if (arenaOn && state === 'playing') Arena.send({ x: player.x, z: player.z, y: hero.root.position.y, yaw: player.yaw, vx: player.vx, vz: player.vz, atk: player.atkT, sw: swimming }, now);
     updateCamera(dt);

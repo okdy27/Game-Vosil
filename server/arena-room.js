@@ -44,7 +44,7 @@ export const HIT_GAP_MS = 300;          // satu penyerang tidak bisa mengenai ko
 //          shape circle(r) | line(len,width) | cone(r,arc), dmg, kb (dorong), dash (maju sendiri, meter), slow (0-1) & slowMs
 export const KITS = {
   vosil: { bite: { dmg: 6, cd: 550, reach: 0 },
-    skill: { id: 'roar', cd: 14000, windup: 150, recover: 250, shape: 'circle', r: 8.2, dmg: 7, kb: 3 } },
+    skill: { id: 'roar', cd: 14000, windup: 150, recover: 250, shape: 'circle', r: 8.2, dmg: 7, kb: 3, stun: 2500 } },
   velo: { bite: { dmg: 3.5, cd: 330, reach: -0.3 },
     skill: { id: 'pounce', cd: 8000, windup: 130, recover: 700, shape: 'line', len: 7, width: 2.4, dmg: 12, kb: 1.2, dash: 7 } },
   carno: { bite: { dmg: 11, cd: 950, reach: 0.1 },
@@ -203,9 +203,11 @@ export class ArenaCore {
     q.hitGap.set(a.id, t + HIT_GAP_MS);
     const real = dmg * this.armor(q);
     q.hp = Math.max(0, q.hp - real); q.dseq++; q.lastHurt = t; q.kbUntil = t + 600;
+    let stunMs = 0;
+    if (ex && ex.stun > 0) { stunMs = q.npc ? ex.stun : Math.min(ex.stun, 1200); q.stunUntil = Math.max(q.stunUntil || 0, t + stunMs); }       // pingsan: NPC penuh, pemain dibatasi 1,2 dtk (adil)
     if (q.npc) { q.anger = t + 9000; q.lastAtt = a; }
-    q.send(JSON.stringify({ t: 'd', by: a.id, k: kind, dmg: r1(real), hp: r1(q.hp), seq: q.dseq, x: r1(a.x), z: r1(a.z), kb: (ex && ex.kb) || 0, slow: (ex && ex.slow) || 0, slowMs: (ex && ex.slowMs) || 0 }));
-    a.send(JSON.stringify({ t: 'h', to: q.id, k: kind, dmg: r1(real), hp: r1(q.hp) }));
+    q.send(JSON.stringify({ t: 'd', by: a.id, k: kind, dmg: r1(real), hp: r1(q.hp), seq: q.dseq, x: r1(a.x), z: r1(a.z), kb: (ex && ex.kb) || 0, slow: (ex && ex.slow) || 0, slowMs: (ex && ex.slowMs) || 0, stun: stunMs }));
+    a.send(JSON.stringify({ t: 'h', to: q.id, k: kind, dmg: r1(real), hp: r1(q.hp), stun: stunMs }));
     this.dirty = true;
     if (q.hp <= 0) this.kill(q, a);
     return true;
@@ -217,7 +219,7 @@ export class ArenaCore {
     this.broadcast({ t: 'k', id: q.id, by: a.id, nm: q.name, bn: a.name });
   }
   onBite(a, m, t) {
-    if (t < a.atkReady || t < a.lockUntil) return;                 // terlalu cepat / sedang terkunci: abaikan
+    if (t < a.atkReady || t < a.lockUntil || t < (a.stunUntil || 0)) return;                 // terlalu cepat / pingsan / sedang terkunci: abaikan
     const kit = KITS[a.char].bite;
     a.atkReady = t + kit.cd;
     if (typeof m.yaw === 'number' && Number.isFinite(m.yaw)) a.yaw = m.yaw;
@@ -235,7 +237,7 @@ export class ArenaCore {
   // skill khas: ada jeda persiapan (windup). Semua melihat tanda bahaya di tanah; kena atau tidak ditentukan SAAT jeda habis.
   onSkill(a, m, t) {
     const sk = KITS[a.char].skill;
-    if (t < a.skReady || t < a.lockUntil) return;
+    if (t < a.skReady || t < a.lockUntil || t < (a.stunUntil || 0)) return;
     a.skReady = t + sk.cd;
     a.lockUntil = t + sk.windup + sk.recover;
     a.atkReady = Math.max(a.atkReady, a.lockUntil);
@@ -261,7 +263,7 @@ export class ArenaCore {
         const along = rx * dx + rz * dz, lat = Math.abs(rx * dz - rz * dx);
         hit = along >= -0.8 && along <= sk.len + LAG_RANGE && lat <= sk.width / 2 + body * 0.5 + LAG_RANGE * 0.6;
       } else if (sk.shape === 'cone') hit = dist <= sk.r + body * 0.5 + LAG_RANGE && (dist < 1.3 || Math.abs(angDiff(sp.yaw, faceYaw(rx, rz))) <= sk.arc + LAG_ARC);
-      if (hit) this.strikeTarget(a, q, sk.dmg * lvDmg(a.level), t, sk.id, { kb: sk.kb, slow: sk.slow, slowMs: sk.slowMs });
+      if (hit) this.strikeTarget(a, q, sk.dmg * lvDmg(a.level), t, sk.id, { kb: sk.kb, slow: sk.slow, slowMs: sk.slowMs, stun: sk.stun });
     }
     this.dirty = true;
   }
@@ -293,7 +295,7 @@ export class ArenaCore {
     for (let a = 0; a < 12 && !found; a++) {                                           // cari tempat yang wajar: geser sudut/jarak bila air, jurang, atau area lompat
       ang = ang0 + (a % 2 ? 1 : -1) * Math.ceil(a / 2) * 0.45;
       const d = (o.d !== undefined ? o.d : NPC.spawnMin + this.rnd() * (NPC.spawnMax - NPC.spawnMin)) + (a > 5 ? (a - 5) * 3 : 0);
-      x = base.x + Math.cos(ang) * d + (o.jx || 0); z = base.z + Math.sin(ang) * d + (o.jz || 0);
+      x = base.x + Math.cos(ang) * d + (o.jx || 0) + (this.rnd() - 0.5) * 3; z = base.z + Math.sin(ang) * d + (o.jz || 0) + (this.rnd() - 0.5) * 3;
       if (!o.force && ps.some((p) => Math.hypot(p.x - x, p.z - z) < NPC.spawnMin - 8)) continue;
       if (this.terr && !this.terr.walkable(x, z)) continue;       // tidak muncul di air / jurang / dekat area harta karun
       found = true;
@@ -340,6 +342,7 @@ export class ArenaCore {
       for (const p of ps) { const dd = Math.hypot(p.x - n.x, p.z - n.z); if (dd < nearAny) { nearAny = dd; n.y = p.y; } if (dd < nearest && !inZone(p.x, p.z)) { nearest = dd; np = p; } }     // pemain di dalam area harta karun tidak dikejar
       if (nearAny > NPC.despawn && !n.pack) { this.dropNpc(n); continue; }
       if (nearAny > NPC.despawn * 1.6) { this.dropNpc(n); continue; }
+      if (t < (n.stunUntil || 0)) { n.cs = 0; n.vx = 0; n.vz = 0; if (n.atk >= 0) { n.atk += dt; if (n.atk > 0.35) n.atk = -1; } this.dirty = true; continue; }     // pingsan: diam total
       let dx = 0, dz = 0, spd = 0;
       const toward = (x, z, v) => { const ex = x - n.x, ez = z - n.z, dd = Math.max(0.001, Math.hypot(ex, ez)); dx = ex / dd; dz = ez / dd; spd = v; n.yaw = faceYaw(ex, ez); return dd; };
       const away = (x, z, v) => { const ex = n.x - x, ez = n.z - z, dd = Math.max(0.001, Math.hypot(ex, ez)); dx = ex / dd; dz = ez / dd; spd = v; n.yaw = faceYaw(dx, dz); };
@@ -439,6 +442,19 @@ export class ArenaCore {
       }
       if (n.atk >= 0) { n.atk += dt; if (n.atk > 0.35) n.atk = -1; }
       this.dirty = true;
+    }
+    // jangan bertumpuk: NPC yang terlalu dekat saling mendorong pelan (mencegah model menumpuk & berkedip, juga kawanan terlihat mengepung)
+    const arr = [...this.npcs.values()], pushK = Math.min(1, dt * 7);
+    for (let i = 0; i < arr.length; i++) for (let j = i + 1; j < arr.length; j++) {
+      const A = arr[i], B = arr[j];
+      const minD = (STATS[A.char].scale + STATS[B.char].scale) * 0.55 + 0.5;
+      let ex = B.x - A.x, ez = B.z - A.z, d = Math.hypot(ex, ez);
+      if (d >= minD) continue;
+      if (d < 0.01) { const ang = this.rnd() * Math.PI * 2; ex = Math.cos(ang); ez = Math.sin(ang); d = 0.01; }
+      const push = (minD - d) * 0.5 * pushK, ux = ex / d, uz = ez / d;
+      const aw = A.kind === 'giant' ? 0.2 : 1, bw = B.kind === 'giant' ? 0.2 : 1, tw = aw + bw;
+      if (!inZone(A.x - ux * push * 2 * bw / tw, A.z - uz * push * 2 * bw / tw)) { A.x -= ux * push * 2 * bw / tw; A.z -= uz * push * 2 * bw / tw; }
+      if (!inZone(B.x + ux * push * 2 * aw / tw, B.z + uz * push * 2 * aw / tw)) { B.x += ux * push * 2 * aw / tw; B.z += uz * push * 2 * aw / tw; }
     }
   }
 

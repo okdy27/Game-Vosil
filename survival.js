@@ -3425,7 +3425,7 @@
     el.addEventListener('pointerup', end);
     el.addEventListener('pointercancel', end);
   }
-  bindBtn(btnAttack, () => { input.attack = true; });
+  bindBtn(btnAttack, () => { input.attack = true; atkHeld = true; atkShowT = 0.35; }, () => { atkHeld = false; });
   bindBtn(btnJump, () => { input.jump = true; });
   if (btnRoar) {                                                  // skill: ketuk = langsung (bidik otomatis); tahan + geser = bidik manual, lepas = luncurkan
     btnRoar.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -3462,15 +3462,16 @@
       return;
     }
     if (k === ' ') input.jump = true;
-    else if (k === 'j' || k === 'k') input.attack = true;
+    else if (k === 'j' || k === 'k') { input.attack = true; atkHeld = true; atkShowT = 0.35; }
     else if (k === 'r' || k === 'l') doRoar();
   });
   window.addEventListener('keyup', (e) => {
     const k = e.key.toLowerCase();
     const map = { arrowleft: 'left', a: 'left', arrowright: 'right', d: 'right', arrowup: 'up', w: 'up', arrowdown: 'down', s: 'down', shift: 'shift', q: 'camL', e: 'camR' };
     if (map[k]) keys[map[k]] = false;
+    if (k === 'j' || k === 'k') atkHeld = false;
   });
-  window.addEventListener('blur', () => { for (const k in keys) keys[k] = false; stickEnd(null); input.sprint = false; });
+  window.addEventListener('blur', () => { for (const k in keys) keys[k] = false; stickEnd(null); input.sprint = false; atkHeld = false; });
 
   // layar penuh + kunci horizontal otomatis (Android Chrome); iPhone tidak mengizinkan, jadi pakai petunjuk
   const isFs = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
@@ -4014,21 +4015,32 @@
   }
 
   // ---------- Penanda jangkauan gigitan: cincin tipis di sekeliling dino (membesar mengikuti ukuran; menyala bila ada lawan dalam jangkauan) ----------
-  const biteGeo = new THREE.RingGeometry(0.955, 1, 72); biteGeo.rotateX(-Math.PI / 2);
-  const mBite = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.3, depthWrite: false, depthTest: false, fog: false, side: THREE.DoubleSide });
+  const BR_N = 72, biteArr = new Float32Array((BR_N + 1) * 2 * 3), biteGeo = new THREE.BufferGeometry();
+  { const idx = []; for (let k = 0; k < BR_N; k++) { const a = k * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); } biteGeo.setIndex(idx); }
+  biteGeo.setAttribute('position', new THREE.BufferAttribute(biteArr, 3));
+  const mBite = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false, depthTest: false, fog: false, side: THREE.DoubleSide });
   const biteRing = new THREE.Mesh(biteGeo, mBite); biteRing.renderOrder = 3; biteRing.visible = false; biteRing.frustumCulled = false; scene.add(biteRing);
-  let biteHot = 0;
+  let biteHot = 0, biteShow = 0, atkHeld = false, atkShowT = 0;
   const biteRange = () => { const sk = arenaOn && typeof Arena !== 'undefined' && Arena.kits && Arena.kits[save.char]; return 2.4 * (scaleNow / 1.1) + 0.75 + (sk && sk.bite ? sk.bite.reach || 0 : 0); };
-  function updateBiteRing(dt) {
-    const on = state === 'playing' && save.ring !== false;
-    biteRing.visible = on; if (!on) return;
-    const R = biteRange(), gy = (player.gy || heightAt(player.x, player.z)) + player.y * 0.0 + 0.12;
+  function updateBiteRing(dt) {                                                    // hanya tampil saat tombol gigit ditekan (ketukan singkat tetap terlihat ~0,35 dtk)
+    atkShowT = Math.max(0, atkShowT - dt);
+    const want = state === 'playing' && save.ring !== false && (atkHeld || atkShowT > 0) ? 1 : 0;
+    biteShow += (want - biteShow) * Math.min(1, dt * 16);
+    if (biteShow < 0.02) { biteRing.visible = false; return; }
+    biteRing.visible = true;
+    const R = biteRange(), w = 0.13;
     let hot = false;
     for (const p of preds) { if (!p.dead && !p.def.timid && !p.def.neutral && Math.hypot(p.x - player.x, p.z - player.z) < R + p.def.scale * 0.6) { hot = true; break; } }
-    if (!hot && arenaOn && typeof Arena !== 'undefined') for (const r of Arena.remotes.values()) { if (r.seen && r.near && !(r.npc && r.fr) && Math.hypot(r.x - player.x, r.z - player.z) < R + 0.6) { hot = true; break; } }
+    if (!hot && arenaOn && typeof Arena !== 'undefined') for (const r of Arena.remotes.values()) { if (r.seen && r.near && Math.hypot(r.x - player.x, r.z - player.z) < R + 0.6) { hot = true; break; } }
     biteHot += ((hot ? 1 : 0) - biteHot) * Math.min(1, dt * 10);
-    biteRing.position.set(player.x, gy, player.z); biteRing.scale.set(R, 1, R);
-    mBite.opacity = 0.26 + 0.34 * biteHot + 0.05 * Math.sin(clock * 5) * biteHot;
+    for (let k = 0; k <= BR_N; k++) {                                            // cincin mengikuti permukaan tanah (lembah, lereng) supaya tidak terpotong
+      const a = k / BR_N * Math.PI * 2, c = Math.cos(a), sn = Math.sin(a), o = k * 6;
+      const xo = player.x + c * R, zo = player.z + sn * R, xi = player.x + c * (R - w), zi = player.z + sn * (R - w);
+      biteArr[o] = xi; biteArr[o + 1] = heightAt(xi, zi) + 0.2; biteArr[o + 2] = zi;
+      biteArr[o + 3] = xo; biteArr[o + 4] = heightAt(xo, zo) + 0.2; biteArr[o + 5] = zo;
+    }
+    biteGeo.attributes.position.needsUpdate = true;
+    mBite.opacity = (0.55 + 0.3 * biteHot) * biteShow;
     mBite.color.setRGB(1, 1 - 0.55 * biteHot, 1 - 0.7 * biteHot);                  // putih -> oranye saat lawan terjangkau
   }
   function startAttack() {

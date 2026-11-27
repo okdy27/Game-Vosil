@@ -32,6 +32,37 @@ export const EMOTES = 6, EMOTE_CD_MS = 2000;
 const LV1 = 0.72;                       // skala level 1 (lvScale(1))
 export const HP_MAX = 100;
 export const MAX_LEVEL = 10;
+// ===== Toko "Build": item dibeli dengan EMAS selama satu kehidupan (bukan poin VOS). Salinan katalog ada di survival.js (tes membandingkan keduanya). =====
+export const ITEMS = {
+  a1: { cat: 'atk', tier: 1, cost: 160, dmg: 0.06 },
+  a2: { cat: 'atk', tier: 2, cost: 360, from: ['a1'], dmg: 0.14 },
+  a3: { cat: 'atk', tier: 3, cost: 780, from: ['a2'], dmg: 0.24, ls: 0.06 },
+  d1: { cat: 'def', tier: 1, cost: 160, arm: 0.06 },
+  d2: { cat: 'def', tier: 2, cost: 360, from: ['d1'], arm: 0.14 },
+  d3: { cat: 'def', tier: 3, cost: 780, from: ['d2'], arm: 0.22, reg: 1.5 },
+  m1: { cat: 'mov', tier: 1, cost: 150, spd: 0.06 },
+  m2: { cat: 'mov', tier: 2, cost: 330, from: ['m1'], spd: 0.12 },
+  m3: { cat: 'mov', tier: 3, cost: 700, from: ['m2'], spd: 0.18, cdr: 0.1 },
+  s1: { cat: 'spc', tier: 1, cost: 160, xp: 0.15 },
+  s2: { cat: 'spc', tier: 2, cost: 360, from: ['s1'], xp: 0.15, gold: 0.2 },
+  s3: { cat: 'spc', tier: 3, cost: 780, from: ['s2'], xp: 0.3, gold: 0.25, cdr: 0.12 },
+};
+export const MAX_SLOTS = 6, SELL_BACK = 0.7, START_GOLD = 100;
+export const CAPS = { dmg: 0.5, arm: 0.35, spd: 0.2, ls: 0.1, reg: 3, cdr: 0.2, xp: 0.5, gold: 0.5 };
+export function buildMods(items) {
+  const m = { dmg: 0, arm: 0, spd: 0, ls: 0, reg: 0, cdr: 0, xp: 0, gold: 0 };
+  for (const id of items) { const it = ITEMS[id]; if (!it) continue; for (const k of Object.keys(m)) m[k] += it[k] || 0; }
+  for (const k of Object.keys(m)) m[k] = Math.min(CAPS[k], m[k]);
+  return m;
+}
+// harga bayar: komponen yang sudah dimiliki dipakai & dikurangkan (seperti di MOBA)
+export function buyPlan(items, id) {
+  const it = ITEMS[id]; if (!it) return null;
+  const left = items.slice(); let price = it.cost; const used = [];
+  for (const c of it.from || []) { const i = left.indexOf(c); if (i >= 0) { left.splice(i, 1); price -= ITEMS[c].cost; used.push(c); } }
+  left.push(id);
+  return { price, items: left, used };
+}
 export const xpNeed = (l) => 45 + 30 * (l - 1);
 export const lvDmg = (l) => 1 + 0.07 * (l - 1);           // level naik -> gigitan makin kuat
 export const lvArmor = (l) => 1 - 0.025 * (l - 1);         // ... dan makin tahan
@@ -116,7 +147,7 @@ export class ArenaCore {
       id, send, name: 'Dino', char: 'vosil', level: 1, ready: false, alive: true,
       x: Math.cos(ang) * d, y: 0, z: Math.sin(ang) * d, yaw: 0, vx: 0, vz: 0, atk: -1, sw: 0,
       lastT: this.now(), bucket: RATE, bucketT: this.now(), strikes: 0,
-      emReady: 0, hp: HP_MAX, xp: 0, xpT: 0, dseq: 0, lastHurt: 0, kbUntil: 0, hitGap: new Map(), atkReady: 0, skReady: 0, lockUntil: 0, dashUntil: 0, kills: 0,
+      emReady: 0, hp: HP_MAX, xp: 0, xpT: 0, gold: START_GOLD, goldT: 0, items: [], mods: buildMods([]), bornT: 0, dseq: 0, lastHurt: 0, kbUntil: 0, hitGap: new Map(), atkReady: 0, skReady: 0, lockUntil: 0, dashUntil: 0, kills: 0,
     };
     this.players.set(id, p);
     this.dirty = true;
@@ -143,10 +174,12 @@ export class ArenaCore {
     if (m.t === 'q') { p.send(JSON.stringify({ t: 'o', c: num(m.c) })); return; }         // ping -> pong (klien mengukur jeda)
     if (m.t === 'h') {                                             // hello: identitas tampilan
       p.name = cleanName(m.name); p.char = CHARS.includes(m.char) ? m.char : 'vosil';
-      p.level = 1; p.xp = 0;                                       // setiap hidup baru mulai dari level 1, lalu naik lewat XP
+      p.level = 1; p.xp = 0; p.gold = START_GOLD; p.items = []; p.mods = buildMods([]); p.bornT = this.now();
+      // setiap hidup baru mulai dari level 1, lalu naik lewat XP
       const first = !p.ready; p.ready = true; this.dirty = true;
       const roster = this.everyone().filter((q) => q.ready).map((q) => this.card(q));
       p.send(JSON.stringify({ t: 'w', id: p.id, seed: this.seed, ts: this.now(), t0: this.t0, x: r1(p.x), z: r1(p.z), roster, max: MAX_PLAYERS, kits: KITS }));
+      this.sendGold(p);
       if (first) this.broadcast({ t: 'j', p: this.card(p) }, p.id);
       return;
     }
@@ -156,6 +189,8 @@ export class ArenaCore {
     else if (m.t === 'k' || m.t === 'r') this.onSkill(p, m, t);
     else if (m.t === 'e') this.onEmote(p, m, t);
     else if (m.t === 'tp') this.onTeleport(p, m, t);
+    else if (m.t === 'by') this.onBuy(p, m, t);
+    else if (m.t === 'sl') this.onSell(p, m, t);
   }
 
   // teleport resmi dari game (pintu pulau harta / jatuh ke jurang): dibatasi supaya tidak bisa dipakai curang
@@ -170,7 +205,7 @@ export class ArenaCore {
     const x = num(m.x, p.x), z = num(m.z, p.z), y = num(m.y, p.y);
     const dt = Math.max(0.05, Math.min(1, (t - p.lastT) / 1000));
     if (p.strikes > 0) p.strikes = Math.max(0, p.strikes - 0.5 * Math.max(0, (t - (p.strikeT || t)) / 1000)); p.strikeT = t;     // pelanggaran lama memudar
-    if (Math.abs(x) > WORLD_LIM || Math.abs(z) > WORLD_LIM || Math.hypot(x - p.x, z - p.z) > maxSpeed(p.char) * dt + 2 + (t < p.dashUntil ? 9 : 0) + (t < p.kbUntil ? 6 : 0) || Math.abs(y - p.y) > 40 + 40 * dt) {
+    if (Math.abs(x) > WORLD_LIM || Math.abs(z) > WORLD_LIM || Math.hypot(x - p.x, z - p.z) > maxSpeed(p.char) * (1 + p.mods.spd) * dt + 2 + (t < p.dashUntil ? 9 : 0) + (t < p.kbUntil ? 6 : 0) || Math.abs(y - p.y) > 40 + 40 * dt) {
       p.strikes++;                                                 // loncat terlalu jauh -> kembalikan ke posisi terakhir yang sah
       p.send(JSON.stringify({ t: 'f', x: r1(p.x), z: r1(p.z) }));
       if (p.strikes > 30) p.send(JSON.stringify({ t: 'kick' }));
@@ -185,12 +220,33 @@ export class ArenaCore {
     if (moved) this.dirty = true;
   }
 
+  // ---- toko Build ----
+  sendGold(p, err) { try { p.send(JSON.stringify({ t: 'g', g: Math.floor(p.gold), it: p.items, err: err || '' })); } catch (e) { /* abaikan */ } }
+  addGold(p, n) { if (p.npc || !p.alive || n <= 0) return; p.gold += n * (1 + p.mods.gold); this.sendGold(p); }
+  onBuy(p, m, t) {
+    if (!p.alive || !p.ready) return;
+    if (t < (p.shopReady || 0)) return; p.shopReady = t + 250;
+    const plan = buyPlan(p.items, String(m.id));
+    if (!plan) return;
+    if (plan.items.length > MAX_SLOTS) { this.sendGold(p, 'full'); return; }
+    if (p.gold < plan.price) { this.sendGold(p, 'gold'); return; }
+    p.gold -= plan.price; p.items = plan.items; p.mods = buildMods(p.items);
+    this.sendGold(p); this.dirty = true;
+  }
+  onSell(p, m, t) {
+    if (!p.alive || !p.ready) return;
+    if (t < (p.shopReady || 0)) return; p.shopReady = t + 250;
+    const id = String(m.id), i = p.items.indexOf(id); if (i < 0) return;
+    p.items.splice(i, 1); p.gold += Math.floor(ITEMS[id].cost * 7 / 10); p.mods = buildMods(p.items);
+    this.sendGold(p); this.dirty = true;
+  }
+
   // ---- serangan ----
-  armor(q) { return STATS[q.char].armor * (q.npc ? 1 : lvArmor(q.level)); }
+  armor(q) { return STATS[q.char].armor * (q.npc ? 1 : lvArmor(q.level) * (1 - q.mods.arm)); }
   // XP milik server (anti-curang): naik level mempengaruhi kekuatan & ketahanan
   gainXp(p, n) {
     if (p.npc || !p.alive || p.level >= MAX_LEVEL || n <= 0) return;
-    p.xp += n; let up = 0;
+    p.xp += n * (1 + p.mods.xp); let up = 0;
     while (p.level < MAX_LEVEL && p.xp >= xpNeed(p.level)) { p.xp -= xpNeed(p.level); p.level++; up++; }
     if (p.level >= MAX_LEVEL) p.xp = 0;
     if (up) { p.hp = Math.min(HP_MAX, p.hp + 35); this.dirty = true; }
@@ -201,7 +257,9 @@ export class ArenaCore {
     if (!q.alive || q.id === a.id || !q.ready) return false;
     if ((q.hitGap.get(a.id) || 0) > t) return false;               // baru saja dikenai penyerang yang sama
     q.hitGap.set(a.id, t + HIT_GAP_MS);
+    if (a.npc && !q.npc) dmg *= 0.5 + 0.5 * Math.min(1, (t - (q.bornT || t)) / 150000);     // awal kehidupan: serangan NPC lebih lemah, naik pelan sampai ~2,5 menit
     const real = dmg * this.armor(q);
+    if (!a.npc && a.mods.ls > 0 && a.alive) a.hp = Math.min(HP_MAX, a.hp + real * a.mods.ls);       // curi nyawa (item Gigi Raja)
     q.hp = Math.max(0, q.hp - real); q.dseq++; q.lastHurt = t; q.kbUntil = t + 600;
     let stunMs = 0;
     if (ex && ex.stun > 0) { stunMs = q.npc ? ex.stun : Math.min(ex.stun, 1200); q.stunUntil = Math.max(q.stunUntil || 0, t + stunMs); }       // pingsan: NPC penuh, pemain dibatasi 1,2 dtk (adil)
@@ -214,7 +272,7 @@ export class ArenaCore {
   }
   kill(q, a) {
     q.alive = false; a.kills++;
-    if (!a.npc) this.gainXp(a, q.npc ? Math.min(70, Math.round(q.maxHp * 0.35) + 8) : 30 + 8 * q.level);
+    if (!a.npc) { this.gainXp(a, q.npc ? Math.min(70, Math.round(q.maxHp * 0.35) + 8) : 30 + 8 * q.level); this.addGold(a, q.npc ? 12 + Math.round(q.maxHp * 0.22) : 40 + 10 * q.level); }
     if (q.npc) { this.npcSpawnAt = Math.max(this.npcSpawnAt, this.now() + (q.pack ? 0 : NPC.respawnMs)); this.broadcast({ t: 'k', id: q.id, by: a.id, nm: q.name, bn: a.name }); this.dropNpc(q); return; }
     this.broadcast({ t: 'k', id: q.id, by: a.id, nm: q.name, bn: a.name });
   }
@@ -230,7 +288,7 @@ export class ArenaCore {
       if (d > 2.4 * sA + STATS[q.char].scale * LV1 * 0.9 + kit.reach + LAG_RANGE) continue;
       if (d > 1.3 && Math.abs(angDiff(a.yaw, faceYaw(dx, dz))) > BITE_ARC + LAG_ARC) continue;
       if (Math.abs(q.y - a.y) > 6) continue;                       // beda ketinggian jauh (tebing)
-      this.strikeTarget(a, q, kit.dmg * lvDmg(a.level), t, 'bite');
+      this.strikeTarget(a, q, kit.dmg * lvDmg(a.level) * (1 + a.mods.dmg), t, 'bite');
     }
     this.dirty = true;
   }
@@ -238,7 +296,7 @@ export class ArenaCore {
   onSkill(a, m, t) {
     const sk = KITS[a.char].skill;
     if (t < a.skReady || t < a.lockUntil || t < (a.stunUntil || 0)) return;
-    a.skReady = t + sk.cd;
+    a.skReady = t + sk.cd * (1 - a.mods.cdr);
     a.lockUntil = t + sk.windup + sk.recover;
     a.atkReady = Math.max(a.atkReady, a.lockUntil);
     if (sk.dash) a.dashUntil = t + sk.windup + 500;
@@ -263,7 +321,7 @@ export class ArenaCore {
         const along = rx * dx + rz * dz, lat = Math.abs(rx * dz - rz * dx);
         hit = along >= -0.8 && along <= sk.len + LAG_RANGE && lat <= sk.width / 2 + body * 0.5 + LAG_RANGE * 0.6;
       } else if (sk.shape === 'cone') hit = dist <= sk.r + body * 0.5 + LAG_RANGE && (dist < 1.3 || Math.abs(angDiff(sp.yaw, faceYaw(rx, rz))) <= sk.arc + LAG_ARC);
-      if (hit) this.strikeTarget(a, q, sk.dmg * lvDmg(a.level), t, sk.id, { kb: sk.kb, slow: sk.slow, slowMs: sk.slowMs, stun: sk.stun });
+      if (hit) this.strikeTarget(a, q, sk.dmg * lvDmg(a.level) * (1 + a.mods.dmg), t, sk.id, { kb: sk.kb, slow: sk.slow, slowMs: sk.slowMs, stun: sk.stun });
     }
     this.dirty = true;
   }
@@ -289,7 +347,7 @@ export class ArenaCore {
   spawnNpc(t, type, o = {}) {
     const ps = [...this.players.values()].filter((p) => p.ready && p.alive); if (!ps.length) return null;
     const ambient = [...this.npcs.values()].filter((n) => !n.pack).length;
-    if (this.npcs.size >= NPC.hardCap || (!o.pack && ambient >= NPC.cap)) return null;                // kawanan punya jatah sendiri di luar batas NPC biasa
+    if (this.npcs.size >= NPC.hardCap || (!o.pack && ambient >= (this.capNow || NPC.cap))) return null;                // kawanan punya jatah sendiri di luar batas NPC biasa
     const sp = NPCT[type], base = o.base || ps[Math.floor(this.rnd() * ps.length)], ang0 = o.ang !== undefined ? o.ang : this.rnd() * Math.PI * 2;
     let x = 0, z = 0, ang = ang0, found = false;
     for (let a = 0; a < 12 && !found; a++) {                                           // cari tempat yang wajar: geser sudut/jarak bila air, jurang, atau area lompat
@@ -320,7 +378,10 @@ export class ArenaCore {
   manageNpcs(t, ps) {
     const P = ps.length, el = t - this.born, d = this.diff();
     if (!this.packAt) this.packAt = t + NPC.packFirstMs;
-    if (t >= this.packAt) { this.packAt = t + NPC.packEveryMs[0] + this.rnd() * (NPC.packEveryMs[1] - NPC.packEveryMs[0]) * (1 - d * 0.4); this.startPack(t, ps); }
+    const grace = ps.reduce((a, p) => a + Math.min(1, (t - (p.bornT || t)) / 150000), 0) / P;     // 0 = pemain baru, 1 = sudah ~2,5 menit
+    this.capNow = Math.max(4, Math.round(NPC.cap * (0.35 + 0.65 * grace)));                       // awal permainan: lebih sedikit musuh
+    if (t >= this.packAt && grace < 0.5) this.packAt = t + 8000;                                   // kawanan tidak muncul pada ~75 detik pertama
+    else if (t >= this.packAt) { this.packAt = t + NPC.packEveryMs[0] + this.rnd() * (NPC.packEveryMs[1] - NPC.packEveryMs[0]) * (1 - d * 0.4); this.startPack(t, ps); }
     if (t < this.npcSpawnAt) return;
     this.npcSpawnAt = t + 1200;
     const want = { raptor: Math.min(5, 1 + P + Math.floor(d * 2)), compy: 2, micro: 1, para: 1, anky: 1, spinoa: el > 30000 ? 1 : 0, allo: el > 60000 ? 1 : 0, argen: el > 90000 ? 1 : 0 };
@@ -468,8 +529,8 @@ export class ArenaCore {
     const ps = [...this.players.values()].filter((p) => p.ready && p.alive);
     const everyone = [...ps, ...this.npcs.values()];
     const rdt = Math.min(1, (ts - (this.lastRegen || ts)) / 1000); this.lastRegen = ts;
-    for (const p of ps) { if (p.alive && ts - (p.xpT || (p.xpT = ts)) >= 10000) { p.xpT = ts; this.gainXp(p, 3); } }     // bertahan hidup = XP perlahan
-    for (const p of ps) if (p.hp < HP_MAX && ts - p.lastHurt > REGEN_DELAY) { p.hp = Math.min(HP_MAX, p.hp + REGEN_RATE * rdt); }
+    for (const p of ps) { if (p.alive && ts - (p.xpT || (p.xpT = ts)) >= 10000) { p.xpT = ts; this.gainXp(p, 3); } if (p.alive && ts - (p.goldT || (p.goldT = ts)) >= 5000) { p.goldT = ts; this.addGold(p, 3); } }     // bertahan hidup = XP perlahan
+    for (const p of ps) if (p.hp < HP_MAX && ts - p.lastHurt > REGEN_DELAY) { p.hp = Math.min(HP_MAX, p.hp + (REGEN_RATE + p.mods.reg) * rdt); }
     for (const a of ps) {
       const list = [];
       for (const b of everyone) {

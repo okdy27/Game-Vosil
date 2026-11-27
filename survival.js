@@ -2373,7 +2373,7 @@
   }
   // mode solo: kerusakan skill dihitung di sini (di arena ditentukan server)
   function soloSkillHit(sk, yaw, ox, oz) {
-    const fx = -Math.sin(yaw), fz = -Math.cos(yaw), mult = 1.5 * (1 + 0.3 * (player.level - 1));
+    const fx = -Math.sin(yaw), fz = -Math.cos(yaw), mult = 1.5 * (1 + 0.3 * (player.level - 1)) * (1 + bmods().dmg);
     let hit = 0;
     for (const p of preds.slice()) {
       if (p.dead) continue;
@@ -2472,12 +2472,122 @@
   const xpNeed = (l) => 45 + 30 * (l - 1);
   const lvScale = (l) => 0.72 + 0.062 * (l - 1);
   const baseScale = () => curChar.scale * lvScale(player.level);
-  const biteMul = () => curChar.bite * (1 + 0.07 * (player.level - 1));
-  const armorMul = () => curChar.armor * (1 - 0.025 * (player.level - 1));
+
+  // ===== TOKO BUILD (emas dalam permainan; BUKAN poin VOS) =====
+  const SHOP_ITEMS = {
+    a1: { cat: 'atk', tier: 1, cost: 160, ic: '🦷', dmg: 0.06 }, a2: { cat: 'atk', tier: 2, cost: 360, ic: '🦷', from: ['a1'], dmg: 0.14 }, a3: { cat: 'atk', tier: 3, cost: 780, ic: '👑', from: ['a2'], dmg: 0.24, ls: 0.06 },
+    d1: { cat: 'def', tier: 1, cost: 160, ic: '🛡', arm: 0.06 }, d2: { cat: 'def', tier: 2, cost: 360, ic: '🛡', from: ['d1'], arm: 0.14 }, d3: { cat: 'def', tier: 3, cost: 780, ic: '🐢', from: ['d2'], arm: 0.22, reg: 1.5 },
+    m1: { cat: 'mov', tier: 1, cost: 150, ic: '👟', spd: 0.06 }, m2: { cat: 'mov', tier: 2, cost: 330, ic: '👟', from: ['m1'], spd: 0.12 }, m3: { cat: 'mov', tier: 3, cost: 700, ic: '🌪', from: ['m2'], spd: 0.18, cdr: 0.1 },
+    s1: { cat: 'spc', tier: 1, cost: 160, ic: '🦴', xp: 0.15 }, s2: { cat: 'spc', tier: 2, cost: 360, ic: '🪙', from: ['s1'], xp: 0.15, gold: 0.2 }, s3: { cat: 'spc', tier: 3, cost: 780, ic: '🔮', from: ['s2'], xp: 0.3, gold: 0.25, cdr: 0.12 },
+  };
+  const SHOP_CAPS = { dmg: 0.5, arm: 0.35, spd: 0.2, ls: 0.1, reg: 3, cdr: 0.2, xp: 0.5, gold: 0.5 };
+  const SHOP_SLOTS = 6, SHOP_START = 100;
+  const build = { gold: SHOP_START, items: [] };
+  let shopOpen = false, shopTab = 'rec', shopSel = 'a1', shopGoldT = 0, bmodsC = null;
+  function bmods() {
+    if (bmodsC && bmodsC.k === build.items.join()) return bmodsC.m;
+    const m = { dmg: 0, arm: 0, spd: 0, ls: 0, reg: 0, cdr: 0, xp: 0, gold: 0 };
+    for (const id of build.items) { const it = SHOP_ITEMS[id]; if (!it) continue; for (const k of Object.keys(m)) m[k] += it[k] || 0; }
+    for (const k of Object.keys(m)) m[k] = Math.min(SHOP_CAPS[k], m[k]);
+    bmodsC = { k: build.items.join(), m };
+    return m;
+  }
+  function shopPlan(id) {
+    const it = SHOP_ITEMS[id]; if (!it) return null;
+    const left = build.items.slice(); let price = it.cost;
+    for (const c of it.from || []) { const i = left.indexOf(c); if (i >= 0) { left.splice(i, 1); price -= SHOP_ITEMS[c].cost; } }
+    left.push(id);
+    return { price, items: left };
+  }
+  function shopReset() { build.gold = SHOP_START; build.items = []; bmodsC = null; shopGoldT = 0; closeShop(); refreshShopBtn(); }
+  function addGold(n) { if (arenaOn || n <= 0) return; build.gold += Math.round(n * (1 + bmods().gold)); refreshShopBtn(); }
+  function refreshShopBtn() {
+    const b = document.getElementById('shopBtn'); if (b) b.textContent = t('sh_btn', { g: build.gold | 0 });
+    if (shopOpen) renderShop();
+  }
+  const itName = (id) => t(['it_', id].join(''));
+  function itemDesc(id) {
+    const it = SHOP_ITEMS[id], out = [];
+    const P = (k) => Math.round(it[k] * 100);
+    if (it.dmg) out.push(t('sh_dmg', { n: P('dmg') })); if (it.arm) out.push(t('sh_arm', { n: P('arm') })); if (it.spd) out.push(t('sh_spd', { n: P('spd') }));
+    if (it.ls) out.push(t('sh_ls', { n: P('ls') })); if (it.reg) out.push(t('sh_reg', { n: it.reg })); if (it.cdr) out.push(t('sh_cdr', { n: P('cdr') }));
+    if (it.xp) out.push(t('sh_xp', { n: P('xp') })); if (it.gold) out.push(t('sh_goldb', { n: P('gold') }));
+    return out;
+  }
+  function shopList() {
+    if (shopTab === 'rec') { const own = new Set(build.items); return Object.keys(SHOP_ITEMS).filter((id) => { const it = SHOP_ITEMS[id]; return it.tier === 1 || (it.from || []).every((c) => own.has(c)); }); }
+    return Object.keys(SHOP_ITEMS).filter((id) => SHOP_ITEMS[id].cat === shopTab);
+  }
+  function renderShop() {
+    const $ = (id) => document.getElementById(id);
+    $('shopTitle').textContent = '🛒 ' + t('sh_title');
+    $('shopGold').textContent = '🪙 ' + t('sh_gold') + ' ' + (build.gold | 0);
+    $('shopHint').textContent = t('sh_hint');
+    const tabs = [['rec', 'sh_rec'], ['atk', 'sh_atk'], ['def', 'sh_def'], ['mov', 'sh_mov'], ['spc', 'sh_spc']];
+    $('shopTabs').innerHTML = '';
+    for (const [k, lk] of tabs) { const b = document.createElement('button'); b.type = 'button'; b.textContent = t(lk); if (k === shopTab) b.className = 'on'; b.onclick = () => { shopTab = k; renderShop(); }; $('shopTabs').appendChild(b); }
+    const g = $('shopGrid'); g.innerHTML = '';
+    for (const id of shopList()) {
+      const it = SHOP_ITEMS[id], b = document.createElement('button'); b.type = 'button';
+      b.className = 'shopIt' + (id === shopSel ? ' sel' : '') + (build.items.includes(id) ? ' own' : '');
+      b.innerHTML = '<span class="ic">' + it.ic + '</span><span class="co">' + it.cost + '</span><span>' + itName(id) + '</span>';
+      b.onclick = () => { shopSel = id; renderShop(); };
+      g.appendChild(b);
+    }
+    const it = SHOP_ITEMS[shopSel], plan = shopPlan(shopSel), d = $('shopDet');
+    const full = plan.items.length > SHOP_SLOTS;
+    let html = '<b>' + it.ic + ' ' + itName(shopSel) + '</b><div>' + itemDesc(shopSel).join('<br>') + '</div>';
+    if (it.from) html += '<div style="opacity:.8">' + t('sh_from') + ': ' + it.from.map((c) => SHOP_ITEMS[c].ic + ' ' + itName(c) + (build.items.includes(c) ? ' ✓' : ' (' + SHOP_ITEMS[c].cost + ')')).join(' + ') + '</div>';
+    html += '<div style="color:#ffe39a;font-weight:800">🪙 ' + plan.price + '</div><div class="row"><button id="shopBuy" type="button">' + t('sh_buy') + '</button><button id="shopSell" type="button">' + t('sh_sell') + '</button></div>';
+    d.innerHTML = html;
+    const bb = $('shopBuy'), sb = $('shopSell');
+    bb.disabled = build.gold < plan.price || full; sb.disabled = !build.items.includes(shopSel);
+    bb.onclick = () => shopBuy(shopSel); sb.onclick = () => shopSellItem(shopSel);
+    const sl = $('shopSlots'); sl.innerHTML = '';
+    for (let i = 0; i < SHOP_SLOTS; i++) {
+      const id = build.items[i], b = document.createElement('button'); b.type = 'button'; b.className = 'sl' + (id ? ' f' : '');
+      b.textContent = id ? SHOP_ITEMS[id].ic : ''; b.title = id ? itName(id) : t('sh_empty');
+      if (id) b.onclick = () => { shopSel = id; renderShop(); };
+      sl.appendChild(b);
+    }
+  }
+  function shopBuy(id) {
+    const plan = shopPlan(id); if (!plan) return;
+    if (plan.items.length > SHOP_SLOTS) { toast(t('sh_full'), 1.6); return; }
+    if (build.gold < plan.price) { toast(t('sh_poor'), 1.4); return; }
+    if (arenaOn) { Arena.buy(id); return; }
+    build.gold -= plan.price; build.items = plan.items; bmodsC = null;
+    toast(t('sh_bought', { n: itName(id) }), 1.4); GameAudio.sfx.record(); refreshShopBtn();
+  }
+  function shopSellItem(id) {
+    if (!build.items.includes(id)) return;
+    if (arenaOn) { Arena.sell(id); return; }
+    const back = Math.floor(SHOP_ITEMS[id].cost * 7 / 10);
+    build.items.splice(build.items.indexOf(id), 1); build.gold += back; bmodsC = null;
+    toast(t('sh_sold', { n: itName(id), g: back }), 1.4); refreshShopBtn();
+  }
+  function openShop() { if (state !== 'playing') return; shopOpen = true; document.getElementById('shop').classList.remove('hidden'); renderShop(); }
+  function closeShop() { shopOpen = false; const e = document.getElementById('shop'); if (e) e.classList.add('hidden'); }
+  function initShop() {
+    const b = document.getElementById('shopBtn'); if (!b) return;
+    b.addEventListener('click', (e) => { e.stopPropagation(); GameAudio.init(); if (shopOpen) closeShop(); else openShop(); });
+    document.getElementById('shopX').addEventListener('click', closeShop);
+    window.addEventListener('keydown', (e) => { if ((e.key === 'b' || e.key === 'B') && state === 'playing') { if (shopOpen) closeShop(); else openShop(); } else if (e.key === 'Escape' && shopOpen) closeShop(); });
+    if (typeof Arena !== 'undefined') Arena.onGold = (g, items, err) => {
+      if (!arenaOn) return;
+      build.gold = g | 0; build.items = items.slice(); bmodsC = null;
+      if (err === 'full') toast(t('sh_full'), 1.6); else if (err === 'gold') toast(t('sh_poor'), 1.4);
+      refreshShopBtn();
+    };
+    refreshShopBtn();
+  }
+  const biteMul = () => curChar.bite * (1 + 0.07 * (player.level - 1)) * (1 + bmods().dmg);
+  const armorMul = () => curChar.armor * (1 - 0.025 * (player.level - 1)) * (1 - bmods().arm);
   const speedLv = () => 1 + 0.01 * (player.level - 1);
   function gainXp(n) {
     if (state !== 'playing' || n <= 0 || arenaOn) return;                      // arena: semua pemain level 1 (adil)
     if (player.level >= MAX_LEVEL) { player.xp = 0; return; }
+    n = Math.round(n * (1 + bmods().xp));
     player.xp += n;
     let up = 0;
     while (player.level < MAX_LEVEL && player.xp >= xpNeed(player.level)) { player.xp -= xpNeed(player.level); player.level++; up++; }
@@ -3146,6 +3256,7 @@
     camX = 0; camZ = 0; camLead = { x: 0, z: 0 }; shown = {}; camZoom = 1; camBx = 0; camBz = 0;
     if (AR) { player.x = AR.x; player.z = AR.z; }
     state = 'playing';
+    shopReset();
     if (AR) { runTime = Arena.worldTime(); lvDay = Math.floor(runTime / DAY_LEN); }
     startPerf = performance.now();
     ensureChunks(true);
@@ -3159,7 +3270,7 @@
 
   function die(reason) {
     if (state !== 'playing') return;
-    state = 'over';
+    state = 'over'; closeShop();
     if (arenaOn) { arenaOn = false; try { Arena.leave(); } catch (e) { /* abaikan */ } clearRemotes(); }
     overAt = performance.now();
     deathReason = reason;
@@ -3703,7 +3814,7 @@
   $('tabChr').addEventListener('click', () => { tabWanted = 'chr'; showTab('chr'); });
   // Layar sentuh: jari kedua (mis. saat analog sedang ditahan) tidak memicu 'click' di sebagian browser -> klik disusulkan dari pointerup
   {
-    const SEL = '#bag button, #topBtns button, #coinBox, #onlineBox, #plistX';
+    const SEL = '#bag button, #topBtns button, #shop button, #coinBox, #onlineBox, #plistX';
     let downEl = null, synthEl = null, synthT = 0, inSynth = false;
     const find = (e) => (e.target && e.target.closest ? e.target.closest(SEL) : null);
     document.addEventListener('pointerdown', (e) => { downEl = find(e); }, true);
@@ -3864,6 +3975,7 @@
     const rw = Math.ceil(p.def.reward * KILL_REWARD_MUL);
     runCoins += rw;
     addC(rw);
+    addGold(12 + Math.round(p.def.hp * 0.22));
     player.hunger = Math.min(100, player.hunger + p.def.food);
     burst(14, p.x, 1, p.z);
     starBurst(p.x, heightAt(p.x, p.z) + 1.3 * p.def.scale, p.z, 12, 'gain');
@@ -3966,7 +4078,7 @@
   const roarRing = new THREE.Mesh(roarRingGeo, mRoar);
   roarRing.visible = false;
   scene.add(roarRing);
-  const roarCooldown = () => Math.max(8, 15 - 0.6 * (player.level - 1));
+  const roarCooldown = () => Math.max(8, 15 - 0.6 * (player.level - 1)) * (1 - bmods().cdr);
   function doRoar() {
     if (state !== 'playing') return;
     arenaSkillPress(); return;
@@ -4090,6 +4202,7 @@
       if (p.state === 'recover' || p.state === 'stun') { m *= p.state === 'stun' ? 1.5 : 1.35; tag = 'weak'; }   // musuh lengah: titik lemah
       if (player.counterT > 0) { m *= 1.6; player.counterT = 0; tag = 'counter'; }                                 // balasan setelah hindar tepat waktu
       damagePred(p, dmg * m, tag);
+      if (!arenaOn && bmods().ls > 0) player.hp = Math.min(100, player.hp + dmg * m * bmods().ls);
     }
   }
 
@@ -4508,6 +4621,8 @@
 
   // ---------- Update logika ----------
   function update(dt) {
+    if (shopOpen && !arenaOn) dt = 0;
+    if (!arenaOn && state === 'playing') { shopGoldT += dt; if (shopGoldT >= 5) { shopGoldT -= 5; addGold(3); } }
     if (arenaOn) runTime = Arena.worldTime(); else runTime += dt;                  // arena: jam siang-malam mengikuti server
     applyDayNight();
     { const dNow = Math.floor(runTime / DAY_LEN); if (dNow > lvDay) { lvDay = dNow; if (dNow > 0) { gainXp(30); toast(t('day_toast', { n: dNow + 1 }), 2); } } }
@@ -4541,7 +4656,7 @@
     if (sprintLatch) { if (player.exhausted || player.stamina <= 0) setLatch(false); else if (mag <= 0.2) { sprintIdle += dt; if (sprintIdle > 0.7) setLatch(false); } else sprintIdle = 0; }
 
     const weak = player.hunger <= 0 || player.thirst <= 0;
-    const speedMul = (powerLeft > 0 ? 1.25 : 1) * (weak ? 0.85 : 1) * curChar.speed * speedLv() * (slowT > 0 ? slowMul : 1);
+    const speedMul = (powerLeft > 0 ? 1.25 : 1) * (weak ? 0.85 : 1) * curChar.speed * speedLv() * (1 + bmods().spd) * (slowT > 0 ? slowMul : 1);
     // berenang: air cukup dalam -> mode renang (lebih lambat, tanpa lompat, tenaga terkuras pelan)
     const depth = WL - (player.gnd !== undefined ? player.gnd : heightAt(player.x, player.z));
     const wasSwim = swimming;
@@ -4664,7 +4779,7 @@
       hurtT = Math.max(hurtT, 0.05);
       if (player.hp <= 0) { player.hp = 0; die(player.thirst <= 0 ? t('r_thirst') : t('r_hunger')); return; }
     } else if (player.lastDmg > 4 && player.hunger > 40 && player.thirst > 40 && player.hp < 100) {
-      player.hp = Math.min(100, player.hp + REGEN * dt);
+      player.hp = Math.min(100, player.hp + (REGEN + bmods().reg) * dt);
     }
 
     // minum di kolam
@@ -5141,6 +5256,7 @@
   ensureChunks(true);
   applyDayNight();
   dexInit = true;
+  initShop();
   refreshPanels();
   requestAnimationFrame(frame);
 

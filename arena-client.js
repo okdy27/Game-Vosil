@@ -104,6 +104,7 @@ const Arena = (() => {
   const attack = (yaw) => { if (st.on && st.ws && st.ws.readyState === 1) st.ws.send(JSON.stringify({ t: 'a', yaw: +yaw.toFixed(3) })); };
   const shopSend = (t, id) => { if (st.on && st.ws && st.ws.readyState === 1) st.ws.send(JSON.stringify({ t, id })); };
   const buy = (id) => shopSend('by', id), sell = (id) => shopSend('sl', id);
+  const shop = (o) => { if (st.on && st.ws && st.ws.readyState === 1) st.ws.send(JSON.stringify({ t: 'sh', o: o ? 1 : 0 })); };
   const nb = (id) => { if (st.on && st.ws && st.ws.readyState === 1) st.ws.send(JSON.stringify({ t: 'nb', id })); };
   const tp = (k, x, z) => { if (st.on && st.ws && st.ws.readyState === 1) st.ws.send(JSON.stringify({ t: 'tp', k, x: +x.toFixed(2), z: +z.toFixed(2) })); };
   const emote = (e) => { if (st.on && st.ws && st.ws.readyState === 1) st.ws.send(JSON.stringify({ t: 'e', e })); };
@@ -112,6 +113,6 @@ const Arena = (() => {
 
   function leave() { const ws = st.ws; reset(); try { ws && ws.close(); } catch (e) { /* abaikan */ } }
 
-  return { st, join, send, tp, nb, buy, sell, attack, roar, skill, emote, leave, worldTime, nowMs, renderTime, delayMs, get on() { return st.on; }, get remotes() { return st.remotes; }, set onFix(f) { st.onFix = f; }, set onEnd(f) { st.onEnd = f; }, set onDamaged(f) { st.onDamaged = f; }, set onHit(f) { st.onHit = f; }, set onKill(f) { st.onKill = f; }, set onRoar(f) { st.onRoar = f; }, set onEmote(f) { st.onEmote = f; }, set onSkill(f) { st.onSkill = f; }, set onHp(f) { st.onHp = f; }, set onLevel(f) { st.onLevel = f; }, set onGold(f) { st.onGold = f; }, set onAlert(f) { st.onAlert = f; }, set onWave(f) { st.onWave = f; }, get kits() { return st.kits; }, set onJoin(f) { st.onJoin = f; }, set onLeave(f) { st.onLeave = f; } };
+  return { st, join, send, tp, nb, buy, sell, shop, attack, roar, skill, emote, leave, worldTime, nowMs, renderTime, delayMs, get on() { return st.on; }, get remotes() { return st.remotes; }, set onFix(f) { st.onFix = f; }, set onEnd(f) { st.onEnd = f; }, set onDamaged(f) { st.onDamaged = f; }, set onHit(f) { st.onHit = f; }, set onKill(f) { st.onKill = f; }, set onRoar(f) { st.onRoar = f; }, set onEmote(f) { st.onEmote = f; }, set onSkill(f) { st.onSkill = f; }, set onHp(f) { st.onHp = f; }, set onLevel(f) { st.onLevel = f; }, set onGold(f) { st.onGold = f; }, set onAlert(f) { st.onAlert = f; }, set onWave(f) { st.onWave = f; }, get kits() { return st.kits; }, set onJoin(f) { st.onJoin = f; }, set onLeave(f) { st.onLeave = f; } };
 })();
 if (typeof module !== 'undefined') module.exports = Arena;

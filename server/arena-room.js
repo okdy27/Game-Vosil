@@ -147,7 +147,7 @@ export class ArenaCore {
       id, send, name: 'Dino', char: 'vosil', level: 1, ready: false, alive: true,
       x: Math.cos(ang) * d, y: 0, z: Math.sin(ang) * d, yaw: 0, vx: 0, vz: 0, atk: -1, sw: 0,
       lastT: this.now(), bucket: RATE, bucketT: this.now(), strikes: 0,
-      emReady: 0, hp: HP_MAX, xp: 0, xpT: 0, gold: START_GOLD, goldT: 0, items: [], mods: buildMods([]), bornT: 0, dseq: 0, lastHurt: 0, kbUntil: 0, hitGap: new Map(), atkReady: 0, skReady: 0, lockUntil: 0, dashUntil: 0, kills: 0,
+      emReady: 0, hp: HP_MAX, xp: 0, xpT: 0, gold: START_GOLD, goldT: 0, items: [], mods: buildMods([]), shopUntil: 0, shopCool: 0, shopSince: 0, bornT: 0, dseq: 0, lastHurt: 0, kbUntil: 0, hitGap: new Map(), atkReady: 0, skReady: 0, lockUntil: 0, dashUntil: 0, kills: 0,
     };
     this.players.set(id, p);
     this.dirty = true;
@@ -174,7 +174,7 @@ export class ArenaCore {
     if (m.t === 'q') { p.send(JSON.stringify({ t: 'o', c: num(m.c) })); return; }         // ping -> pong (klien mengukur jeda)
     if (m.t === 'h') {                                             // hello: identitas tampilan
       p.name = cleanName(m.name); p.char = CHARS.includes(m.char) ? m.char : 'vosil';
-      p.level = 1; p.xp = 0; p.gold = START_GOLD; p.items = []; p.mods = buildMods([]); p.bornT = this.now();
+      p.level = 1; p.xp = 0; p.gold = START_GOLD; p.items = []; p.mods = buildMods([]); p.bornT = this.now(); p.shopUntil = 0; p.shopCool = 0; p.shopSince = 0;
       // setiap hidup baru mulai dari level 1, lalu naik lewat XP
       const first = !p.ready; p.ready = true; this.dirty = true;
       const roster = this.everyone().filter((q) => q.ready).map((q) => this.card(q));
@@ -191,6 +191,7 @@ export class ArenaCore {
     else if (m.t === 'tp') this.onTeleport(p, m, t);
     else if (m.t === 'by') this.onBuy(p, m, t);
     else if (m.t === 'sl') this.onSell(p, m, t);
+    else if (m.t === 'sh') this.onShop(p, m, t);
   }
 
   // teleport resmi dari game (pintu pulau harta / jatuh ke jurang): dibatasi supaya tidak bisa dipakai curang
@@ -233,6 +234,13 @@ export class ArenaCore {
     p.gold -= plan.price; p.items = plan.items; p.mods = buildMods(p.items);
     this.sendGold(p); this.dirty = true;
   }
+  // menu Build terbuka: NPC tidak bisa melukai (maks 25 dtk per pembukaan, lalu jeda 8 dtk agar tidak disalahgunakan)
+  onShop(p, m, t) {
+    if (m.o) {
+      if (!(p.shopUntil > t)) { if (t < (p.shopCool || 0) || t < p.shopUntil + 8000) return; p.shopSince = t; }
+      p.shopUntil = t + 8000;
+    } else { if (p.shopUntil > t) p.shopCool = t + 8000; p.shopUntil = 0; }
+  }
   onSell(p, m, t) {
     if (!p.alive || !p.ready) return;
     if (t < (p.shopReady || 0)) return; p.shopReady = t + 250;
@@ -255,6 +263,7 @@ export class ArenaCore {
   // lakukan kerusakan; mengembalikan true jika kena. ex = {kb, slow, slowMs}
   strikeTarget(a, q, dmg, t, kind, ex) {
     if (!q.alive || q.id === a.id || !q.ready) return false;
+    if (a.npc && !q.npc && q.shopUntil > t && t - q.shopSince < 25000) return false;           // sedang di menu Build
     if ((q.hitGap.get(a.id) || 0) > t) return false;               // baru saja dikenai penyerang yang sama
     q.hitGap.set(a.id, t + HIT_GAP_MS);
     if (a.npc && !q.npc) dmg *= 0.5 + 0.5 * Math.min(1, (t - (q.bornT || t)) / 150000);     // awal kehidupan: serangan NPC lebih lemah, naik pelan sampai ~2,5 menit

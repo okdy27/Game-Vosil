@@ -2480,10 +2480,34 @@
     m1: { cat: 'mov', tier: 1, cost: 150, ic: '👟', spd: 0.06 }, m2: { cat: 'mov', tier: 2, cost: 330, ic: '👟', from: ['m1'], spd: 0.12 }, m3: { cat: 'mov', tier: 3, cost: 700, ic: '🌪', from: ['m2'], spd: 0.18, cdr: 0.1 },
     s1: { cat: 'spc', tier: 1, cost: 160, ic: '🦴', xp: 0.15 }, s2: { cat: 'spc', tier: 2, cost: 360, ic: '🪙', from: ['s1'], xp: 0.15, gold: 0.2 }, s3: { cat: 'spc', tier: 3, cost: 780, ic: '🔮', from: ['s2'], xp: 0.3, gold: 0.25, cdr: 0.12 },
   };
+
+  // ikon item bertema dinosaurus (SVG ringan). Warna naik per tingkat: tulang -> baja -> emas
+  const TIER_COL = { 1: ['#efe6cf', '#b9a97f'], 2: ['#8fd3e8', '#3b7fa0'], 3: ['#ffd76a', '#b8791a'] };
+  function itemSvg(id) {
+    const it = SHOP_ITEMS[id], [f, d] = TIER_COL[it.tier], n = it.tier;
+    let g = '';
+    if (it.cat === 'atk') {                       // taring / rahang
+      const fang = (x, h) => '<path d="M' + (x - 4) + ' 6 Q' + x + ' ' + (6 + h) + ' ' + (x + 4) + ' 6 Q' + (x + 1) + ' ' + (6 + h * 0.5) + ' ' + (x - 4) + ' 6Z" fill="' + f + '" stroke="' + d + '" stroke-width="1.2"/>';
+      g = '<path d="M3 5h26v4H3z" fill="' + d + '"/>' + (n === 1 ? fang(16, 20) : n === 2 ? fang(10, 18) + fang(22, 18) : fang(7, 14) + fang(16, 22) + fang(25, 14));
+      if (n === 3) g += '<path d="M6 28l3-5 3 5 4-6 4 6 3-5 3 5z" fill="' + f + '" opacity=".0"/>';
+    } else if (it.cat === 'def') {                // sisik / lempeng punggung
+      g = '<path d="M16 3l11 4v9c0 7-5 11-11 13C10 27 5 23 5 16V7z" fill="' + f + '" stroke="' + d + '" stroke-width="1.6"/>' +
+        '<path d="M10 11q3 3 6 0q3 3 6 0M9 17q3.5 3.5 7 0q3.5 3.5 7 0" fill="none" stroke="' + d + '" stroke-width="1.5" stroke-linecap="round"/>' + (n >= 2 ? '<path d="M16 3v26" stroke="' + d + '" stroke-width="1" opacity=".6"/>' : '') + (n === 3 ? '<path d="M7 5l-3-3M25 5l3-3M16 3V0" stroke="' + d + '" stroke-width="2" stroke-linecap="round"/>' : '');
+    } else if (it.cat === 'mov') {                // jejak kaki dino 3 jari
+      g = '<path d="M16 28c-4 0-6-3-5-6l2-5h6l2 5c1 3-1 6-5 6z" fill="' + f + '" stroke="' + d + '" stroke-width="1.4"/>' +
+        '<path d="M8 14l3 5-3 1-3-4zM16 6l2.6 8h-5.2zM24 14l3 2-3 4-3-1z" fill="' + f + '" stroke="' + d + '" stroke-width="1.4" stroke-linejoin="round"/>' +
+        (n >= 2 ? '<path d="M2 24h6M1 28h7" stroke="' + d + '" stroke-width="1.6" stroke-linecap="round"/>' : '') + (n === 3 ? '<path d="M25 22l3-5-1 4h3l-4 6 1-5z" fill="' + d + '"/>' : '');
+    } else {                                      // fosil: ammonite / amber / telur
+      if (n === 1) g = '<path d="M16 4a12 12 0 1 0 0 24a12 12 0 0 0 0-24z" fill="' + f + '" stroke="' + d + '" stroke-width="1.4"/><path d="M16 9a7 7 0 1 1-6 3.5a4 4 0 1 1 6.5 1a1.5 1.5 0 1 1-2 1" fill="none" stroke="' + d + '" stroke-width="1.6" stroke-linecap="round"/>';
+      else if (n === 2) g = '<path d="M16 3l9 6v10l-9 10l-9-10V9z" fill="' + f + '" stroke="' + d + '" stroke-width="1.5"/><path d="M12 14c0-2 1-4 3-5M14 24l-3-7" stroke="' + d + '" stroke-width="1.6" stroke-linecap="round" fill="none"/><circle cx="19" cy="12" r="1.6" fill="#fff" opacity=".8"/>';
+      else g = '<path d="M16 2c6 0 10 8 10 15c0 7-4 12-10 12S6 24 6 17C6 10 10 2 16 2z" fill="' + f + '" stroke="' + d + '" stroke-width="1.5"/><path d="M10 13l3 3 3-4 3 4 3-3M9 20l4 2 3-3 3 3 4-2" fill="none" stroke="' + d + '" stroke-width="1.4" stroke-linejoin="round"/><path d="M16 0v4M3 8l3 2M29 8l-3 2" stroke="' + f + '" stroke-width="1.6" stroke-linecap="round"/>';
+    }
+    return '<svg viewBox="0 0 32 32" width="30" height="30" aria-hidden="true">' + g + '</svg>';
+  }
   const SHOP_CAPS = { dmg: 0.5, arm: 0.35, spd: 0.2, ls: 0.1, reg: 3, cdr: 0.2, xp: 0.5, gold: 0.5 };
   const SHOP_SLOTS = 6, SHOP_START = 100;
   const build = { gold: SHOP_START, items: [] };
-  let shopOpen = false, shopTab = 'rec', shopSel = 'a1', shopGoldT = 0, bmodsC = null;
+  let shopPing = 0, shopOpen = false, shopTab = 'rec', shopSel = 'a1', shopGoldT = 0, bmodsC = null;
   function bmods() {
     if (bmodsC && bmodsC.k === build.items.join()) return bmodsC.m;
     const m = { dmg: 0, arm: 0, spd: 0, ls: 0, reg: 0, cdr: 0, xp: 0, gold: 0 };
@@ -2499,10 +2523,61 @@
     left.push(id);
     return { price, items: left };
   }
-  function shopReset() { build.gold = SHOP_START; build.items = []; bmodsC = null; shopGoldT = 0; closeShop(); refreshShopBtn(); }
+
+  // ----- perlengkapan Build yang terlihat di tubuh dino -----
+  let gear = null, gearKey = '', gearPop = 0;
+  const GEAR_COL = [0, 0xe9dfc2, 0x7fc8e0, 0xffc94a];
+  function gearMat(tier) { return new THREE.MeshStandardMaterial({ color: GEAR_COL[tier], roughness: 0.45, metalness: tier > 1 ? 0.5 : 0.1, emissive: tier === 3 ? 0x8a5a00 : tier === 2 ? 0x144a66 : 0x000000, emissiveIntensity: 0.45 }); }
+  function syncGear(force) {
+    const key = build.items.join();
+    if (!force && key === gearKey) return;
+    const grew = build.items.length > (gearKey ? gearKey.split(',').length : 0);
+    gearKey = key;
+    try {
+      if (gear) { for (const g of gear.list) { if (g.parent) g.parent.remove(g); disposeTree(g); } }
+      gear = null;
+      if (!build.items.length) return;
+      const tierOf = (cat) => { let m = 0; for (const id of build.items) { const it = SHOP_ITEMS[id]; if (it.cat === cat) m = Math.max(m, it.tier); } return m; };
+      const gb = new THREE.Group(), gh = new THREE.Group(), orb = new THREE.Group();
+      const add = (par, geo, mat, x, y, z, rx, rz) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); if (rx) m.rotation.x = rx; if (rz) m.rotation.z = rz; par.add(m); return m; };
+      const ta = tierOf('atk'), td = tierOf('def'), tm = tierOf('mov'), ts = tierOf('spc');
+      if (ta) {                                   // taring besar di rahang + tanduk mahkota
+        const mt = gearMat(ta);
+        for (const sx of [-1, 1]) for (let i = 0; i < ta + 1; i++) add(gh, new THREE.ConeGeometry(0.05 + 0.012 * ta, 0.16 + 0.06 * ta, 5), mt, sx * 0.17, -0.2, -0.3 - i * 0.2, Math.PI);
+        if (ta >= 2) for (let i = 0; i < ta; i++) add(gh, new THREE.ConeGeometry(0.06, 0.28 + 0.05 * i, 5), mt, 0, 0.36, 0.1 - i * 0.2, 0.25);
+      }
+      if (td) {                                   // lempeng punggung
+        const mt = gearMat(td), n = 3 + td * 2;
+        for (let i = 0; i < n; i++) { const z = -0.55 + i * (1.5 / (n - 1)); const m = add(gb, new THREE.ConeGeometry(0.17, 0.3 + 0.05 * td, 4), mt, 0, 1.55 - Math.abs(z - 0.1) * 0.12, z); m.scale.set(1, 1, 0.55); m.rotation.y = Math.PI / 4; }
+        if (td >= 3) for (const sx of [-1, 1]) add(gb, new THREE.SphereGeometry(0.2, 10, 8), mt, sx * 0.5, 1.28, -0.32);
+      }
+      if (tm) {                                   // sirip angin di pinggul
+        const mt = gearMat(tm);
+        for (const sx of [-1, 1]) for (let i = 0; i < tm; i++) add(gb, new THREE.ConeGeometry(0.06, 0.55 + 0.1 * i, 4), mt, sx * (0.52 + 0.06 * i), 1.0 + 0.16 * i, 0.55 + 0.2 * i, Math.PI / 2, sx * 0.25);
+      }
+      if (ts) {                                   // permata melayang
+        const mt = gearMat(ts);
+        for (let i = 0; i < ts; i++) { const a = (i / ts) * Math.PI * 2; add(orb, new THREE.OctahedronGeometry(0.13 + 0.02 * ts, 0), mt, Math.cos(a) * 0.5, 0, Math.sin(a) * 0.5); }
+        orb.position.set(0, 2.5, -0.35); gb.add(orb);
+      }
+      hero.body.add(gb); hero.headPivot.add(gh);
+      gear = { list: [gb, gh], gb, orb: ts ? orb : null };
+      if (grew) gearPop = 1;
+    } catch (e) { gear = null; }
+  }
+  function buyFx(id) {
+    gearPop = 1;
+    const y = (player.gy || 0) + player.y + 1.5 * scaleNow / 1.1;
+    starBurst(player.x, y + 0.6, player.z, 14, 'gain'); burst(18, player.x, y, player.z);
+    ringWave(player.x, player.z, 0.6, 5, 0.7, 1, 0.85, 0.3);
+    showDmg(player.x, y + 1.4, player.z, '⚙ ' + itName(id), 'gain', 1.3);
+    shake = Math.max(shake, 0.2);
+  }
+  function shopReset() { build.gold = SHOP_START; build.items = []; bmodsC = null; shopGoldT = 0; closeShop(); syncGear(); refreshShopBtn(); }
   function addGold(n) { if (arenaOn || n <= 0) return; build.gold += Math.round(n * (1 + bmods().gold)); refreshShopBtn(); }
   function refreshShopBtn() {
     const b = document.getElementById('shopBtn'); if (b) b.textContent = t('sh_btn', { g: build.gold | 0 });
+    syncGear();
     if (shopOpen) renderShop();
   }
   const itName = (id) => t(['it_', id].join(''));
@@ -2530,14 +2605,14 @@
     for (const id of shopList()) {
       const it = SHOP_ITEMS[id], b = document.createElement('button'); b.type = 'button';
       b.className = 'shopIt' + (id === shopSel ? ' sel' : '') + (build.items.includes(id) ? ' own' : '');
-      b.innerHTML = '<span class="ic">' + it.ic + '</span><span class="co">' + it.cost + '</span><span>' + itName(id) + '</span>';
+      b.innerHTML = '<span class="ic">' + itemSvg(id) + '</span><span class="co">' + it.cost + '</span><span>' + itName(id) + '</span>';
       b.onclick = () => { shopSel = id; renderShop(); };
       g.appendChild(b);
     }
     const it = SHOP_ITEMS[shopSel], plan = shopPlan(shopSel), d = $('shopDet');
     const full = plan.items.length > SHOP_SLOTS;
-    let html = '<b>' + it.ic + ' ' + itName(shopSel) + '</b><div>' + itemDesc(shopSel).join('<br>') + '</div>';
-    if (it.from) html += '<div style="opacity:.8">' + t('sh_from') + ': ' + it.from.map((c) => SHOP_ITEMS[c].ic + ' ' + itName(c) + (build.items.includes(c) ? ' ✓' : ' (' + SHOP_ITEMS[c].cost + ')')).join(' + ') + '</div>';
+    let html = '<b>' + itemSvg(shopSel).replace('width="30" height="30"', 'width="22" height="22"') + ' ' + itName(shopSel) + '</b><div>' + itemDesc(shopSel).join('<br>') + '</div>';
+    if (it.from) html += '<div style="opacity:.8">' + t('sh_from') + ': ' + it.from.map((c) => itemSvg(c).replace('width="30" height="30"', 'width="14" height="14"') + ' ' + itName(c) + (build.items.includes(c) ? ' ✓' : ' (' + SHOP_ITEMS[c].cost + ')')).join(' + ') + '</div>';
     html += '<div style="color:#ffe39a;font-weight:800">🪙 ' + plan.price + '</div><div class="row"><button id="shopBuy" type="button">' + t('sh_buy') + '</button><button id="shopSell" type="button">' + t('sh_sell') + '</button></div>';
     d.innerHTML = html;
     const bb = $('shopBuy'), sb = $('shopSell');
@@ -2546,7 +2621,7 @@
     const sl = $('shopSlots'); sl.innerHTML = '';
     for (let i = 0; i < SHOP_SLOTS; i++) {
       const id = build.items[i], b = document.createElement('button'); b.type = 'button'; b.className = 'sl' + (id ? ' f' : '');
-      b.textContent = id ? SHOP_ITEMS[id].ic : ''; b.title = id ? itName(id) : t('sh_empty');
+      b.innerHTML = id ? itemSvg(id) : ''; b.title = id ? itName(id) : t('sh_empty');
       if (id) b.onclick = () => { shopSel = id; renderShop(); };
       sl.appendChild(b);
     }
@@ -2557,7 +2632,7 @@
     if (build.gold < plan.price) { toast(t('sh_poor'), 1.4); return; }
     if (arenaOn) { Arena.buy(id); return; }
     build.gold -= plan.price; build.items = plan.items; bmodsC = null;
-    toast(t('sh_bought', { n: itName(id) }), 1.4); GameAudio.sfx.record(); refreshShopBtn();
+    toast(t('sh_bought', { n: itName(id) }), 1.4); GameAudio.sfx.record(); refreshShopBtn(); buyFx(id);
   }
   function shopSellItem(id) {
     if (!build.items.includes(id)) return;
@@ -2566,8 +2641,8 @@
     build.items.splice(build.items.indexOf(id), 1); build.gold += back; bmodsC = null;
     toast(t('sh_sold', { n: itName(id), g: back }), 1.4); refreshShopBtn();
   }
-  function openShop() { if (state !== 'playing') return; shopOpen = true; document.getElementById('shop').classList.remove('hidden'); renderShop(); }
-  function closeShop() { shopOpen = false; const e = document.getElementById('shop'); if (e) e.classList.add('hidden'); }
+  function openShop() { if (state !== 'playing') return; shopOpen = true; shopPing = 0; if (arenaOn) Arena.shop(true); document.getElementById('shop').classList.remove('hidden'); renderShop(); }
+  function closeShop() { if (shopOpen && arenaOn) { try { Arena.shop(false); } catch (e) { /* abaikan */ } } shopOpen = false; const e = document.getElementById('shop'); if (e) e.classList.add('hidden'); }
   function initShop() {
     const b = document.getElementById('shopBtn'); if (!b) return;
     b.addEventListener('click', (e) => { e.stopPropagation(); GameAudio.init(); if (shopOpen) closeShop(); else openShop(); });
@@ -2575,7 +2650,8 @@
     window.addEventListener('keydown', (e) => { if ((e.key === 'b' || e.key === 'B') && state === 'playing') { if (shopOpen) closeShop(); else openShop(); } else if (e.key === 'Escape' && shopOpen) closeShop(); });
     if (typeof Arena !== 'undefined') Arena.onGold = (g, items, err) => {
       if (!arenaOn) return;
-      build.gold = g | 0; build.items = items.slice(); bmodsC = null;
+      const old = build.items.length; build.gold = g | 0; build.items = items.slice(); bmodsC = null;
+      if (items.length > old && !err) { buyFx(items[items.length - 1]); GameAudio.sfx.record(); }
       if (err === 'full') toast(t('sh_full'), 1.6); else if (err === 'gold') toast(t('sh_poor'), 1.4);
       refreshShopBtn();
     };
@@ -3384,6 +3460,7 @@
     disposeTree(hero.root);
     hero = buildHero();
     scene.add(hero.root);
+    gear = null; gearKey = ''; syncGear(true);
     scaleNow = baseScale();
   }
   function selectChar(id) {
@@ -4622,6 +4699,7 @@
   // ---------- Update logika ----------
   function update(dt) {
     if (shopOpen && !arenaOn) dt = 0;
+    if (shopOpen && arenaOn) { shopPing += dt; if (shopPing > 4) { shopPing = 0; Arena.shop(true); } }
     if (!arenaOn && state === 'playing') { shopGoldT += dt; if (shopGoldT >= 5) { shopGoldT -= 5; addGold(3); } }
     if (arenaOn) runTime = Arena.worldTime(); else runTime += dt;                  // arena: jam siang-malam mengikuti server
     applyDayNight();
@@ -5011,6 +5089,7 @@
     animDt = dt;
     scaleNow += (baseScale() * (powerLeft > 0 ? 1.5 : 1) - scaleNow) * Math.min(1, dt * 5);
     hero.root.scale.setScalar(scaleNow);
+    if (gear) { if (gear.orb) gear.orb.rotation.y += dt * 1.8; gearPop = Math.max(0, gearPop - dt * 1.5); gear.gb.scale.setScalar(1 + 0.3 * gearPop * gearPop); }
 
     let glow = 0;
     if (powerLeft > 0) glow = powerLeft < 2.5 ? 0.25 + 0.25 * Math.sin(clock * 28) : 0.35 + 0.15 * Math.sin(clock * 8);

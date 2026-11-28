@@ -3616,14 +3616,20 @@
       const D = Math.max(2, Math.min(12, snd.dur));
       welcomeOn = true; starting = true; clearTimeout(stT); w.style.setProperty('--wd', D + 's');
       w.classList.remove('on', 'long'); void w.offsetWidth; w.classList.add('on', 'long');
-      let fin = false;
-      const end = (skip) => {
-        if (fin) return; fin = true; clearTimeout(tm); w.onclick = null;
-        if (skip) snd.stop();
-        w.classList.remove('on', 'long'); welcomeOn = false; starting = false; launch();
+      // dunia/arena dimuat DI BALIK sambutan (mulai ~3 dtk sebelum selesai); layar sambutan baru dibuka saat game benar-benar sudah berjalan
+      let launched = false, done = false;
+      const go = () => { if (launched) return; launched = true; launch(); };
+      const close = () => {
+        if (done) return; done = true; clearInterval(poll);
+        w.classList.add('out'); setTimeout(() => { w.classList.remove('on', 'long', 'out'); welcomeOn = false; starting = false; }, 650);
       };
-      const tm = setTimeout(() => end(false), D * 1000 - 200);
-      w.onclick = () => end(true);
+      let ended = false;
+      const t0 = Date.now(), poll = setInterval(() => {
+        const el = (Date.now() - t0) / 1000;
+        if (!launched && el >= D - 3) go();
+        if ((ended || el >= D) && launched && (state === 'playing' || el > D + 12)) close();
+      }, 100);
+      w.onclick = () => { if (ended) return; ended = true; w.onclick = null; snd.stop(); go(); };
       return;
     }
     if (w) { w.classList.remove('on'); void w.offsetWidth; w.classList.add('on'); setTimeout(() => w.classList.remove('on'), 3300); }

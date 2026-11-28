@@ -674,12 +674,13 @@
     #shopHint { font-size: 10px; opacity: .65; text-align: center; }
 
     /* sambutan panjang (dengan audio welcome.ogg) */
-    #welcome.long { display: flex; pointer-events: auto; animation: welBgL var(--wd, 10s) linear forwards; }
+    #welcome.long { display: flex; pointer-events: auto; animation: none; opacity: 1; transition: opacity .6s ease; }
+    #welcome.long.out { opacity: 0; pointer-events: none; }
     #welcome.long img { animation: welLogoL var(--wd, 10s) ease-in-out forwards; box-shadow: 0 0 40px rgba(255, 226, 120, .35); }
     #welcome.long h2 { animation: welTxtL var(--wd, 10s) ease-out forwards; }
     @keyframes welBgL { 0%, 90% { opacity: 1; visibility: visible; } 100% { opacity: 0; visibility: hidden; } }
-    @keyframes welLogoL { 0% { opacity: 0; transform: scale(.7); } 10% { opacity: 1; transform: scale(1); } 30% { transform: scale(1.06); } 50% { transform: scale(1); } 70% { transform: scale(1.06); } 90% { opacity: 1; transform: scale(1.02); } 100% { opacity: 0; transform: scale(1.4); } }
-    @keyframes welTxtL { 0%, 12% { opacity: 0; transform: translateY(14px); letter-spacing: 8px; } 28%, 90% { opacity: 1; transform: none; letter-spacing: 3px; } 100% { opacity: 0; } }
+    @keyframes welLogoL { 0% { opacity: 0; transform: scale(.7); } 10% { opacity: 1; transform: scale(1); } 30% { transform: scale(1.06); } 50% { transform: scale(1); } 70% { transform: scale(1.06); } 90%, 100% { opacity: 1; transform: scale(1.02); } }
+    @keyframes welTxtL { 0%, 12% { opacity: 0; transform: translateY(14px); letter-spacing: 8px; } 28%, 100% { opacity: 1; transform: none; letter-spacing: 3px; } }
     /* kombo kill */
     #combo { position: fixed; left: 50%; top: 24%; z-index: 30; transform: translateX(-50%); pointer-events: none; font-weight: 900; font-size: clamp(20px, 7vh, 40px); letter-spacing: 2px; color: #ffe27a; text-shadow: 0 2px 0 #b8791a, 0 0 14px rgba(255, 190, 60, .8); opacity: 0; }
     #combo.pop { animation: comboPop 1.3s ease-out; }

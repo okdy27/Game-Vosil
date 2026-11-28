@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Vosil Survival</title>
+<meta name="theme-color" content="#0b1a24">
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; overscroll-behavior: none; touch-action: none; }
+  #g { position: fixed; left: 0; top: 0; border: 0; background: #000; transform-origin: 0 0; }
+  #flip { position: fixed; z-index: 5; left: 6px; bottom: 6px; width: 30px; height: 30px; border-radius: 50%; border: 1px solid rgba(160, 215, 245, .5); background: rgba(10, 25, 38, .55); color: #cfe3ee; font-size: 15px; line-height: 28px; padding: 0; display: none; }
+</style>
+</head>
+<body>
+<!-- Pembungkus untuk aplikasi yang mengunci layar potret (mis. World App): game dimuat di iframe berukuran landscape lalu diputar 90 derajat.
+     Di dalam iframe, ukuran layar, media query, dan koordinat sentuh sudah landscape, jadi survival.html tidak perlu diubah. -->
+<iframe id="g" allow="fullscreen; autoplay; clipboard-write" allowfullscreen></iframe>
+<button id="flip" type="button" aria-label="Putar arah">↻</button>
+<script>
+(function () {
+  var f = document.getElementById('g'), b = document.getElementById('flip'), dir = 1;
+  try { dir = localStorage.getItem('vosil_flip_v1') === '-1' ? -1 : 1; } catch (e) { /* abaikan */ }
+  var src = 'survival.html' + (location.search || '') + (location.hash || '');
+  function layout() {
+    var W = window.innerWidth, H = window.innerHeight, portrait = H > W * 1.05;
+    if (portrait) {
+      f.style.width = H + 'px'; f.style.height = W + 'px';
+      f.style.transform = dir === 1 ? 'translate(' + W + 'px,0) rotate(90deg)' : 'translate(0,' + H + 'px) rotate(-90deg)';
+      b.style.display = 'block';
+    } else {
+      f.style.width = W + 'px'; f.style.height = H + 'px'; f.style.transform = 'none'; b.style.display = 'none';
+    }
+  }
+  b.addEventListener('click', function () { dir = -dir; try { localStorage.setItem('vosil_flip_v1', String(dir)); } catch (e) { /* abaikan */ } layout(); });
+  window.addEventListener('resize', layout);
+  window.addEventListener('orientationchange', function () { setTimeout(layout, 120); });
+  layout();
+  f.src = src;
+})();
+</script>
+</body>
+</html>

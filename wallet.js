@@ -4,7 +4,7 @@ const Wallet = (() => {
   'use strict';
   const K_SES = 'vosil_session_v1', K_DEV = 'vosil_device_v1';
   const K_LNK = 'vosil_link_v1';
-  const st = { cfg: null, cfgAt: 0, me: null, session: null, busy: false, msg: '', msgOk: true, apiOk: null, link: null };
+  const st = { cfg: null, cfgAt: 0, me: null, session: null, busy: false, msg: '', msgOk: true, apiOk: null, link: null, world: false };
   const store = {
     get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
     set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* abaikan */ } },
@@ -88,6 +88,35 @@ const Wallet = (() => {
     });
   }
 
+  // ---- World App (MiniKit): dijalankan oleh play.html (jendela induk); game berbicara lewat postMessage ----
+  const inFrame = (() => { try { return window.parent && window.parent !== window; } catch (e) { return false; } })();
+  const pending = new Map();
+  if (inFrame) {
+    window.addEventListener('message', (e) => {
+      if (e.origin !== location.origin || e.source !== window.parent || !e.data) return;
+      const d = e.data;
+      if (d.vosil === 'world-info') st.world = !!d.installed;
+      else if (d.vosil === 'world-auth-result' && pending.has(d.id)) { const f = pending.get(d.id); pending.delete(d.id); f(d); }
+    });
+    try { window.parent.postMessage({ vosil: 'world-hello' }, location.origin); } catch (e) { /* abaikan */ }
+  }
+  function worldReq(nonce) {
+    return new Promise((resolve, reject) => {
+      const id = rid();
+      const to = setTimeout(() => { pending.delete(id); reject(new WErr('world_timeout')); }, 120000);
+      pending.set(id, (d) => { clearTimeout(to); if (d.ok && d.payload) resolve(d.payload); else reject(new WErr(d.error === 'rejected' ? 'world_rejected' : 'world_fail')); });
+      try { window.parent.postMessage({ vosil: 'world-auth', id, nonce }, location.origin); } catch (e) { clearTimeout(to); pending.delete(id); reject(new WErr('world_fail')); }
+    });
+  }
+  async function connectWorld() {
+    await loadConfig(true);
+    const n = await api('/api/world/nonce', {});
+    const r = await worldReq(n.nonce);
+    const l = await api('/api/world/login', { nonce: n.nonce, address: r.address, message: r.message, signature: r.signature, device });
+    st.session = { address: l.address, token: l.token }; store.set(K_SES, JSON.stringify(st.session));
+    await refresh();
+    return l.address;
+  }
   async function connect() {
     const p = provider(); if (!p) throw new WErr('no_wallet');
     await loadConfig(true);
@@ -138,7 +167,7 @@ const Wallet = (() => {
   async function cancel(id) { await api('/api/cancel', { id }); await refresh(); }
 
   return {
-    st, loadConfig, hasProvider, connect, linkStart, linkPoll, linkCancel, linkUrl, disconnect, refresh, beat, credit, redeem, cancel, WErr,
+    st, loadConfig, hasProvider, connect, connectWorld, worldReady: () => !!st.world, linkStart, linkPoll, linkCancel, linkUrl, disconnect, refresh, beat, credit, redeem, cancel, WErr,
     get loggedIn() { return !!st.session; }, get address() { return st.session ? st.session.address : ''; },
   };
 })();

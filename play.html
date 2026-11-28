@@ -38,5 +38,39 @@
   f.src = src;
 })();
 </script>
+<script type="module">
+// Jembatan World App: MiniKit hanya hidup di jendela induk ini, bukan di dalam iframe game.
+const APP_ID = 'app_82389b471d74ed32154347e1a7ad91d8';
+const frame = document.getElementById('g');
+let MK = null, installed = false;
+const announce = () => { try { frame.contentWindow.postMessage({ vosil: 'world-info', installed }, location.origin); } catch (e) { /* abaikan */ } };
+try {
+  const m = await import('https://cdn.jsdelivr.net/npm/@worldcoin/minikit-js@2.0.3/+esm');
+  MK = m.MiniKit || m.default || null;
+  if (MK && typeof MK.install === 'function') { try { MK.install(APP_ID); } catch (e) { /* abaikan */ } }
+  installed = !!(MK && (typeof MK.isInstalled === 'function' ? MK.isInstalled() : window.WorldApp));
+} catch (e) { installed = false; }
+announce();
+frame.addEventListener('load', announce);
+async function auth(nonce) {
+  const params = { nonce, expirationTime: new Date(Date.now() + 10 * 60e3), statement: 'Sign in to Vosil Game. Signature only: no transaction, no fee.' };
+  let res;
+  if (MK && typeof MK.walletAuth === 'function') res = await MK.walletAuth(params);
+  else if (MK && MK.commandsAsync && MK.commandsAsync.walletAuth) res = await MK.commandsAsync.walletAuth(params);
+  else throw new Error('no_api');
+  const p = (res && (res.data || res.finalPayload)) || res;
+  if (!p || p.status === 'error' || !p.signature || !p.message || !p.address) { const e = new Error('fail'); e.code = p && (p.error_code || p.code); throw e; }
+  return { address: p.address, message: p.message, signature: p.signature };
+}
+window.addEventListener('message', async (e) => {
+  if (e.source !== frame.contentWindow || e.origin !== location.origin || !e.data) return;
+  const d = e.data, reply = (o) => { try { frame.contentWindow.postMessage(Object.assign({ vosil: 'world-auth-result', id: d.id }, o), location.origin); } catch (x) { /* abaikan */ } };
+  if (d.vosil === 'world-hello') announce();
+  else if (d.vosil === 'world-auth' && typeof d.nonce === 'string' && /^[0-9a-f]{32}$/.test(d.nonce)) {
+    try { reply({ ok: true, payload: await auth(d.nonce) }); }
+    catch (err) { reply({ ok: false, error: /reject|cancel|denied/i.test(String(err && (err.code || err.message))) ? 'rejected' : 'fail' }); }
+  }
+});
+</script>
 </body>
 </html>

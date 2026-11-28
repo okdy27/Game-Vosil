@@ -3774,7 +3774,9 @@
     }
     const busy = W.busy ? ' disabled' : '';
     if (!Wallet.loggedIn) {
-      if (Wallet.hasProvider()) {
+      if (Wallet.worldReady()) {
+        h += '<button class="bBtn wide" data-ex="w-world"' + busy + '>' + t('a_world') + '</button><p class="aNote">' + t('a_world_note') + '</p>';
+      } else if (Wallet.hasProvider()) {
         h += '<button class="bBtn wide" data-ex="w-connect"' + busy + '>' + t('a_conn') + '</button><p class="aNote">' + t('a_conn_note') + '</p>';
       } else if (!W.link) {
         h += '<button class="bBtn wide" data-ex="w-link"' + busy + '>' + t('a_link_btn') + '</button><p class="aNote">' + t('a_link_note') + '</p>';
@@ -3817,6 +3819,7 @@
       if (ex === 'w-link-mm' || ex === 'w-link-trust') { window.open(Wallet.linkUrl(ex === 'w-link-trust' ? 'trust' : 'mm'), '_blank'); return done(true, ''); }
       if (ex === 'w-link-check') { const r = await Wallet.linkPoll(); return done(true, r === 'done' ? t('ok_conn') : ''); }
       if (ex === 'w-link-cancel') { Wallet.linkCancel(); return done(true, ''); }
+      if (ex === 'w-world') { await Wallet.connectWorld(); return done(true, t('ok_conn')); }
       if (ex === 'w-connect') { await Wallet.connect(); return done(true, t('ok_conn')); }
       if (ex === 'w-disc') { Wallet.disconnect(); return done(true, ''); }
       if (ex === 'w-send') {

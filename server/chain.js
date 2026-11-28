@@ -18,6 +18,19 @@ export async function verifySignature(address, message, signature) {
   try { return (await recoverMessageAddress({ message, signature })).toLowerCase() === address.toLowerCase(); } catch (e) { return false; }
 }
 
+// Login World App: alamatnya adalah Safe (smart wallet), kunci EOA pemilik yang menandatangani pesan.
+// Sah jika penandatangan = alamat itu sendiri, ATAU penandatangan termasuk pemilik (getOwners) Safe di alamat itu. Gagal -> false (tertutup).
+const SAFE_ABI = [{ type: 'function', name: 'getOwners', stateMutability: 'view', inputs: [], outputs: [{ type: 'address[]' }] }];
+export async function verifyWorld(env, address, message, signature, getOwners) {
+  let signer;
+  try { signer = (await recoverMessageAddress({ message, signature })).toLowerCase(); } catch (e) { return false; }
+  if (signer === String(address).toLowerCase()) return true;
+  try {
+    const owners = getOwners ? await getOwners(address) : await pub(env).readContract({ address, abi: SAFE_ABI, functionName: 'getOwners' });
+    return Array.isArray(owners) && owners.some((o) => String(o).toLowerCase() === signer);
+  } catch (e) { return false; }
+}
+
 export async function getBalance(env) {                          // saldo VOS dompet game (dalam VOS)
   const v = await pub(env).readContract({ address: env.TOKEN_ADDRESS, abi: erc20Abi, functionName: 'balanceOf', args: [env.GAME_WALLET_ADDRESS] });
   return Number(formatUnits(v, 18));

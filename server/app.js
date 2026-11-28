@@ -181,6 +181,10 @@ export function createApp(deps) {
     if (linkCode && !row.message.endsWith('\nRequest ID: ' + linkCode)) throw new HttpError(400, 'nonce_invalid');   // tanda tangan harus untuk kode tautan ini
     await run(env, 'DELETE FROM nonces WHERE nonce = ?', b.nonce);                      // sekali pakai
     if (!(await chain.verifySignature(address, row.message, b.signature))) throw new HttpError(401, 'signature_invalid');
+    return await finishLogin(env, b, ip, address);
+  }
+  async function finishLogin(env, b, ip, address) {
+    const S = settings(env);
     const acc0 = await first(env, 'SELECT blocked FROM accounts WHERE address = ?', address);
     if (acc0 && acc0.blocked) throw new HttpError(403, 'blocked');
     // batas dompet per jaringan (IP) dan per perangkat -> menyulitkan akun ganda
@@ -202,6 +206,31 @@ export function createApp(deps) {
     }
     await run(env, 'INSERT OR IGNORE INTO accounts (address, created_at) VALUES (?,?)', address, nowFn());
     return { address, token: await makeToken(env, address) };
+  }
+
+  // ---- login World App (MiniKit walletAuth): nonce dari server, pesan SIWE disusun World App ----
+  async function routeWorldNonce(env) {
+    await run(env, 'DELETE FROM nonces WHERE expires < ?', nowFn());
+    const nonce = hex(crypto.getRandomValues(new Uint8Array(16))), exp = nowFn() + 10 * 60e3;
+    await run(env, 'INSERT INTO nonces (nonce, address, message, expires) VALUES (?,?,?,?)', nonce, 'world', '', exp);
+    return J({ ok: true, nonce });
+  }
+  async function routeWorldLogin(env, req) {
+    const b = await readBody(req), ip = req.headers.get('cf-connecting-ip') || '';
+    if (typeof b.nonce !== 'string' || typeof b.signature !== 'string' || typeof b.message !== 'string' || b.message.length > 2000) throw new HttpError(400, 'bad_request');
+    const address = normAddr(b.address);
+    const row = await first(env, 'SELECT * FROM nonces WHERE nonce = ?', b.nonce);
+    if (!row || row.address !== 'world' || row.expires < nowFn()) throw new HttpError(400, 'nonce_invalid');
+    await run(env, 'DELETE FROM nonces WHERE nonce = ?', b.nonce);                      // sekali pakai
+    // pesan harus memuat nonce kita & alamat yang diklaim (baris "Nonce: ..." dan baris alamat)
+    const lines = b.message.split('\n').map((x) => x.trim());
+    if (!lines.includes('Nonce: ' + b.nonce)) throw new HttpError(400, 'nonce_invalid');
+    if (!lines.some((x) => x.toLowerCase() === address)) throw new HttpError(401, 'signature_invalid');
+    const exp = lines.find((x) => x.startsWith('Expiration Time: '));
+    if (exp && !(Date.parse(exp.slice(17)) > nowFn())) throw new HttpError(400, 'nonce_invalid');
+    if (!(await chain.verifyWorld(env, address, b.message, b.signature))) throw new HttpError(401, 'signature_invalid');
+    const r = await finishLogin(env, b, ip, address);
+    return J({ ok: true, address: r.address, token: r.token });
   }
 
   // ---- tautan dompet: game di Chrome <-> tanda tangan di peramban MetaMask/Trust (tanpa perlu landscape) ----
@@ -431,6 +460,8 @@ export function createApp(deps) {
       if (m === 'GET' && path === '/api/me') return await routeMe(env, request);
       if (m === 'POST' && path === '/api/nonce') return await routeNonce(env, request);
       if (m === 'POST' && path === '/api/login') return await routeLogin(env, request);
+      if (m === 'POST' && path === '/api/world/nonce') return await routeWorldNonce(env);
+      if (m === 'POST' && path === '/api/world/login') return await routeWorldLogin(env, request);
       if (m === 'POST' && path === '/api/link/start') return await routeLinkStart(env, request);
       if (m === 'POST' && path === '/api/link/complete') return await routeLinkComplete(env, request);
       if (m === 'POST' && path === '/api/link/poll') return await routeLinkPoll(env, request);

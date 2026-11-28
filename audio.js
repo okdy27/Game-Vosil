@@ -117,6 +117,45 @@ const GameAudio = (() => {
     try { rain.g.gain.setTargetAtTime(0.0001 + 0.09 * want, t, 0.8); } catch (err) { /* abaikan */ }
   }
 
+  // ----- musik & suara dari FILE: audio/loopskil.ogg (latar halaman Pilih Dino, berulang) dan audio/welcome.ogg (sambutan sekali putar) -----
+  const MUSIC_VOL = 0.55;
+  function applyLoops() {
+    if (!actx || !musicBus) return;
+    const t = actx.currentTime;
+    for (const key of Object.keys(want)) {
+      const e = sampleBufs[key], L = loops[key];
+      if (want[key] && e) {
+        if (L) { if (L.out) { L.out = false; L.g.gain.cancelScheduledValues(t); L.g.gain.setValueAtTime(L.g.gain.value, t); L.g.gain.linearRampToValueAtTime(Math.min(0.9, MUSIC_VOL * e.g), t + 1.0); } continue; }
+        try {
+          const src = actx.createBufferSource(); src.buffer = e.buf; src.loop = true;
+          const g = actx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(Math.min(0.9, MUSIC_VOL * e.g), t + 1.4);
+          src.connect(g); g.connect(musicBus); src.start(t); loops[key] = { src, g, out: false };
+        } catch (err) { /* abaikan */ }
+      } else if (L && !L.out) {
+        L.out = true;
+        try { L.g.gain.cancelScheduledValues(t); L.g.gain.setValueAtTime(L.g.gain.value, t); L.g.gain.linearRampToValueAtTime(0.0001, t + 0.9); } catch (err) { /* abaikan */ }
+        const ref = L; setTimeout(() => { if (loops[key] === ref && ref.out) { try { ref.src.stop(); } catch (err) { /* abaikan */ } delete loops[key]; } }, 1100);
+      }
+    }
+  }
+  function loop(key, on) {
+    on = !!on;
+    if (want[key] === on && (!on || loops[key] || !sampleBufs[key])) return;
+    want[key] = on; applyLoops();
+  }
+  // putar sekali; mengembalikan { dur, stop } atau null kalau file belum siap
+  function once(key, vol) {
+    if (!actx || !musicBus || !sampleBufs[key]) return null;
+    try {
+      const e = sampleBufs[key], t = actx.currentTime, src = actx.createBufferSource(); src.buffer = e.buf;
+      const g = actx.createGain(); g.gain.value = Math.min(0.95, (vol || 0.8) * e.g);
+      src.connect(g); g.connect(musicBus); src.start(t);
+      return { dur: e.buf.duration, stop() { try { g.gain.cancelScheduledValues(actx.currentTime); g.gain.setValueAtTime(g.gain.value, actx.currentTime); g.gain.linearRampToValueAtTime(0.0001, actx.currentTime + 0.4); setTimeout(() => { try { src.stop(); } catch (err) { /* abaikan */ } }, 450); } catch (err) { /* abaikan */ } } };
+    } catch (err) { return null; }
+  }
+  // peramban memblokir suara sebelum ada sentuhan: pada sentuhan pertama, nyalakan audio & musik latar yang sudah diminta
+  ['pointerup', 'touchend', 'click', 'keydown'].forEach((ev) => document.addEventListener(ev, () => { try { init(); if (actx && actx.state === 'suspended') actx.resume(); applyLoops(); } catch (e) { /* abaikan */ } }, { passive: true }));
+
   document.addEventListener('visibilitychange', () => {
     if (!actx) return;
     try { if (document.hidden) actx.suspend(); else actx.resume(); } catch (e) { /* abaikan */ }
@@ -403,6 +442,7 @@ const GameAudio = (() => {
   // manifest: { "rex_attack": "rex_attack.ogg", "rex": "rex.ogg", ... }  (kunci "spesies_jenis" lebih diutamakan daripada "spesies")
   // Tanpa file / gagal dimuat -> otomatis memakai suara sintesis.
   const sampleBufs = {};
+  const loops = {}, want = {};          // musik latar dari file (berulang): kunci manifest -> { src, g }
   let samplesLoading = false;
   function loadSamples() {
     if (samplesLoading || !actx || typeof fetch !== 'function') return;
@@ -419,6 +459,7 @@ const GameAudio = (() => {
           let pk = 0;                                              // normalkan puncak -> volume antar-file seragam
           for (let c = 0; c < buf.numberOfChannels; c++) { const d = buf.getChannelData(c); for (let i = 0; i < d.length; i++) { const a = Math.abs(d[i]); if (a > pk) pk = a; } }
           sampleBufs[k] = { buf, g: pk > 0.001 ? 0.8 / pk : 1 };
+          if (want[k]) applyLoops();
         }).catch(() => { /* file rusak: pakai sintesis */ });
       });
     }).catch(() => { /* tidak ada manifest: pakai sintesis */ });
@@ -813,6 +854,8 @@ const GameAudio = (() => {
   return {
     init,
     nightAmbience,
+    loop,
+    once,
     rainAmbience,
     refreshLabels() { try { applyPrefs(); } catch (e) { /* abaikan */ } },
     sfx,

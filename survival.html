@@ -672,6 +672,18 @@
     #shopSlots .sl { width: 40px; height: 40px; border-radius: 50%; border: 2px dashed rgba(160, 215, 245, .4); display: flex; align-items: center; justify-content: center; font-size: 20px; background: rgba(255, 255, 255, .05); color: #fff; padding: 0; }
     #shopSlots .sl.f { border-style: solid; border-color: #ffe39a; }
     #shopHint { font-size: 10px; opacity: .65; text-align: center; }
+
+    /* sambutan panjang (dengan audio welcome.ogg) */
+    #welcome.long { display: flex; pointer-events: auto; animation: welBgL var(--wd, 10s) linear forwards; }
+    #welcome.long img { animation: welLogoL var(--wd, 10s) ease-in-out forwards; box-shadow: 0 0 40px rgba(255, 226, 120, .35); }
+    #welcome.long h2 { animation: welTxtL var(--wd, 10s) ease-out forwards; }
+    @keyframes welBgL { 0%, 90% { opacity: 1; visibility: visible; } 100% { opacity: 0; visibility: hidden; } }
+    @keyframes welLogoL { 0% { opacity: 0; transform: scale(.7); } 10% { opacity: 1; transform: scale(1); } 30% { transform: scale(1.06); } 50% { transform: scale(1); } 70% { transform: scale(1.06); } 90% { opacity: 1; transform: scale(1.02); } 100% { opacity: 0; transform: scale(1.4); } }
+    @keyframes welTxtL { 0%, 12% { opacity: 0; transform: translateY(14px); letter-spacing: 8px; } 28%, 90% { opacity: 1; transform: none; letter-spacing: 3px; } 100% { opacity: 0; } }
+    /* kombo kill */
+    #combo { position: fixed; left: 50%; top: 24%; z-index: 30; transform: translateX(-50%); pointer-events: none; font-weight: 900; font-size: clamp(20px, 7vh, 40px); letter-spacing: 2px; color: #ffe27a; text-shadow: 0 2px 0 #b8791a, 0 0 14px rgba(255, 190, 60, .8); opacity: 0; }
+    #combo.pop { animation: comboPop 1.3s ease-out; }
+    @keyframes comboPop { 0% { opacity: 0; transform: translateX(-50%) scale(.5); } 12% { opacity: 1; transform: translateX(-50%) scale(1.35); } 25% { transform: translateX(-50%) scale(1); } 80% { opacity: 1; } 100% { opacity: 0; transform: translateX(-50%) translateY(-18px) scale(1); } }
 </style>
 </head>
 <body>
@@ -789,6 +801,7 @@
     </div>
   </div></div>
 
+  <div id="combo"></div>
   <div id="welcome"><img src="vosil-logo-512.png" alt="Vosil"><h2 data-i18n="welcome">Welcome Vosil Survival</h2></div>
   <div id="splash"><img src="vosil-logo-512.png" alt="Vosil"></div>
 

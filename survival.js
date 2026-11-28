@@ -1792,10 +1792,12 @@
     sp.scale.set(3.4, 0.85, 1); sp.renderOrder = 10;
     return sp;
   }
+  // ukuran bar nyawa mengikuti ukuran dino (dino kecil -> bar kecil)
+  const hpK = (sc) => Math.max(0.46, Math.min(1.0, 0.36 + 0.3 * sc));
   function hpSprite() {                                               // bar nyawa gaya MOBA: lencana level + bar bersegmen
     const cv = document.createElement('canvas'); cv.width = 192; cv.height = 32;
     const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(cv), transparent: true, depthTest: false }));
-    sp.scale.set(3.3, 0.55, 1); sp.renderOrder = 10; sp.userData.cv = cv;
+    sp.scale.set(2.2, 0.37, 1); sp.renderOrder = 10; sp.userData.cv = cv;
     return sp;
   }
   function drawHp(sp, hp, self, lv) {
@@ -1832,7 +1834,8 @@
     const hp = Math.round(player.hp);
     if (hp !== myTagHp || player.level !== myTagLv) { myTagHp = hp; myTagLv = player.level; drawHp(myHb, player.hp, true, player.level); }
     const h = (player.gy || 0) + player.y + 2.9 * scaleNow / 1.1;
-    myHb.position.set(player.x, h + 0.45, player.z); myNameSp.position.set(player.x, h + 1.0, player.z);
+    const kk = hpK(scaleNow / 1.1); myHb.scale.set(3.3 * kk * 0.68, 0.55 * kk * 0.68, 1);
+    myHb.position.set(player.x, h + 0.3 + 0.15 * kk, player.z); myNameSp.position.set(player.x, h + 1.0, player.z);
     myPow.visible = powerLeft > 0;
     if (powerLeft > 0) { const key = Math.round(powerLeft * 5); if (key !== myPowKey) { myPowKey = key; drawPow(powerLeft); } myPow.position.set(player.x, h + 1.55, player.z); }
   }
@@ -1886,11 +1889,21 @@
     starBurst(r.x, r.y + 1.3 * v.sc, r.z, 5, 'hit');
     if (m.k && m.k !== 'bite') GameAudio.sfx.skillHit(m.k, m.dmg / 18, sndAt(r.x, r.z).pan); else GameAudio.sfx.hit();
   }
+  // ----- kepuasan: ledakan koin + kombo kill beruntun -----
+  let comboN = 0, comboAt = -99;
+  function celebrateKill(x, y, z, gold) {
+    comboN = clock - comboAt < 8 ? comboN + 1 : 1; comboAt = clock;
+    starBurst(x, y + 1, z, 10 + Math.min(10, comboN * 2), 'gain');
+    showDmg(x, y + 2.0, z, gold ? '🪙 +' + gold : '★', 'gain', 1.2);
+    try { GameAudio.sfx.record(); } catch (e) { /* abaikan */ }
+    const el = $('combo');
+    if (el && comboN >= 2) { el.textContent = t('combo_n', { n: comboN }); el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop'); }
+  }
   function pvpKill(m) {
     if (!arenaOn) return;
     const me = Arena.st.id;
     if (m.id === me) die(t('ar_killed', { n: m.bn }));
-    else if (m.by === me) { toast(t('ar_you_kill', { n: m.nm }), 3); GameAudio.sfx.record(); }
+    else if (m.by === me) { toast(t('ar_you_kill', { n: m.nm }), 3); celebrateKill(player.x, (player.gy || 0) + player.y, player.z, 0); }
     else toast(t('ar_kill', { a: m.bn, b: m.nm }), 2.6);
   }
   function pvpRoar(id) {                                                            // cincin raungan pemain lain
@@ -1976,7 +1989,7 @@
       if (v.em) { v.em.t += dt; const o = emoteOff(v.em.e, v.em.t); if (o) { v.c.root.position.y += o.dy * v.sc; v.c.root.rotation.y += o.dyaw; } else if (v.em.t > 2.2) v.em = null; }
       if (v.hitT > 0) { v.hitT -= dt; v.c.root.scale.setScalar(v.sc * (1 + 0.12 * Math.sin(Math.PI * Math.max(0, v.hitT) / 0.18))); }
       v.sp.position.set(r.x, r.y + 2.9 * v.sc + 0.95, r.z);
-      v.hb.position.set(r.x, r.y + 2.9 * v.sc + 0.4, r.z);
+      { const kk = hpK(v.sc); v.hb.scale.set(3.3 * kk * 0.68, 0.55 * kk * 0.68, 1); v.hb.position.set(r.x, r.y + 2.9 * v.sc + 0.3 + 0.15 * kk, r.z); }
       v.sh.visible = !r.sw;
       placeShadow(v.sh, r.x, r.z, air ? gnd : r.y, 0.75 * v.sc, 1.9 * v.sc);
     }
@@ -3583,16 +3596,38 @@
   function syncDex() {                                                  // layar Pilih Dino = halaman utama saat state 'menu'
     if (state === 'menu') { if (!dexEl.classList.contains('on') || !dexHome) { dexHome = true; dexEl.classList.add('home'); openDex(); } }
     else if (dexHome) { dexHome = false; dexEl.classList.remove('home'); closeDex(); }
+    try { GameAudio.loop('loopskil', state === 'menu' && !welcomeOn); } catch (e) { /* abaikan */ }          // musik latar halaman Pilih Dino
   }
-  let starting = false;
+  let starting = false, welcomed = false, welcomeOn = false;
   function welcomeThenStart(solo) {                                     // sambutan: logo memudar, dunia dimuat di baliknya
-    if (starting || state !== 'menu') return; starting = true; setTimeout(() => { starting = false; }, 3500);
-    const w = $('welcome'); if (w) { w.classList.remove('on'); void w.offsetWidth; w.classList.add('on'); setTimeout(() => w.classList.remove('on'), 3300); }
+    if (starting || state !== 'menu') return; starting = true; const stT = setTimeout(() => { starting = false; }, 3500);
+    const w = $('welcome');
     try { GameAudio.init(); } catch (e) { /* abaikan */ }
-    const ab = $('arenaBtn');
-    lastMode = solo ? 'solo' : 'arena';
-    if (!solo && ab && !ab.classList.contains('hidden')) startArena().then(() => { if (state !== 'playing') { toast(t('ar_full_solo'), 4); startGame(); } });
-    else startGame();
+    const launch = () => {
+      const ab = $('arenaBtn');
+      lastMode = solo ? 'solo' : 'arena';
+      if (!solo && ab && !ab.classList.contains('hidden')) startArena().then(() => { if (state !== 'playing') { toast(t('ar_full_solo'), 4); startGame(); } });
+      else startGame();
+    };
+    let snd = null;
+    if (!welcomed) { try { GameAudio.loop('loopskil', false); snd = GameAudio.once('welcome', 0.85); } catch (e) { snd = null; } }
+    welcomed = true;
+    if (snd && w) {                                                  // sambutan panjang bersama audio welcome.ogg; ketuk untuk melewati
+      const D = Math.max(2, Math.min(12, snd.dur));
+      welcomeOn = true; starting = true; clearTimeout(stT); w.style.setProperty('--wd', D + 's');
+      w.classList.remove('on', 'long'); void w.offsetWidth; w.classList.add('on', 'long');
+      let fin = false;
+      const end = (skip) => {
+        if (fin) return; fin = true; clearTimeout(tm); w.onclick = null;
+        if (skip) snd.stop();
+        w.classList.remove('on', 'long'); welcomeOn = false; starting = false; launch();
+      };
+      const tm = setTimeout(() => end(false), D * 1000 - 200);
+      w.onclick = () => end(true);
+      return;
+    }
+    if (w) { w.classList.remove('on'); void w.offsetWidth; w.classList.add('on'); setTimeout(() => w.classList.remove('on'), 3300); }
+    launch();
   }
   function closeDex() { dexEl.classList.remove('on'); if (pv.c) { pv.scene.remove(pv.c.root); disposeTree(pv.c.root); pv.c = null; } }
   ['dexOpen', 'dexOpen2'].forEach((id) => { const b = $(id); if (b) { b.addEventListener('pointerdown', (e) => e.stopPropagation()); b.addEventListener('click', (e) => { e.stopPropagation(); GameAudio.init(); openDex(); }); } });
@@ -4055,7 +4090,7 @@
     const rw = Math.ceil(p.def.reward * KILL_REWARD_MUL);
     runCoins += rw;
     addC(rw);
-    addGold(12 + Math.round(p.def.hp * 0.22));
+    { const gg = 12 + Math.round(p.def.hp * 0.22); addGold(gg); celebrateKill(p.x, heightAt(p.x, p.z), p.z, Math.round(gg * (1 + bmods().gold))); }
     player.hunger = Math.min(100, player.hunger + p.def.food);
     burst(14, p.x, 1, p.z);
     starBurst(p.x, heightAt(p.x, p.z) + 1.3 * p.def.scale, p.z, 12, 'gain');

@@ -1795,22 +1795,23 @@
   // ukuran bar nyawa mengikuti ukuran dino (dino kecil -> bar kecil)
   const hpK = (sc) => Math.max(0.46, Math.min(1.0, 0.36 + 0.3 * sc));
   function hpSprite() {                                               // bar nyawa gaya MOBA: lencana level + bar bersegmen
-    const cv = document.createElement('canvas'); cv.width = 192; cv.height = 32;
+    const cv = document.createElement('canvas'); cv.width = 192; cv.height = 48;
     const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(cv), transparent: true, depthTest: false }));
-    sp.scale.set(2.2, 0.37, 1); sp.renderOrder = 10; sp.userData.cv = cv;
+    sp.scale.set(2.2, 0.55, 1); sp.renderOrder = 10; sp.userData.cv = cv;
     return sp;
   }
   function drawHp(sp, hp, self, lv) {
     const cv = sp.userData.cv, g = cv.getContext('2d'), f = Math.max(0, Math.min(1, hp / 100));
-    g.clearRect(0, 0, 192, 32);
-    g.fillStyle = 'rgba(6,12,18,.82)'; g.fillRect(28, 6, 160, 20);                 // latar bar
+    g.clearRect(0, 0, 192, 48);
+    g.fillStyle = 'rgba(6,12,18,.82)'; g.fillRect(40, 15, 148, 18);                 // latar bar
     const col = self ? (f > 0.3 ? '#3ddc5a' : '#ffb300') : (f > 0.3 ? '#e5392f' : '#ff7043');
-    g.fillStyle = col; g.fillRect(31, 9, 154 * f, 14);
-    g.fillStyle = 'rgba(255,255,255,.25)'; g.fillRect(31, 9, 154 * f, 4);
-    g.fillStyle = 'rgba(0,0,0,.55)'; for (let i = 1; i < 10; i++) g.fillRect(31 + 15.4 * i, 9, 1.5, 14);   // garis tiap 10 nyawa
-    g.strokeStyle = 'rgba(255,255,255,.5)'; g.lineWidth = 1.5; g.strokeRect(28.5, 6.5, 159, 19);
-    g.beginPath(); g.arc(16, 16, 14, 0, Math.PI * 2); g.fillStyle = '#16212b'; g.fill(); g.lineWidth = 3; g.strokeStyle = self ? '#ffca28' : '#cfd8dc'; g.stroke();   // lencana level
-    g.fillStyle = '#fff'; g.font = 'bold 17px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(String(lv || 1), 16, 17);
+    g.fillStyle = col; g.fillRect(43, 18, 142 * f, 12);
+    g.fillStyle = 'rgba(255,255,255,.25)'; g.fillRect(43, 18, 142 * f, 4);
+    g.fillStyle = 'rgba(0,0,0,.55)'; for (let i = 1; i < 10; i++) g.fillRect(43 + 14.2 * i, 18, 1.4, 12);   // garis tiap 10 nyawa
+    g.strokeStyle = 'rgba(255,255,255,.5)'; g.lineWidth = 1.5; g.strokeRect(40.5, 15.5, 147, 17);
+    g.beginPath(); g.arc(23, 24, 21, 0, Math.PI * 2); g.fillStyle = '#16212b'; g.fill(); g.lineWidth = 4; g.strokeStyle = self ? '#ffca28' : '#cfd8dc'; g.stroke();   // lencana level (besar agar terbaca)
+    const L = String(lv || 1);
+    g.fillStyle = '#fff'; g.font = 'bold ' + (L.length > 1 ? 24 : 30) + 'px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(L, 23, 25);
     sp.material.map.needsUpdate = true;
   }
   // nama + bar nyawa di atas dino sendiri (selalu tampil saat bermain)
@@ -1826,6 +1827,20 @@
     g.fillStyle = '#fff'; g.font = 'bold 15px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('🥚 ' + Math.ceil(left) + ' s', 80, 15);
     myPow.material.map.needsUpdate = true;
   }
+  // ----- layar merah berkedip saat nyawa di ambang sekarat -----
+  let lowOn = false, lowBeat = 0;
+  function updateLowHp(dt) {
+    const el = $('lowhp'); if (!el) return;
+    const hp = player.hp, alive = state === 'playing' && hp > 0;
+    if (!lowOn && alive && hp <= 30) lowOn = true;
+    else if (lowOn && (!alive || hp >= 40)) lowOn = false;          // histeresis: padam setelah nyawa terisi lagi
+    if (!lowOn) { if (el.classList.contains('on')) el.classList.remove('on'); lowBeat = 0; return; }
+    const sev = Math.max(0, Math.min(1, (35 - hp) / 30));           // makin sekarat makin pekat & cepat
+    const per = 1.15 - 0.6 * sev;
+    el.style.setProperty('--sev', sev.toFixed(2)); el.style.setProperty('--per', per.toFixed(2) + 's');
+    if (!el.classList.contains('on')) el.classList.add('on');
+    lowBeat -= dt; if (lowBeat <= 0) { lowBeat = per; try { GameAudio.sfx.heartbeat(sev); } catch (e) { /* abaikan */ } }
+  }
   function updateMyTag() {
     const show = state === 'playing' && !(hero.root.visible === false);
     myNameSp.visible = myHb.visible = show; if (!show) { myPow.visible = false; return; }
@@ -1834,7 +1849,7 @@
     const hp = Math.round(player.hp);
     if (hp !== myTagHp || player.level !== myTagLv) { myTagHp = hp; myTagLv = player.level; drawHp(myHb, player.hp, true, player.level); }
     const h = (player.gy || 0) + player.y + 2.9 * scaleNow / 1.1;
-    const kk = hpK(scaleNow / 1.1); myHb.scale.set(3.3 * kk * 0.68, 0.55 * kk * 0.68, 1);
+    const kk = hpK(scaleNow / 1.1); myHb.scale.set(3.3 * kk * 0.8, 3.3 * kk * 0.8 * 0.25, 1);
     myHb.position.set(player.x, h + 0.3 + 0.15 * kk, player.z); myNameSp.position.set(player.x, h + 1.0, player.z);
     myPow.visible = powerLeft > 0;
     if (powerLeft > 0) { const key = Math.round(powerLeft * 5); if (key !== myPowKey) { myPowKey = key; drawPow(powerLeft); } myPow.position.set(player.x, h + 1.55, player.z); }
@@ -1989,7 +2004,7 @@
       if (v.em) { v.em.t += dt; const o = emoteOff(v.em.e, v.em.t); if (o) { v.c.root.position.y += o.dy * v.sc; v.c.root.rotation.y += o.dyaw; } else if (v.em.t > 2.2) v.em = null; }
       if (v.hitT > 0) { v.hitT -= dt; v.c.root.scale.setScalar(v.sc * (1 + 0.12 * Math.sin(Math.PI * Math.max(0, v.hitT) / 0.18))); }
       v.sp.position.set(r.x, r.y + 2.9 * v.sc + 0.95, r.z);
-      { const kk = hpK(v.sc); v.hb.scale.set(3.3 * kk * 0.68, 0.55 * kk * 0.68, 1); v.hb.position.set(r.x, r.y + 2.9 * v.sc + 0.3 + 0.15 * kk, r.z); }
+      { const kk = hpK(v.sc); v.hb.scale.set(3.3 * kk * 0.8, 3.3 * kk * 0.8 * 0.25, 1); v.hb.position.set(r.x, r.y + 2.9 * v.sc + 0.3 + 0.15 * kk, r.z); }
       v.sh.visible = !r.sw;
       placeShadow(v.sh, r.x, r.z, air ? gnd : r.y, 0.75 * v.sc, 1.9 * v.sc);
     }
@@ -5157,7 +5172,7 @@
     const gy = swimBlend > 0.01 ? lerp(groundY, WL - 0.78 * (scaleNow / 1.1) + Math.sin(clock * 2.4) * 0.06, swimBlend) : groundY;
     player.gy = gy;
     hero.root.position.set(player.x, gy + player.y, player.z);
-    updateMyTag();
+    updateMyTag(); updateLowHp(dt);
     if (state === 'over') {
       hero.root.rotation.z += (1.4 - hero.root.rotation.z) * Math.min(1, dt * 7);
       hero.root.position.y = gy + 0.15;

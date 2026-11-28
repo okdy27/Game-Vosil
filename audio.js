@@ -291,6 +291,12 @@ const GameAudio = (() => {
       noise(sfxBus, t, 0.5, 0.6, 'lowpass', 1200);
       tone(sfxBus, 230, t, 0.55, 'sawtooth', 0.3, 45);
     },
+    heartbeat(sev) {                                    // detak jantung: lub-dub, makin keras saat makin sekarat
+      if (!sfxOk()) return;
+      const t = actx.currentTime, v = 0.35 + 0.4 * (sev || 0);
+      tone(sfxBus, 70, t, 0.14, 'sine', v, 46);
+      tone(sfxBus, 62, t + 0.2, 0.16, 'sine', v * 0.8, 42);
+    },
     record() {
       if (!sfxOk()) return;
       const t = actx.currentTime;

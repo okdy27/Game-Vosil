@@ -32,7 +32,8 @@ const Wallet = (() => {
     if (!res.ok || !j || j.ok === false) {
       const code = (j && j.error) || 'server_error';
       if (code === 'not_logged_in' || code === 'session_expired') { st.session = null; st.me = null; store.del(K_SES); }
-      throw new WErr(code);
+      const err = new WErr(code); if (j && j.why) err.why = String(j.why).slice(0, 90);
+      throw err;
     }
     return j;
   }

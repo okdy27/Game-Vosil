@@ -3763,7 +3763,7 @@
   const W = Wallet.st;
   let cfgTry = false;
   const shortAddr = (a) => (a ? a.slice(0, 6) + '…' + a.slice(-4) : '');
-  const wErr = (e) => { const k = 'err_' + ((e && e.code) || 'unknown'); const m = t(k); return m === k ? t('err_unknown') : m; };
+  const wErr = (e) => { const k = 'err_' + ((e && e.code) || 'unknown'); const m = t(k); const base = m === k ? t('err_unknown') : m; return e && e.why ? base + ' [' + e.why + ']' : base; };
   function acctHtml() {
     const cfg = W.cfg, me = W.me;
     let h = '<h4>' + t('h_acct') + '</h4>';

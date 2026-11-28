@@ -23,12 +23,17 @@ export async function verifySignature(address, message, signature) {
 const SAFE_ABI = [{ type: 'function', name: 'getOwners', stateMutability: 'view', inputs: [], outputs: [{ type: 'address[]' }] }];
 export async function verifyWorld(env, address, message, signature, getOwners) {
   let signer;
-  try { signer = (await recoverMessageAddress({ message, signature })).toLowerCase(); } catch (e) { return false; }
-  if (signer === String(address).toLowerCase()) return true;
-  try {
+  try { signer = (await recoverMessageAddress({ message, signature })).toLowerCase(); } catch (e) { signer = ''; }
+  if (signer && signer === String(address).toLowerCase()) return { ok: true, why: 'eoa' };
+  if (!getOwners) {                                       // jalur 1: EIP-1271 / ERC-6492 lewat viem (dompet kontrak yang mendukungnya)
+    try { if (await pub(env).verifyMessage({ address, message, signature })) return { ok: true, why: '1271' }; } catch (e) { /* lanjut ke pemilik Safe */ }
+  }
+  if (!signer) return { ok: false, why: 'recover' };
+  try {                                                   // jalur 2: penandatangan adalah pemilik Safe
     const owners = getOwners ? await getOwners(address) : await pub(env).readContract({ address, abi: SAFE_ABI, functionName: 'getOwners' });
-    return Array.isArray(owners) && owners.some((o) => String(o).toLowerCase() === signer);
-  } catch (e) { return false; }
+    if (Array.isArray(owners) && owners.some((o) => String(o).toLowerCase() === signer)) return { ok: true, why: 'owner' };
+    return { ok: false, why: 'not_owner' };
+  } catch (e) { return { ok: false, why: 'rpc:' + String((e && (e.shortMessage || e.message)) || e).replace(/[^\w .:-]/g, '').slice(0, 70) }; }
 }
 
 export async function getBalance(env) {                          // saldo VOS dompet game (dalam VOS)

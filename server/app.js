@@ -225,10 +225,12 @@ export function createApp(deps) {
     // pesan harus memuat nonce kita & alamat yang diklaim (baris "Nonce: ..." dan baris alamat)
     const lines = b.message.split('\n').map((x) => x.trim());
     if (!lines.includes('Nonce: ' + b.nonce)) throw new HttpError(400, 'nonce_invalid');
-    if (!lines.some((x) => x.toLowerCase() === address)) throw new HttpError(401, 'signature_invalid');
+    if (!lines.some((x) => x.toLowerCase() === address)) return J({ ok: false, error: 'signature_invalid', why: 'addr_line' }, 401);
     const exp = lines.find((x) => x.startsWith('Expiration Time: '));
     if (exp && !(Date.parse(exp.slice(17)) > nowFn())) throw new HttpError(400, 'nonce_invalid');
-    if (!(await chain.verifyWorld(env, address, b.message, b.signature))) throw new HttpError(401, 'signature_invalid');
+    const vr = await chain.verifyWorld(env, address, b.message, b.signature);
+    const okv = vr === true || !!(vr && vr.ok);
+    if (!okv) { const why = (vr && vr.why) || 'bad'; await event(env, 'world_fail', address + ' ' + why); return J({ ok: false, error: 'signature_invalid', why }, 401); }
     const r = await finishLogin(env, b, ip, address);
     return J({ ok: true, address: r.address, token: r.token });
   }
